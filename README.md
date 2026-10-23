@@ -23,6 +23,13 @@ with a generic Chinese PM3 board happens over a plain CDC-ACM USB link.
   script in the proxmark3 client, which itself credits the
   [Quarkslab anti-tearing research](https://blog.quarkslab.com/rfid-monotonic-counter-anti-tearing-defeated.html).
 
+## Download
+
+Prebuilt APK (arm64, Android 8+): see the
+[releases](https://github.com/M35mar/RFIDtools/releases). For firmware
+flavours other than PM3GENERIC/PM3EASY 512k, build it yourself from source
+(below).
+
 ## Target hardware
 
 This app only targets the generic Chinese Proxmark3 boards the author uses:
