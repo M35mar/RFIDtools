@@ -27,7 +27,11 @@ val syncPm3ClientResources by tasks.registering(Sync::class) {
     from(client.dir("lualibs")) {
         into("lualibs")
     }
+    // Our own Lua tools are merged into the client's luascripts directory.
     from(client.dir("luascripts")) {
+        into("luascripts")
+    }
+    from(project.file("src/main/lua-extra")) {
         into("luascripts")
     }
     from(client.dir("cmdscripts")) {
