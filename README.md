@@ -7,6 +7,22 @@ approach: **no Termux, no child process**. The Proxmark3 client (Iceman fork)
 runs *in-process* as a shared library inside the app, and all communication
 with a generic Chinese PM3 board happens over a plain CDC-ACM USB link.
 
+## Attribution
+
+- The original **RFIDtools** Android app (GPL-3.0) is by the
+  [RfidResearchGroup](https://github.com/RfidResearchGroup), published on the
+  [Play Store](https://play.google.com/store/apps/details?id=com.rfidresearchgroup.rfidtools)
+  as `com.rfidresearchgroup.rfidtools`. This repository is a GPL-3.0
+  derivative of that published app, rewritten from scratch with the ideas and
+  goals of the original, but a completely different architecture (in-process
+  client instead of Termux).
+- The embedded Proxmark3 client and firmware come from the
+  [proxmark3](https://github.com/RfidResearchGroup/proxmark3) repository,
+  pinned as a submodule (iceman fork, commit `8ab96c9`).
+- The MIFARE Ultralight Ev1 counter-reset Lua script is a port of the python
+  script in the proxmark3 client, which itself credits the
+  [Quarkslab anti-tearing research](https://blog.quarkslab.com/rfid-monotonic-counter-anti-tearing-defeated.html).
+
 ## Target hardware
 
 This app only targets the generic Chinese Proxmark3 boards the author uses:
