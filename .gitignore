@@ -6,12 +6,13 @@ local.properties
 *.apk
 *.aab
 
+# Asset/native outputs created by the build from the proxmark3 submodule
+core/pm3/src/main/assets/
+core/pm3/src/main/jniLibs/
+
 # IDE
 .idea/
 *.iml
 .DS_Store
-
-# Native build output (imported into jniLibs by the build)
-core/pm3/src/main/jniLibs/
 
 # SDK binaries live outside the repo (../tools)
