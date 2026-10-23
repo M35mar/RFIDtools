@@ -50,6 +50,8 @@ class UsbCdc(private val context: Context) {
         }
     }
 
+    fun hasPermission(device: UsbDevice): Boolean = usbManager.hasPermission(device)
+
     /** Shows the system permission dialog and waits for the answer. */
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     suspend fun requestPermission(device: UsbDevice): Boolean {

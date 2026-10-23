@@ -56,6 +56,8 @@ class Pm3Client(context: Context) {
 
     fun foundDevice(): UsbDevice? = usb.findDevice()
 
+    fun hasPermission(device: UsbDevice): Boolean = usb.hasPermission(device)
+
     suspend fun requestPermission(device: UsbDevice): Boolean =
         usb.requestPermission(device)
 

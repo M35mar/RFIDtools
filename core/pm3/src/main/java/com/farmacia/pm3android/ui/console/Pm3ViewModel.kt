@@ -10,11 +10,14 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.farmacia.pm3android.pm3.Pm3Client
 import com.farmacia.pm3android.pm3.Pm3ConnectionState
+import com.farmacia.pm3android.pm3.Pm3Resources
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.io.File
+
+data class Pm3File(val file: File, val size: Long)
 
 class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -23,9 +26,13 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
     val connectionState: StateFlow<Pm3ConnectionState> = client.state
     val connectLog: StateFlow<String> = client.connectLog
 
-    /** Path to the USB device is displayed only after a connect attempt. */
-    private val deviceNameFlow = MutableStateFlow<String?>(null)
-    val deviceName: StateFlow<String?> = deviceNameFlow
+    /** USB device presence (set by refreshDevice, see DeviceScreen). */
+    private val deviceFlow = MutableStateFlow<Pm3DeviceInfo?>(null)
+    val device: StateFlow<Pm3DeviceInfo?> = deviceFlow
+
+    /** Files written by the client into $HOME (dumps, traces, logs). */
+    private val filesFlow = MutableStateFlow<List<Pm3File>>(emptyList())
+    val files: StateFlow<List<Pm3File>> = filesFlow
 
     private val busyFlow = MutableStateFlow(false)
     val busy: StateFlow<Boolean> = busyFlow
@@ -36,6 +43,33 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
 
     var execJob: Job? = null
         private set
+
+    fun refreshDevice() {
+        val found = client.foundDevice()
+        deviceFlow.value = found?.let { dev ->
+            Pm3DeviceInfo(
+                name = dev.deviceName.substringAfterLast('/'),
+                manufacturer = dev.manufacturerName,
+                product = dev.productName,
+                hasPermission = client.hasPermission(dev),
+            )
+        }
+    }
+
+    fun refreshFiles() {
+        val home = Pm3Resources.home(getApplication())
+        filesFlow.value = home.walkTopDown()
+            .filter { it.isFile }
+            .map { Pm3File(it, it.length()) }
+            .sortedBy { it.file.relativeTo(home).path }
+            .toList()
+    }
+
+    fun requestPermission(device: Pm3DeviceInfo): Unit {
+        // permissions are requested through connect(); device info screen
+        // forwards to connect directly.
+        connect()
+    }
 
     fun connect() {
         submitWork {
@@ -63,6 +97,18 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
     fun clearConsole() {
         linesFlow.value = emptyList()
     }
+
+    fun deleteFile(pm3File: Pm3File) {
+        pm3File.file.delete()
+        refreshFiles()
+    }
+
+    data class Pm3DeviceInfo(
+        val name: String,
+        val manufacturer: String?,
+        val product: String?,
+        val hasPermission: Boolean,
+    )
 
     private fun submitWork(block: suspend () -> Unit) {
         if (busyFlow.value) {
