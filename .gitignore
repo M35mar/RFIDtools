@@ -1,0 +1,17 @@
+# Build system
+.gradle/
+build/
+local.properties
+.cxx/
+*.apk
+*.aab
+
+# IDE
+.idea/
+*.iml
+.DS_Store
+
+# Native build output (imported into jniLibs by the build)
+core/pm3/src/main/jniLibs/
+
+# SDK binaries live outside the repo (../tools)
