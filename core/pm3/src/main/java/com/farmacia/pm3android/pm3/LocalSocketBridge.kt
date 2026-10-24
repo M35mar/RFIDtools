@@ -45,6 +45,9 @@ class LocalSocketBridge(private val socketName: String) {
         this.deviceInput = deviceInput
         this.deviceOutput = deviceOutput
         running = true
+        // Bind before acceptLoop() runs: the loop returns as soon as server
+        // is null, and without this the native client gets ECONNREFUSED.
+        server = LocalServerSocket(socketName)
         acceptThread = thread(name = "pm3-bridge-accept") { acceptLoop() }
         if (!acceptStarted.await(ACCEPT_WAIT_MS, TimeUnit.MILLISECONDS)) {
             stop()
