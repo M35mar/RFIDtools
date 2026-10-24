@@ -16,7 +16,7 @@ object Pm3Resources {
     private const val TAG = "pm3-resources"
 
     // Bump when the bundled client resource set changes.
-    private const val STAMP = "pm3-android-resources-1"
+    private const val STAMP = "pm3-android-resources-2"
 
     private val DIRECTORIES = listOf(
         "dictionaries",
