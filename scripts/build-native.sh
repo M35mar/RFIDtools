@@ -21,15 +21,39 @@ SRC_DIR="$REPO_ROOT/core/pm3/src/main/cpp"
 BUILD_DIR="$REPO_ROOT/core/pm3/build/native"
 OUT_DIR="$REPO_ROOT/core/pm3/src/main/jniLibs/arm64-v8a"
 
+"$REPO_ROOT/scripts/prepare-pm3.sh"
+
 SDK="${ANDROID_SDK:-${ANDROID_SDK_ROOT:-}}"
+if [[ -z "$SDK" && -f "$REPO_ROOT/local.properties" ]]; then
+    SDK="$(grep -E '^sdk\.dir=' "$REPO_ROOT/local.properties" | head -n1 | cut -d'=' -f2 | tr -d '\r')"
+fi
+if [[ -z "$SDK" ]]; then
+    for candidate in "$HOME/AppData/Local/Android/Sdk" "$HOME/Android/Sdk" "$HOME/Library/Android/sdk"; do
+        if [[ -d "$candidate" ]]; then
+            SDK="$candidate"
+            break
+        fi
+    done
+fi
+
+if [[ -n "$SDK" ]]; then
+    SDK="$(echo "$SDK" | tr '\\' '/' | sed -e 's|//|/|g')"
+    if command -v cygpath >/dev/null 2>&1; then
+        SDK="$(cygpath -u "$SDK")"
+    fi
+fi
+
 if [[ -n "${ANDROID_NDK:-}" ]]; then
     NDK="$ANDROID_NDK"
+    if command -v cygpath >/dev/null 2>&1; then
+        NDK="$(cygpath -u "$NDK")"
+    fi
 else
     SDK="${SDK:?ANDROID_SDK or ANDROID_SDK_ROOT must be set}"
-    NDK="$(ls -d "$SDK"/ndk/* | sort -V | tail -n1)"
+    NDK="$(ls -d "$SDK"/ndk/* 2>/dev/null | sort -V | tail -n1)"
 fi
-CMAKE="$(ls "$SDK"/cmake/*/bin/cmake | sort -V | tail -n1)"
-NINJA="$(ls "$SDK"/cmake/*/bin/ninja | sort -V | tail -n1)"
+CMAKE="$(ls "$SDK"/cmake/*/bin/cmake 2>/dev/null | sort -V | tail -n1)"
+NINJA="$(ls "$SDK"/cmake/*/bin/ninja 2>/dev/null | sort -V | tail -n1)"
 
 echo ">> configure (ndk=$NDK)"
 mkdir -p "$BUILD_DIR"

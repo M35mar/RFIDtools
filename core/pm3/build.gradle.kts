@@ -52,6 +52,9 @@ val localSdkPath: String? =
         ?.map { it.substringBefore('#').trim() }
         ?.firstOrNull { it.startsWith("sdk.dir") }
         ?.substringAfter('=')
+        ?.replace("\\:", ":")
+        ?.replace("\\\\", "/")
+        ?.replace("\\", "/")
         ?.ifBlank { null }
 
 val buildPm3Native by tasks.registering(Exec::class) {

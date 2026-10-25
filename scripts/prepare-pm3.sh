@@ -27,7 +27,8 @@ fi
 if [ ! -f "$LND/linenoise.cpp" ]; then
     echo ">> extracting linenoise-ng from vendored zip"
     mkdir -p "$LND"
-    python3 - "$ZIP" "$LND" <<'PY'
+    if python3 -c "import zipfile" 2>/dev/null; then
+        python3 - "$ZIP" "$LND" <<'PY'
 import sys, zipfile
 zip_path, out_dir = sys.argv[1], sys.argv[2]
 prefix = "linenoise-ng-1.0.1/"
@@ -46,6 +47,77 @@ with zipfile.ZipFile(zip_path) as z:
             dst.write(src.read())
 print("   extracted 7 files")
 PY
+    elif python -c "import zipfile" 2>/dev/null; then
+        python - "$ZIP" "$LND" <<'PY'
+import sys, zipfile
+zip_path, out_dir = sys.argv[1], sys.argv[2]
+prefix = "linenoise-ng-1.0.1/"
+keep = {
+    "src/ConvertUTF.cpp": "ConvertUTF.cpp",
+    "src/ConvertUTF.h": "ConvertUTF.h",
+    "src/linenoise.cpp": "linenoise.cpp",
+    "src/wcwidth.cpp": "wcwidth.cpp",
+    "include/linenoise.h": "linenoise.h",
+    "LICENSE": "LICENSE",
+    "README.md": "README.md",
+}
+with zipfile.ZipFile(zip_path) as z:
+    for member, name in keep.items():
+        with z.open(prefix + member) as src, open(f"{out_dir}/{name}", "wb") as dst:
+            dst.write(src.read())
+print("   extracted 7 files")
+PY
+    elif command -v unzip >/dev/null 2>&1; then
+        unzip -o -j "$ZIP" \
+            "linenoise-ng-1.0.1/src/ConvertUTF.cpp" \
+            "linenoise-ng-1.0.1/src/ConvertUTF.h" \
+            "linenoise-ng-1.0.1/src/linenoise.cpp" \
+            "linenoise-ng-1.0.1/src/wcwidth.cpp" \
+            "linenoise-ng-1.0.1/include/linenoise.h" \
+            "linenoise-ng-1.0.1/LICENSE" \
+            "linenoise-ng-1.0.1/README.md" \
+            -d "$LND"
+    elif command -v bsdtar >/dev/null 2>&1; then
+        TMP_DIR="$(mktemp -d)"
+        bsdtar -xf "$ZIP" -C "$TMP_DIR"
+        cp "$TMP_DIR/linenoise-ng-1.0.1/src/ConvertUTF.cpp" "$LND/ConvertUTF.cpp"
+        cp "$TMP_DIR/linenoise-ng-1.0.1/src/ConvertUTF.h" "$LND/ConvertUTF.h"
+        cp "$TMP_DIR/linenoise-ng-1.0.1/src/linenoise.cpp" "$LND/linenoise.cpp"
+        cp "$TMP_DIR/linenoise-ng-1.0.1/src/wcwidth.cpp" "$LND/wcwidth.cpp"
+        cp "$TMP_DIR/linenoise-ng-1.0.1/include/linenoise.h" "$LND/linenoise.h"
+        cp "$TMP_DIR/linenoise-ng-1.0.1/LICENSE" "$LND/LICENSE"
+        cp "$TMP_DIR/linenoise-ng-1.0.1/README.md" "$LND/README.md"
+        rm -rf "$TMP_DIR"
+    elif command -v powershell.exe >/dev/null 2>&1 || command -v powershell >/dev/null 2>&1; then
+        PS_CMD="$(command -v powershell.exe || command -v powershell)"
+        TMP_DIR="$(mktemp -d)"
+        WIN_ZIP="$(cygpath -w "$ZIP" 2>/dev/null || echo "$ZIP")"
+        WIN_TMP="$(cygpath -w "$TMP_DIR" 2>/dev/null || echo "$TMP_DIR")"
+        "$PS_CMD" -NoProfile -Command "Expand-Archive -Path '$WIN_ZIP' -DestinationPath '$WIN_TMP' -Force"
+        cp "$TMP_DIR/linenoise-ng-1.0.1/src/ConvertUTF.cpp" "$LND/ConvertUTF.cpp"
+        cp "$TMP_DIR/linenoise-ng-1.0.1/src/ConvertUTF.h" "$LND/ConvertUTF.h"
+        cp "$TMP_DIR/linenoise-ng-1.0.1/src/linenoise.cpp" "$LND/linenoise.cpp"
+        cp "$TMP_DIR/linenoise-ng-1.0.1/src/wcwidth.cpp" "$LND/wcwidth.cpp"
+        cp "$TMP_DIR/linenoise-ng-1.0.1/include/linenoise.h" "$LND/linenoise.h"
+        cp "$TMP_DIR/linenoise-ng-1.0.1/LICENSE" "$LND/LICENSE"
+        cp "$TMP_DIR/linenoise-ng-1.0.1/README.md" "$LND/README.md"
+        rm -rf "$TMP_DIR"
+    elif command -v jar >/dev/null 2>&1; then
+        TMP_DIR="$(mktemp -d)"
+        (cd "$TMP_DIR" && jar xf "$(cd "$DEPS" && pwd)/linenoise-ng-1.0.1.zip")
+        cp "$TMP_DIR/linenoise-ng-1.0.1/src/ConvertUTF.cpp" "$LND/ConvertUTF.cpp"
+        cp "$TMP_DIR/linenoise-ng-1.0.1/src/ConvertUTF.h" "$LND/ConvertUTF.h"
+        cp "$TMP_DIR/linenoise-ng-1.0.1/src/linenoise.cpp" "$LND/linenoise.cpp"
+        cp "$TMP_DIR/linenoise-ng-1.0.1/src/wcwidth.cpp" "$LND/wcwidth.cpp"
+        cp "$TMP_DIR/linenoise-ng-1.0.1/include/linenoise.h" "$LND/linenoise.h"
+        cp "$TMP_DIR/linenoise-ng-1.0.1/LICENSE" "$LND/LICENSE"
+        cp "$TMP_DIR/linenoise-ng-1.0.1/README.md" "$LND/README.md"
+        rm -rf "$TMP_DIR"
+    else
+        echo "No suitable tool found to extract $ZIP (python, unzip, bsdtar, powershell, jar)" >&2
+        exit 1
+    fi
+
 else
     echo ">> linenoise already extracted"
 fi
