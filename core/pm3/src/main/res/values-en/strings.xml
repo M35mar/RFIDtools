@@ -112,6 +112,24 @@
     <string name="tool_mfuev1_reset_desc">Resets counters with the bundled anti-tearing script.</string>
     <string name="tool_param_skip_checks">Skip preliminary checks</string>
 
+    <string name="scripts_title">Custom scripts</string>
+    <string name="scripts_description">Import Lua, Cmd or Python (experimental) scripts. They remain in the app storage even after resetting client resources.</string>
+    <string name="scripts_import">Import script</string>
+    <string name="scripts_empty">No scripts imported. .lua, .cmd and .py files are accepted.</string>
+    <string name="scripts_imported">Imported script: %1$s</string>
+    <string name="scripts_import_failed">Script import failed: %1$s</string>
+    <string name="scripts_deleted">Script deleted.</string>
+    <string name="scripts_delete_title">Delete script?</string>
+    <string name="scripts_delete_body">%1$s will be permanently deleted.</string>
+    <string name="scripts_delete_failed">Script deletion failed: %1$s</string>
+    <string name="scripts_run_title">Run %1$s</string>
+    <string name="scripts_run_hint">Arguments are passed to “script run”. Leave empty to run without arguments.</string>
+    <string name="scripts_args">Arguments (optional)</string>
+    <string name="scripts_language_lua">Lua</string>
+    <string name="scripts_language_cmd">Cmd</string>
+    <string name="scripts_language_python">Python</string>
+    <string name="scripts_python_failed">Python execution failed: %1$s</string>
+
     <string name="files_title">Saved data</string>
     <string name="files_description">Client dumps, traces and logs. Client resources are hidden and cannot be deleted from here.</string>
     <string name="files_empty">No files. Run a dump or import a file.</string>
@@ -177,7 +195,8 @@
     <string name="settings_resources_pending">Resources will be installed on the next connection</string>
     <string name="settings_version_value">%1$s (%2$d)</string>
     <string name="settings_about_description">Proxmark3 client embedded in the app process, direct USB CDC transport, no external process and no bundled firmware.</string>
-    <string name="settings_license_summary">Free software distributed under the GNU General Public License v3. The Proxmark3 client (Iceman fork) is included under the same license.</string>
+    <string name="settings_license_summary">Free software distributed under the GNU General Public License v3. The Proxmark3 client (Iceman fork) is included under the same license. The Python runtime uses Chaquopy and the Python Software Foundation License.</string>
+    <string name="settings_third_party_notices">Third-party notices</string>
 
     <string name="common_more">More</string>
     <string name="common_less">Less</string>

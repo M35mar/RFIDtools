@@ -8,6 +8,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("com.chaquo.python")
 }
 
 // Reproducible reference to the embedded client and to this app revision.
@@ -62,6 +63,13 @@ val syncPm3ClientResources = tasks.register<Sync>("syncPm3ClientResources") {
     from(client.dir("cmdscripts")) {
         into("cmdscripts")
     }
+    // Python scripts are executed by the embedded Chaquopy runtime. The
+    // upstream SWIG wrapper is replaced by our Kotlin-bridge shim, so the
+    // generated pm3.py must not shadow it.
+    from(client.dir("pyscripts")) {
+        exclude("pm3.py")
+        into("pyscripts")
+    }
     from(client.dir("resources")) {
         into("resources")
     }
@@ -108,8 +116,8 @@ android {
         applicationId = "com.farmacia.pm3android"
         minSdk = 26
         targetSdk = 37
-        versionCode = 4
-        versionName = "0.4.0"
+        versionCode = 5
+        versionName = "0.5.0"
 
         ndk {
             // The only device flavour this project targets.
@@ -171,6 +179,12 @@ android {
             "META-INF/LICENSE.md",
             "META-INF/LICENSE-notice.md",
         )
+    }
+}
+
+chaquopy {
+    defaultConfig {
+        version = "3.14"
     }
 }
 

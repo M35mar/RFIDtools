@@ -87,6 +87,23 @@ fun SettingsScreen(viewModel: Pm3ViewModel) {
             .use { it.readText() }
     }
 
+    @SuppressLint("LocalContextResourcesRead")
+    val thirdPartyNotices = remember {
+        buildString {
+            append(
+                context.resources.openRawResource(R.raw.chaquopy_license)
+                    .bufferedReader()
+                    .use { it.readText() },
+            )
+            append("\n\n")
+            append(
+                context.resources.openRawResource(R.raw.python_license)
+                    .bufferedReader()
+                    .use { it.readText() },
+            )
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -301,6 +318,11 @@ fun SettingsScreen(viewModel: Pm3ViewModel) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(licenseText, style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        text = stringResource(R.string.settings_third_party_notices),
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                    Text(thirdPartyNotices, style = MaterialTheme.typography.bodySmall)
                 }
             },
             confirmButton = {

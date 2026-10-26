@@ -15,14 +15,15 @@ to a PM3-compatible board over direct USB CDC-ACM. The UI is native Android
 
 ## Download
 
-The official `0.4.0` GitHub release contains a **debug-signed APK for testing**:
+The official `0.5.0` GitHub release contains a **debug-signed APK for testing**:
 
-**[Download `pm3-debug.apk`](https://github.com/M35mar/RFIDtools/releases/download/0.4.0/pm3-debug.apk)**
+**[Download `pm3-debug.apk`](https://github.com/M35mar/RFIDtools/releases/download/0.5.0/pm3-debug.apk)**
 
 > The debug APK uses package id `com.farmacia.pm3android.debug`, version
-> `0.4.0-debug`, and the Android debug keystore. It is intended for testing and
+> `0.5.0-debug`, and the Android debug keystore. It is intended for testing and
 > sideloading, not for production distribution. A release build requires your
-> own signing key.
+> own signing key. The APK includes the embedded CPython runtime used by the
+> optional Python script support, so it is larger than the 0.4.x build.
 
 Prefer building it yourself? See [Building from source](#building-from-source).
 
@@ -35,32 +36,34 @@ Termux/child-process architecture with a single app process:
 - the Proxmark3 client is compiled into the APK;
 - USB CDC bulk transfers are handled by a small Kotlin driver;
 - the client's normal `socket:` transport is bridged to that USB link;
-- the Compose UI sends commands as strings and shows captured output.
+- the Compose UI sends commands as strings and shows captured output;
+- Lua/Cmd scripts run inside the native client, while optional Python scripts
+  run in an embedded CPython runtime and call the same client through JNI.
 
 This means no external binaries, no Termux installation, no serial-port
 library, and no Bluetooth/SPP layer.
 
-## What's new in 0.4.0
+## What's new in 0.5.0
 
-- **Material 3 UI** with light/dark/system themes, dynamic colour, adaptive
-  launcher icon and Android 12+ splash screen.
-- **Complete UI refresh**: Device, Console, Tools, Files and Info/Settings.
-- **Robust USB lifecycle**: permission timeout, hotplug/detach handling,
-  race-safe connect/abort, transport-first teardown and clean native cleanup.
-- **Console improvements**: history, copy/share, follow mode, clear
-  confirmation, configurable font size and preserved blank output lines.
-- **Files manager**: dumps/traces/log filters, SAF import/export, share via
-  `FileProvider`, delete confirmation and protection for client resources.
-- **Settings**: theme, dynamic colour, console font size, keep-screen-on,
-  follow mode, settings backup/restore, client-resource reset and install
-  status.
-- **Localized UI** in Italian and English, including Tools commands and
-  parameter dialogs.
-- **Build/release quality**: compile/target SDK 37, Kotlin 2.4.21, AGP 9.4.1,
-  Gradle 9.8.2, 16 KB-compatible native library, unit tests, lint and CI.
-- **Static shortcuts** for Device and Console that also work in debug builds.
+- **Custom script support** in Tools: import `.lua`, `.cmd` and `.py` files,
+  keep them across client-resource resets, run them with optional arguments and
+  delete them safely.
+- **Embedded Python runtime** via Chaquopy. Python scripts call the same
+  in-process native client through a small `pm3` compatibility shim; no
+  Termux, shell or external process is involved.
+- **Bundled upstream Python scripts** are installed with the other client
+  resources and can be run from the console, for example
+  `script run mfuev1_counter_reset.py -c 0`.
+- **Python support is experimental**: scripts which need SWIG objects,
+  external pip packages or long-running interactive stdin are not guaranteed
+  to work. Lua and Cmd scripts continue to use the native client directly.
+- Script files are validated, stored outside the disposable resource tree and
+  mirrored into the client directories, so a resource reset does not destroy
+  user work.
 
-See [CHANGELOG.md](CHANGELOG.md) for the full history.
+The 0.4.x release introduced the Material 3 UI, USB lifecycle hardening, the
+in-process client, the Files manager, settings and localized tools. See
+[CHANGELOG.md](CHANGELOG.md) for the full history.
 
 ## Features
 
@@ -85,6 +88,21 @@ See [CHANGELOG.md](CHANGELOG.md) for the full history.
 - Parameter dialogs for file names, counters and increment values.
 - Recent command list.
 - Commands are syntax-checked against the pinned client.
+
+### Scripts
+
+- Import user scripts with the Storage Access Framework (`.lua`, `.cmd`, `.py`).
+- Run scripts with optional arguments through the normal console and history.
+- Keep user scripts across **Reset client resources**.
+- Python scripts run in an embedded CPython runtime and use the same in-process
+  Proxmark3 client via a `pm3` compatibility module.
+- Python is experimental. The bundled upstream scripts are provided as a
+  starting point, but scripts that depend on the SWIG `_pm3` object API,
+  non-bundled pip packages, audio/graphics libraries or interactive stdin may
+  not work. Lua and Cmd remain the most compatible options.
+
+Only run scripts you trust: imported scripts are code and can execute any
+Proxmark3 command available to the app.
 
 ### Files
 
@@ -162,6 +180,9 @@ and verify that the board enumerates with vendor ID `0x9ac4` and product ID
   reimplemented in `pm3_jni.c`, reporting failure as a status.
 - Command output is captured with the client's own grabber
   (`pm3_grabbed_output_get`), with no PTY and no pipes.
+- Python scripts run in Chaquopy's CPython runtime; the `pm3` shim forwards
+  `console()` calls through `Pm3PythonBridge` to the same JNI client, so both
+  script runtimes share one USB session and one command serialisation point.
 
 ## Building from source
 
@@ -171,6 +192,7 @@ and verify that the board enumerates with vendor ID `0x9ac4` and product ID
 - NDK **27.2.12479018** (pinned; `NDK_VERSION` can override)
 - CMake **3.22.1** (pinned; `CMAKE_VERSION` can override)
 - JDK **21**
+- Python **3.14** on the build host (required by Chaquopy)
 - Git, Bash and Ninja
 
 ### Commands
@@ -183,12 +205,17 @@ git submodule update --init --recursive
 
 The Gradle `preBuild` task invokes `scripts/build-native.sh` and produces
 `core/pm3/src/main/jniLibs/arm64-v8a/libpm3android.so`. Client resources
-(dictionaries, Lua libraries/scripts and resources) are synced from the
-submodule into `core/pm3/src/main/assets/`.
+(dictionaries, Lua libraries/scripts, Cmd scripts, Python scripts and resources)
+are synced from the submodule into `core/pm3/src/main/assets/`.
 
 Both generated directories are build artifacts and are excluded from git.
 `dictionaries/extras` (28 MB of generic brute-force dictionaries) is
-deliberately not packaged.
+deliberately not packaged. The embedded CPython runtime adds roughly 20 MB to
+the debug APK.
+
+The Python bridge source lives in `core/pm3/src/main/python/`:
+`pm3.py` is the compatibility shim and `pm3_runner.py` captures script output
+and arguments. The upstream SWIG `pm3.py` is intentionally not packaged.
 
 The native build enables 16 KB page compatibility:
 
@@ -217,7 +244,7 @@ passwords.
 ```
 
 GitHub Actions runs tests, lint and the debug build. Pushing a tag such as
-`0.4.0` also publishes a GitHub release with the debug APK attached.
+`0.5.0` also publishes a GitHub release with the debug APK attached.
 
 ## Troubleshooting
 
@@ -251,8 +278,9 @@ GitHub Actions runs tests, lint and the debug build. Pushing a tag such as
 **I need to reset the client resources**
 
 Open **Info / Settings → Reset client resources** while disconnected. Dumps,
-traces and logs are preserved; dictionaries, Lua libraries/scripts and
-resources are reinstalled on the next connection.
+traces and logs are preserved, as are scripts imported through **Tools →
+Custom scripts**. Dictionaries, bundled Lua/Cmd/Python scripts and resources
+are reinstalled on the next connection.
 
 ## Privacy and security
 
@@ -262,6 +290,9 @@ resources are reinstalled on the next connection.
 - Files leave the app only through an explicit share or export action.
 - USB access is requested through the Android USB permission dialog.
 - The app does not flash firmware or expose a network service.
+- Imported scripts execute with the app's permissions. Only import scripts
+  you trust. The app has no `INTERNET` permission, so Python scripts cannot
+  open network connections even though the Python standard library is present.
 
 ## Project layout
 
@@ -273,6 +304,7 @@ core/pm3/
     ui/          Compose app, screens, components and theme
     util/        formatting helpers
   src/main/cpp/  JNI glue and native client build
+  src/main/python/  Chaquopy compatibility shim and script runner
   src/test/      unit tests
 scripts/         native build and submodule preparation
 third_party/     pinned Proxmark3 submodule
@@ -292,6 +324,9 @@ third_party/     pinned Proxmark3 submodule
 - The MIFARE Ultralight Ev1 counter-reset Lua script is a port of the Python
   script in the Proxmark3 client, which credits the
   [Quarkslab anti-tearing research](https://blog.quarkslab.com/rfid-monotonic-counter-anti-tearing-defeated.html).
+- Python script execution uses [Chaquopy](https://chaquo.com/chaquopy/), which
+  embeds CPython in the Android app. The Python standard library and bundled
+  `pyscripts` retain their upstream licences.
 
 ## License
 

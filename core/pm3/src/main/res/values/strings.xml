@@ -112,6 +112,24 @@
     <string name="tool_mfuev1_reset_desc">Reset dei contatori con lo script anti-tearing incluso.</string>
     <string name="tool_param_skip_checks">Salta controlli preliminari</string>
 
+    <string name="scripts_title">Script personalizzati</string>
+    <string name="scripts_description">Importa script Lua, Cmd o Python (sperimentale). Restano nell’archivio dell’app anche dopo il ripristino delle risorse client.</string>
+    <string name="scripts_import">Importa script</string>
+    <string name="scripts_empty">Nessuno script importato. Sono accettati file .lua, .cmd e .py.</string>
+    <string name="scripts_imported">Script importato: %1$s</string>
+    <string name="scripts_import_failed">Importazione script non riuscita: %1$s</string>
+    <string name="scripts_deleted">Script eliminato.</string>
+    <string name="scripts_delete_title">Eliminare lo script?</string>
+    <string name="scripts_delete_body">%1$s verrà eliminato definitivamente.</string>
+    <string name="scripts_delete_failed">Eliminazione script non riuscita: %1$s</string>
+    <string name="scripts_run_title">Esegui %1$s</string>
+    <string name="scripts_run_hint">Gli argomenti vengono passati a “script run”. Lascia vuoto per eseguire senza argomenti.</string>
+    <string name="scripts_args">Argomenti (opzionale)</string>
+    <string name="scripts_language_lua">Lua</string>
+    <string name="scripts_language_cmd">Cmd</string>
+    <string name="scripts_language_python">Python</string>
+    <string name="scripts_python_failed">Esecuzione Python non riuscita: %1$s</string>
+
     <string name="files_title">Dati salvati</string>
     <string name="files_description">Dump, tracce e log del client. Le risorse del client non sono mostrate e non possono essere eliminate da qui.</string>
     <string name="files_empty">Nessun file. Esegui un dump o importa un file.</string>
@@ -177,7 +195,8 @@
     <string name="settings_resources_pending">Risorse da installare al prossimo collegamento</string>
     <string name="settings_version_value">%1$s (%2$d)</string>
     <string name="settings_about_description">Client Proxmark3 integrato nel processo dell’app, trasporto USB CDC diretto, nessun processo esterno e nessun firmware incluso.</string>
-    <string name="settings_license_summary">Software libero distribuito secondo la GNU General Public License v3. Il client Proxmark3 (Iceman fork) è incluso con la stessa licenza.</string>
+    <string name="settings_license_summary">Software libero distribuito secondo la GNU General Public License v3. Il client Proxmark3 (Iceman fork) è incluso con la stessa licenza. Il runtime Python usa Chaquopy e la Python Software Foundation License.</string>
+    <string name="settings_third_party_notices">Licenze di terze parti</string>
 
     <string name="common_more">Altro</string>
     <string name="common_less">Meno</string>

@@ -5,6 +5,8 @@ local.properties
 .cxx/
 *.apk
 *.aab
+__pycache__/
+*.py[cod]
 
 # Asset/native outputs created by the build from the proxmark3 submodule
 core/pm3/src/main/assets/

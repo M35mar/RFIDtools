@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.5.0 — 2026-10-26
+
+### Added
+- Custom script manager in **Tools**: import, run with arguments and delete
+  `.lua`, `.cmd` and `.py` files. User scripts survive client-resource resets.
+- Embedded CPython 3.14 runtime via Chaquopy for Python scripts. A `pm3`
+  compatibility shim forwards `console()` calls to the in-process native
+  client, so Python does not need Termux, a shell or an external process.
+- Upstream `pyscripts` are packaged and installed with the other client
+  resources. Python commands typed as `script run name.py ...` are routed to
+  the embedded runtime.
+- Unit tests for script-name validation and language detection.
+
+### Changed
+- Version `0.5.0` (`versionCode` 5).
+- CI installs Python 3.14 for the Chaquopy build and release notes identify the
+  Python support as experimental.
+- Debug APK size increases because it now contains CPython and the Python
+  standard library; native libraries are still 16 KB page aligned.
+
+### Notes
+- Python support is an MVP. Scripts which depend on the SWIG `_pm3` object API,
+  non-bundled pip packages, audio/graphics libraries or interactive stdin may
+  fail. Lua and Cmd remain the most compatible scripting options.
+- Imported scripts execute with the app's permissions; only run trusted code.
+
 ## 0.4.0 — 2026-10-26
 
 ### Fixed

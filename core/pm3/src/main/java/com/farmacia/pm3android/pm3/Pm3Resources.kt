@@ -1,6 +1,7 @@
 // Installs the client-side resources (dictionaries, lua libs/scripts, cmd
-// scripts, data resources) from the APK assets into $HOME/.proxmark3, the
-// location the client builds from include/common.h looks up first on Android.
+// scripts, Python scripts, data resources) from the APK assets into
+// $HOME/.proxmark3, the location the client builds from include/common.h looks
+// up first on Android.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -9,6 +10,7 @@ package com.farmacia.pm3android.pm3
 import android.content.Context
 import android.util.Log
 import com.farmacia.pm3android.BuildConfig
+import com.farmacia.pm3android.data.Pm3ScriptStore
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.FileOutputStream
@@ -26,6 +28,7 @@ object Pm3Resources {
         "lualibs",
         "luascripts",
         "cmdscripts",
+        "pyscripts",
         "resources",
     )
 
@@ -61,6 +64,9 @@ object Pm3Resources {
         for (dir in listOf("traces", "logs")) {
             File(target, dir).mkdirs()
         }
+        // Reinstall user scripts after the bundled trees have been replaced.
+        // The originals live in user-scripts/ and survive reset().
+        Pm3ScriptStore.installAll(context)
         stamp.writeText(STAMP)
         Log.i(TAG, "client resources installed in ${target.path}")
     }

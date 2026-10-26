@@ -23,9 +23,13 @@ import com.farmacia.pm3android.data.AppPreferences
 import com.farmacia.pm3android.data.AppSettings
 import com.farmacia.pm3android.data.Pm3File
 import com.farmacia.pm3android.data.Pm3FileFilter
+import com.farmacia.pm3android.data.Pm3Script
+import com.farmacia.pm3android.data.Pm3ScriptStore
+import com.farmacia.pm3android.data.ScriptLanguage
 import com.farmacia.pm3android.data.ThemeMode
 import com.farmacia.pm3android.pm3.Pm3Client
 import com.farmacia.pm3android.pm3.Pm3ConnectionState
+import com.farmacia.pm3android.pm3.Pm3PythonRunner
 import com.farmacia.pm3android.pm3.Pm3Resources
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -72,6 +76,9 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
 
     private val filesFlow = MutableStateFlow<List<Pm3File>>(emptyList())
     val files: StateFlow<List<Pm3File>> = filesFlow
+
+    private val scriptsFlow = MutableStateFlow<List<Pm3Script>>(emptyList())
+    val scripts: StateFlow<List<Pm3Script>> = scriptsFlow
 
     private val filesLoadingFlow = MutableStateFlow(false)
     val filesLoading: StateFlow<Boolean> = filesLoadingFlow
@@ -131,6 +138,7 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
         )
         refreshDevice()
         refreshFiles()
+        refreshScripts()
     }
 
     fun refreshDevice() {
@@ -230,6 +238,12 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
         ) {
             return false
         }
+        // Python scripts run in the Chaquopy runtime, not in the native client.
+        // Intercept only an exact `script run name.py ...` so other client
+        // commands keep their normal path.
+        parsePythonCommand(command)?.let { (script, arguments) ->
+            return runPythonScript(script, arguments, command)
+        }
         appendLine("> $command")
         addHistory(command)
         return submitWork {
@@ -321,6 +335,151 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
                 fileOpBusyFlow.value = false
             }
         }
+    }
+
+    fun refreshScripts() {
+        val app = getApplication<Application>()
+        viewModelScope.launch {
+            try {
+                scriptsFlow.value = withContext(Dispatchers.IO) {
+                    Pm3ScriptStore.list(app)
+                }
+            } catch (t: CancellationException) {
+                throw t
+            } catch (_: Throwable) {
+                scriptsFlow.value = emptyList()
+            }
+        }
+    }
+
+    fun importScript(uri: Uri) {
+        fileOpBusyFlow.value = true
+        val app = getApplication<Application>()
+        viewModelScope.launch {
+            try {
+                val name = withContext(Dispatchers.IO) {
+                    queryDisplayName(uri)
+                        ?: throw IOException(app.getString(R.string.common_input_unavailable))
+                }
+                val imported = withContext(Dispatchers.IO) {
+                    val input = app.contentResolver.openInputStream(uri)
+                        ?: throw IOException(app.getString(R.string.common_input_unavailable))
+                    Pm3ScriptStore.import(app, name, input)
+                }
+                notify(app.getString(R.string.scripts_imported, imported.name))
+                refreshScripts()
+            } catch (t: CancellationException) {
+                throw t
+            } catch (t: Throwable) {
+                notify(app.getString(R.string.scripts_import_failed, errorText(t)))
+            } finally {
+                fileOpBusyFlow.value = false
+            }
+        }
+    }
+
+    fun deleteScript(script: Pm3Script) {
+        val app = getApplication<Application>()
+        viewModelScope.launch {
+            try {
+                val deleted = withContext(Dispatchers.IO) {
+                    Pm3ScriptStore.delete(app, script)
+                }
+                if (deleted) {
+                    notify(app.getString(R.string.scripts_deleted))
+                    refreshScripts()
+                } else {
+                    notify(app.getString(R.string.scripts_delete_failed, script.name))
+                }
+            } catch (t: CancellationException) {
+                throw t
+            } catch (t: Throwable) {
+                notify(app.getString(R.string.scripts_delete_failed, script.name))
+            }
+        }
+    }
+
+    /**
+     * Runs a user script through the normal console path. Arguments are kept
+     * verbatim because this is the public `script run` interface; the file
+     * name itself was sanitized on import.
+     */
+    fun runScript(script: Pm3Script, arguments: String): Boolean {
+        val suffix = arguments.trim().take(512)
+        val command = if (suffix.isEmpty()) {
+            "script run ${script.name}"
+        } else {
+            "script run ${script.name} $suffix"
+        }
+        return if (script.language == ScriptLanguage.PYTHON) {
+            runPythonScript(script, suffix, command)
+        } else {
+            runCommand(command)
+        }
+    }
+
+    private fun runPythonScript(
+        script: Pm3Script,
+        arguments: String,
+        command: String,
+    ): Boolean {
+        if (busyFlow.value || connectionState.value != Pm3ConnectionState.CONNECTED) {
+            return false
+        }
+        appendLine("> $command")
+        addHistory(command)
+        val app = getApplication<Application>()
+        return submitWork {
+            try {
+                val output = withContext(Dispatchers.IO) {
+                    // Run the installed mirror so sibling modules in
+                    // .proxmark3/pyscripts are importable. Fall back to the
+                    // original if the mirror is missing.
+                    val mirror = File(
+                        Pm3ScriptStore.activeDirectory(app, ScriptLanguage.PYTHON),
+                        script.name,
+                    )
+                    val executable = if (mirror.isFile) mirror else script.file
+                    Pm3PythonRunner.run(app, executable, arguments)
+                }
+                appendQuietly(output)
+            } catch (t: CancellationException) {
+                throw t
+            } catch (t: Throwable) {
+                appendQuietly(
+                    app.getString(R.string.scripts_python_failed, errorText(t)),
+                )
+            }
+        }
+    }
+
+    /**
+     * Recognises `script run name.py [args]` and resolves the script in the
+     * installed pyscripts directory. The name is kept to a single path
+     * component so a console command cannot escape that directory.
+     */
+    private fun parsePythonCommand(command: String): Pair<Pm3Script, String>? {
+        if (!command.startsWith("script run ")) return null
+        val rest = command.removePrefix("script run ").trim()
+        val name = rest.substringBefore(' ')
+        if (!name.endsWith(".py", ignoreCase = true) ||
+            '/' in name ||
+            '\\' in name
+        ) {
+            return null
+        }
+        val app = getApplication<Application>()
+        val file = File(Pm3ScriptStore.activeDirectory(app, ScriptLanguage.PYTHON), name)
+        if (!file.isFile) return null
+        val script = Pm3Script(
+            file = file,
+            name = file.name,
+            language = ScriptLanguage.PYTHON,
+            size = file.length(),
+            lastModified = file.lastModified(),
+        )
+        val arguments = rest.removePrefix(name).trim().take(512)
+        return script to arguments
     }
 
     fun exportFile(uri: Uri, entry: Pm3File) {

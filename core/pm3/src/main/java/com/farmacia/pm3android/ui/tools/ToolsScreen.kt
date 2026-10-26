@@ -50,6 +50,7 @@ import com.farmacia.pm3android.R
 import com.farmacia.pm3android.pm3.Pm3ConnectionState
 import com.farmacia.pm3android.ui.components.SectionCard
 import com.farmacia.pm3android.ui.console.Pm3ViewModel
+import com.farmacia.pm3android.ui.scripts.ScriptsSection
 
 /** Factories returning the common type, so list inference stays simple. */
 private fun valueOf(
@@ -358,6 +359,10 @@ fun ToolsScreen(viewModel: Pm3ViewModel) {
                     }
                 }
             }
+        }
+
+        if (query.isEmpty()) {
+            ScriptsSection(viewModel)
         }
 
         filteredSections.forEach { section ->

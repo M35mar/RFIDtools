@@ -26,6 +26,11 @@ jobs:
           distribution: temurin
           java-version: '21'
 
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
 
@@ -69,6 +74,7 @@ jobs:
             "- Version name: \`${TAG}-debug\`" \
             '- ABI: `arm64-v8a`' \
             '- Minimum Android: 8.0 (API 26)' \
+            '- Scripts: Lua, Cmd, Python (experimental)' \
             '' \
             'This build uses the Android debug keystore. It is **not** a production-signed release.' \
             'See the README for installation, hardware compatibility, build and troubleshooting notes.' \
