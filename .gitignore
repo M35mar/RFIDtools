@@ -16,3 +16,8 @@ core/pm3/src/main/jniLibs/
 .DS_Store
 
 # SDK binaries live outside the repo (../tools)
+
+# Release signing
+keystore.properties
+*.jks
+*.keystore

@@ -1,39 +1,54 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    pm3-android — Proxmark3 tools for a generic Chinese PM3 (CDC).
+    pm3-android — Proxmark3 tools for Android.
     SPDX-License-Identifier: GPL-3.0-or-later
 -->
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- The app is useless without the PM3 attached over USB -->
+    <!-- The app is useless without a USB-host capable device. -->
     <uses-feature
         android:name="android.hardware.usb.host"
         android:required="true" />
 
     <application
         android:allowBackup="false"
-        android:label="PM3 Android">
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:localeConfig="@xml/locales_config"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.PM3Android"
+        tools:ignore="DataExtractionRules"
+        tools:targetApi="33">
 
         <activity
             android:name=".MainActivity"
+            android:enableOnBackInvokedCallback="true"
             android:exported="true"
-            android:launchMode="singleTask">
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize"
+            tools:targetApi="33">
 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Offer the app when the (unconfigured) PM3 is plugged in -->
+            <!-- Offer the app when a PM3 is plugged in. -->
             <intent-filter>
                 <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
             </intent-filter>
             <meta-data
                 android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
                 android:resource="@xml/device_filter" />
+
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
         </activity>
 
-        <!-- Share gate for client output files (dumps, traces, logs) -->
+        <!-- Share gate for client output files (dumps, traces, logs). -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

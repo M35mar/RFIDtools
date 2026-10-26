@@ -23,6 +23,7 @@ class LocalSocketBridge(private val socketName: String) {
         private const val DEVICE_READ_BUFFER = 16 * 1024
         private const val SOCKET_READ_BUFFER = 4096
         private const val ACCEPT_WAIT_MS = 3000L
+        private const val JOIN_WAIT_MS = 500L
     }
 
     private var server: LocalServerSocket? = null
@@ -30,14 +31,16 @@ class LocalSocketBridge(private val socketName: String) {
     private var deviceInput: InputStream? = null
     private var deviceOutput: OutputStream? = null
 
+    @Volatile
+    private var running = false
+
     /** Counted down once accept() is reached, see the class contract. */
     private val acceptStarted = CountDownLatch(1)
     private var acceptThread: Thread? = null
-    private var running = false
 
     /**
      * Starts listening and begins forwarding as soon as the client connects.
-     * The streams stay owned by the caller: [stop] must not close them.
+     * The streams are closed by [stop] as well: they belong to this transport.
      */
     @Throws(Exception::class)
     fun start(deviceInput: InputStream, deviceOutput: OutputStream) {
@@ -45,9 +48,14 @@ class LocalSocketBridge(private val socketName: String) {
         this.deviceInput = deviceInput
         this.deviceOutput = deviceOutput
         running = true
-        // Bind before acceptLoop() runs: the loop returns as soon as server
-        // is null, and without this the native client gets ECONNREFUSED.
-        server = LocalServerSocket(socketName)
+        server = try {
+            LocalServerSocket(socketName)
+        } catch (t: Throwable) {
+            running = false
+            this.deviceInput = null
+            this.deviceOutput = null
+            throw t
+        }
         acceptThread = thread(name = "pm3-bridge-accept") { acceptLoop() }
         if (!acceptStarted.await(ACCEPT_WAIT_MS, TimeUnit.MILLISECONDS)) {
             stop()
@@ -60,19 +68,17 @@ class LocalSocketBridge(private val socketName: String) {
         // Only one client (the client's own session) is expected; a stray or
         // stale late connection just replaces the previous one.
         while (running) {
-            val server = server ?: break
+            val activeServer = server ?: break
             val socket = try {
-                server.accept()
+                activeServer.accept()
             } catch (ignored: Exception) {
                 break
             }
-            val previous = client
-            if (previous != null) {
-                try {
-                    previous.close()
-                } catch (ignored: Exception) {
-                }
+            if (!running) {
+                runCatching { socket.close() }
+                break
             }
+            runCatching { client?.close() }
             client = socket
             val socketInput = socket.inputStream
             val socketOutput = socket.outputStream
@@ -110,22 +116,29 @@ class LocalSocketBridge(private val socketName: String) {
                     socketOutput.write(buffer, 0, length)
                     socketOutput.flush()
                 }
+                if (length < 0) {
+                    break
+                }
             }
         } catch (ignored: Exception) {
         }
     }
 
-    /** Closes the listener and any live client connection. */
+    /** Closes the listener, the client connection and both transport streams. */
     fun stop() {
         running = false
-        try {
-            client?.close()
-            client = null
-            server?.close()
-            server = null
-        } catch (ignored: Exception) {
+        runCatching { client?.close() }
+        client = null
+        runCatching { server?.close() }
+        server = null
+        runCatching { deviceInput?.close() }
+        deviceInput = null
+        runCatching { deviceOutput?.close() }
+        deviceOutput = null
+        val thread = acceptThread
+        if (thread != null && thread !== Thread.currentThread()) {
+            runCatching { thread.join(JOIN_WAIT_MS) }
         }
-        // The USB reader may be blocked inside bulkTransfer(): closing the
-        // caller side stream is what unblocks it.
+        acceptThread = null
     }
 }

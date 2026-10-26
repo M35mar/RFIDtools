@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 0x9ac4 / 0x4b8f: the IDs the PM3 firmware reports (usb_cdc_desc.c) -->
+<!-- 0x9ac4 / 0x4b8f: the IDs the PM3 firmware reports (usb_cdc_desc.c).
+     39620 = 0x9AC4, 19343 = 0x4B8F. -->
 <resources>
     <usb-device
         product-id="19343"
-        vendor-id="39556" />
+        vendor-id="39620" />
 </resources>

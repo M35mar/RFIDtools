@@ -43,29 +43,50 @@ if [[ -n "$SDK" ]]; then
     fi
 fi
 
+NDK_VERSION="${NDK_VERSION:-27.2.12479018}"
+CMAKE_VERSION="${CMAKE_VERSION:-3.22.1}"
 if [[ -n "${ANDROID_NDK:-}" ]]; then
     NDK="$ANDROID_NDK"
     if command -v cygpath >/dev/null 2>&1; then
         NDK="$(cygpath -u "$NDK")"
     fi
 else
-    SDK="${SDK:?ANDROID_SDK or ANDROID_SDK_ROOT must be set}"
-    NDK="$(ls -d "$SDK"/ndk/* 2>/dev/null | sort -V | tail -n1)"
+    SDK="${SDK:?ANDROID_SDK or ANDROID_SDK_ROOT must be set (or set ANDROID_NDK)}"
+    NDK="$SDK/ndk/$NDK_VERSION"
 fi
-CMAKE="$(ls "$SDK"/cmake/*/bin/cmake 2>/dev/null | sort -V | tail -n1)"
-NINJA="$(ls "$SDK"/cmake/*/bin/ninja 2>/dev/null | sort -V | tail -n1)"
+if [[ ! -f "$NDK/build/cmake/android.toolchain.cmake" ]]; then
+    echo "NDK not found at $NDK" >&2
+    exit 1
+fi
+
+if [[ -n "$SDK" ]]; then
+    CMAKE="$SDK/cmake/$CMAKE_VERSION/bin/cmake"
+    NINJA="$SDK/cmake/$CMAKE_VERSION/bin/ninja"
+    if [[ ! -x "$CMAKE" || ! -x "$NINJA" ]]; then
+        echo "CMake $CMAKE_VERSION not found in $SDK/cmake" >&2
+        exit 1
+    fi
+else
+    CMAKE="$(command -v cmake || true)"
+    NINJA="$(command -v ninja || true)"
+    if [[ -z "$CMAKE" || -z "$NINJA" ]]; then
+        echo "CMake and Ninja are required when ANDROID_SDK_ROOT is not set" >&2
+        exit 1
+    fi
+fi
 
 echo ">> configure (ndk=$NDK)"
 mkdir -p "$BUILD_DIR"
-if [[ ! -f "$BUILD_DIR/build.ninja" ]]; then
-    "$CMAKE" -S "$SRC_DIR" -B "$BUILD_DIR" -G Ninja \
-        -DCMAKE_MAKE_PROGRAM="$NINJA" \
-        -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
-        -DANDROID_ABI=arm64-v8a \
-        -DANDROID_PLATFORM=android-26 \
-        -DANDROID_STL=c++_static \
-        -DCMAKE_BUILD_TYPE=Release
-fi
+# Configure every time: CMake is incremental and this makes flag changes
+# (NDK version, 16 KB page support, ...) take effect on existing build dirs.
+"$CMAKE" -S "$SRC_DIR" -B "$BUILD_DIR" -G Ninja \
+    -DCMAKE_MAKE_PROGRAM="$NINJA" \
+    -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
+    -DANDROID_ABI=arm64-v8a \
+    -DANDROID_PLATFORM=android-26 \
+    -DANDROID_STL=c++_static \
+    -DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON \
+    -DCMAKE_BUILD_TYPE=Release
 
 echo ">> external project archives (bzip2, lz4)"
 "$CMAKE" --build "$BUILD_DIR" --target pm3client/bzip2 pm3client/lz4

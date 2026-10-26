@@ -122,11 +122,17 @@ else
     echo ">> linenoise already extracted"
 fi
 
-# "Patch to get proper autocompletion of subcommands" (upstream diff)
-sed -i -e 's/^  int startIndex = pos;$/  int startIndex = 0;/' "$LND/linenoise.cpp"
-if ! grep -q "int startIndex = 0;" "$LND/linenoise.cpp"; then
-    echo "autocompletion patch did not apply" >&2
-    exit 1
+# "Patch to get proper autocompletion of subcommands" (upstream diff).
+# Do not rewrite an already-patched file: sed -i would bump its mtime and
+# force an unnecessary native recompile on every build.
+if grep -q "int startIndex = 0;" "$LND/linenoise.cpp"; then
+    echo ">> autocompletion patch already applied"
+else
+    sed -i -e 's/^  int startIndex = pos;$/  int startIndex = 0;/' "$LND/linenoise.cpp"
+    if ! grep -q "int startIndex = 0;" "$LND/linenoise.cpp"; then
+        echo "autocompletion patch did not apply" >&2
+        exit 1
+    fi
 fi
 
 if [ ! -f "$DEPS/linenoise.cmake" ]; then

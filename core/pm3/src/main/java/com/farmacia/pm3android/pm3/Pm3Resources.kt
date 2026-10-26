@@ -8,15 +8,18 @@ package com.farmacia.pm3android.pm3
 
 import android.content.Context
 import android.util.Log
+import com.farmacia.pm3android.BuildConfig
 import java.io.File
+import java.io.FileNotFoundException
 import java.io.FileOutputStream
 
 object Pm3Resources {
 
     private const val TAG = "pm3-resources"
 
-    // Bump when the bundled client resource set changes.
-    private const val STAMP = "pm3-android-resources-2"
+    // Reinstall on every app version bump: the bundled client resource set
+    // can change when the proxmark3 submodule is updated.
+    private val STAMP = "pm3-android-resources-${BuildConfig.VERSION_CODE}"
 
     private val DIRECTORIES = listOf(
         "dictionaries",
@@ -62,6 +65,23 @@ object Pm3Resources {
         Log.i(TAG, "client resources installed in ${target.path}")
     }
 
+    @Synchronized
+    fun isInstalled(context: Context): Boolean {
+        val stamp = File(userDirectory(context), ".asset-stamp")
+        return stamp.isFile && runCatching { stamp.readText() == STAMP }.getOrDefault(false)
+    }
+
+    /** Removes the installed resource trees but keeps logs, traces and prefs. */
+    @Synchronized
+    fun reset(context: Context) {
+        val target = userDirectory(context)
+        for (dir in DIRECTORIES) {
+            File(target, dir).deleteRecursively()
+        }
+        File(target, ".asset-stamp").delete()
+        Log.i(TAG, "client resources reset in ${target.path}")
+    }
+
     private fun copyAssetDirectory(
         assets: android.content.res.AssetManager,
         assetPath: String,
@@ -70,12 +90,20 @@ object Pm3Resources {
         for (entry in assets.list(assetPath) ?: return) {
             val entryPath = if (assetPath.isEmpty()) entry else "$assetPath/$entry"
             val output = File(destination, entry)
-            val isDirectory = (assets.list(entryPath)?.isNotEmpty() ?: false) || entry.endsWith("/")
+            val children = assets.list(entryPath)
+            val isDirectory = entry.endsWith("/") || (children?.isNotEmpty() == true)
             if (isDirectory) {
                 output.mkdirs()
                 copyAssetDirectory(assets, entryPath, output)
             } else {
-                copyAssetFile(assets, entryPath, output)
+                try {
+                    copyAssetFile(assets, entryPath, output)
+                } catch (_: FileNotFoundException) {
+                    // AssetManager cannot distinguish an empty directory from
+                    // a file through list(); create it and recurse.
+                    output.mkdirs()
+                    copyAssetDirectory(assets, entryPath, output)
+                }
             }
         }
     }

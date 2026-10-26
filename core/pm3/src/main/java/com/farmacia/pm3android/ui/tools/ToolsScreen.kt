@@ -1,24 +1,33 @@
-// Tools screen: curated command buttons. Every command is syntax-checked
-// against the pinned client (the command trees in client/src/cmd*.c).
-// Parametric commands show a dialog to fill in the values, then the template
-// placeholders ({name}) are substituted and the command goes to the console.
+// Tools screen: curated command buttons, searchable and collapsible. Every
+// command is syntax-checked against the pinned client (the command trees in
+// client/src/cmd*.c). Parametric commands show a dialog to fill in values.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 package com.farmacia.pm3android.ui.tools
 
+import androidx.annotation.StringRes
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -30,29 +39,34 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.farmacia.pm3android.R
 import com.farmacia.pm3android.pm3.Pm3ConnectionState
+import com.farmacia.pm3android.ui.components.SectionCard
 import com.farmacia.pm3android.ui.console.Pm3ViewModel
-
 
 /** Factories returning the common type, so list inference stays simple. */
 private fun valueOf(
     name: String,
-    label: String,
+    @StringRes label: Int,
     placeholder: String,
     defaultValue: String = "",
     digitsOnly: Boolean = false,
 ): ToolParam = ToolValue(name, label, placeholder, defaultValue, digitsOnly)
 
-private fun flagOf(label: String, literal: String): ToolParam = ToolSwitch(literal, label, literal)
+private fun flagOf(@StringRes label: Int, literal: String): ToolParam =
+    ToolSwitch(literal, label, literal)
 
 /** A value the user types in; digitsOnly forbids anything but numbers. */
 private data class ToolValue(
     val name: String,
-    val label: String,
+    @StringRes val label: Int,
     val placeholder: String,
     val defaultValue: String = "",
     val digitsOnly: Boolean = false,
@@ -61,7 +75,7 @@ private data class ToolValue(
 /** A checkbox that appends its literal (already with dashes) when checked. */
 private data class ToolSwitch(
     val name: String,
-    val label: String,
+    @StringRes val label: Int,
     val literal: String,
 ) : ToolParam
 
@@ -71,68 +85,177 @@ private fun ToolParam.asValue(): ToolValue? = this as? ToolValue
 private fun ToolParam.asSwitch(): ToolSwitch? = this as? ToolSwitch
 
 private data class ToolCommand(
-    val label: String,
+    @StringRes val label: Int,
     /** Command template; "{name}" tokens are replaced by ToolValue entries. */
     val template: String,
+    @StringRes val description: Int,
     val params: List<ToolParam> = emptyList(),
 )
 
+private data class ToolSectionData(
+    @StringRes val title: Int,
+    val commands: List<ToolCommand>,
+)
+
+private data class LocalizedToolCommand(
+    val command: ToolCommand,
+    val label: String,
+    val description: String,
+)
+
+private data class LocalizedToolSection(
+    val title: String,
+    val commands: List<LocalizedToolCommand>,
+)
+
 private val LF_COMMANDS = listOf(
-    ToolCommand("EM410x (lettura)", "lf em 410x reader"),
-    ToolCommand("HID (lettura)", "lf hid reader"),
-    ToolCommand("ioProx (lettura)", "lf io reader"),
-    ToolCommand("T55xx (rileva modulazione)", "lf t55xx detect"),
-    ToolCommand("T55xx (dump)", "lf t55xx dump"),
+    ToolCommand(
+        R.string.tool_lf_em410x_label,
+        "lf em 410x reader",
+        R.string.tool_lf_em410x_desc,
+    ),
+    ToolCommand(
+        R.string.tool_lf_hid_label,
+        "lf hid reader",
+        R.string.tool_lf_hid_desc,
+    ),
+    ToolCommand(
+        R.string.tool_lf_ioprox_label,
+        "lf io reader",
+        R.string.tool_lf_ioprox_desc,
+    ),
+    ToolCommand(
+        R.string.tool_lf_t55xx_detect_label,
+        "lf t55xx detect",
+        R.string.tool_lf_t55xx_detect_desc,
+    ),
+    ToolCommand(
+        R.string.tool_lf_t55xx_dump_label,
+        "lf t55xx dump",
+        R.string.tool_lf_t55xx_dump_desc,
+    ),
 )
 
 private val HF_COMMANDS = listOf(
-    ToolCommand("Ricerca tag HF", "hf search"),
-    ToolCommand("ISO14443A (info)", "hf 14a info"),
+    ToolCommand(
+        R.string.tool_hf_search_label,
+        "hf search",
+        R.string.tool_hf_search_desc,
+    ),
+    ToolCommand(
+        R.string.tool_hf_14a_info_label,
+        "hf 14a info",
+        R.string.tool_hf_14a_info_desc,
+    ),
 )
 
 private val MFC_COMMANDS = listOf(
-    ToolCommand("MIFARE Classic (info)", "hf mf info"),
-    ToolCommand("MIFARE Classic (dump)", "hf mf dump"),
-    ToolCommand("MIFARE Classic (chiavi note)", "hf mf chk"),
+    ToolCommand(
+        R.string.tool_mfc_info_label,
+        "hf mf info",
+        R.string.tool_mfc_info_desc,
+    ),
+    ToolCommand(
+        R.string.tool_mfc_dump_label,
+        "hf mf dump",
+        R.string.tool_mfc_dump_desc,
+    ),
+    ToolCommand(
+        R.string.tool_mfc_chk_label,
+        "hf mf chk",
+        R.string.tool_mfc_chk_desc,
+    ),
 )
 
 private val MFU_COMMANDS = listOf(
-    ToolCommand("MIFARE UL (info)", "hf mfu info"),
-    ToolCommand("MIFARE UL (dump)", "hf mfu dump"),
-    ToolCommand("MIFARE UL (NDEF)", "hf mfu ndefread"),
+    ToolCommand(
+        R.string.tool_mfu_info_label,
+        "hf mfu info",
+        R.string.tool_mfu_info_desc,
+    ),
+    ToolCommand(
+        R.string.tool_mfu_dump_label,
+        "hf mfu dump",
+        R.string.tool_mfu_dump_desc,
+    ),
+    ToolCommand(
+        R.string.tool_mfu_ndef_label,
+        "hf mfu ndefread",
+        R.string.tool_mfu_ndef_desc,
+    ),
 )
 
 private val MFU_EV1_COMMANDS = listOf(
-    ToolCommand("Info", "hf mfu info"),
-    ToolCommand("Dump", "hf mfu dump"),
     ToolCommand(
-        "Ripristina dump sul tag",
+        R.string.tool_mfuev1_info_label,
+        "hf mfu info",
+        R.string.tool_mfuev1_info_desc,
+    ),
+    ToolCommand(
+        R.string.tool_mfuev1_dump_label,
+        "hf mfu dump",
+        R.string.tool_mfuev1_dump_desc,
+    ),
+    ToolCommand(
+        R.string.tool_mfuev1_restore_label,
         "hf mfu restore -f {file}",
+        R.string.tool_mfuev1_restore_desc,
         listOf(
-            valueOf("file", "Nome del file dump", "vedi scheda Dati"),
+            valueOf(
+                "file",
+                R.string.tool_mfuev1_restore_param_file,
+                "dump.bin",
+            ),
         ),
     ),
     ToolCommand(
-        "Incrementa contatore",
+        R.string.tool_mfuev1_incr_label,
         "hf mfu incr -c {counter} -v {value}",
+        R.string.tool_mfuev1_incr_desc,
         listOf(
-            valueOf("counter", "Contatore (0-2)", "0", defaultValue = "0", digitsOnly = true),
-            valueOf("value", "Incremento (0-16777215)", "1", defaultValue = "1", digitsOnly = true),
+            valueOf(
+                "counter",
+                R.string.tool_mfuev1_counter_param,
+                "0",
+                defaultValue = "0",
+                digitsOnly = true,
+            ),
+            valueOf(
+                "value",
+                R.string.tool_mfuev1_increment_param,
+                "1",
+                defaultValue = "1",
+                digitsOnly = true,
+            ),
         ),
     ),
     ToolCommand(
-        "Tear-off nativo (countertear)",
+        R.string.tool_mfuev1_countertear_label,
         "hf mfu countertear -c {counter}",
+        R.string.tool_mfuev1_countertear_desc,
         listOf(
-            valueOf("counter", "Contatore (0-2)", "0", defaultValue = "0", digitsOnly = true),
+            valueOf(
+                "counter",
+                R.string.tool_mfuev1_counter_param,
+                "0",
+                defaultValue = "0",
+                digitsOnly = true,
+            ),
         ),
     ),
     ToolCommand(
-        "Reset contatori (anti-tearing, script)",
+        R.string.tool_mfuev1_reset_label,
         "script run mfuev1_counter_reset.lua -c {counter}",
+        R.string.tool_mfuev1_reset_desc,
         listOf(
-            valueOf("counter", "Contatore (0-2)", "0", defaultValue = "0", digitsOnly = true),
-            flagOf("Salta controlli preliminari", "-f"),
+            valueOf(
+                "counter",
+                R.string.tool_mfuev1_counter_param,
+                "0",
+                defaultValue = "0",
+                digitsOnly = true,
+            ),
+            flagOf(R.string.tool_param_skip_checks, "-f"),
         ),
     ),
 )
@@ -141,42 +264,113 @@ private val MFU_EV1_COMMANDS = listOf(
 fun ToolsScreen(viewModel: Pm3ViewModel) {
     val connectionState by viewModel.connectionState.collectAsState()
     val busy by viewModel.busy.collectAsState()
+    val history by viewModel.history.collectAsState()
     val enabled = connectionState == Pm3ConnectionState.CONNECTED && !busy
 
-    var pendingCommand by remember { mutableStateOf<ToolCommand?>(null) }
+    var pendingCommand by remember { mutableStateOf<LocalizedToolCommand?>(null) }
+    var search by rememberSaveable { mutableStateOf("") }
 
-    /** No params: run now; else open the dialog first. */
-    val launch: (ToolCommand) -> Unit = { command ->
-        if (command.params.isEmpty()) {
-            viewModel.runCommand(command.template)
+    val launch: (LocalizedToolCommand) -> Unit = { command ->
+        if (command.command.params.isEmpty()) {
+            viewModel.runCommand(command.command.template)
         } else {
             pendingCommand = command
         }
     }
 
+    val sections = listOf(
+        ToolSectionData(R.string.tool_section_lf, LF_COMMANDS),
+        ToolSectionData(R.string.tool_section_hf_generic, HF_COMMANDS),
+        ToolSectionData(R.string.tool_section_mfc, MFC_COMMANDS),
+        ToolSectionData(R.string.tool_section_mfu, MFU_COMMANDS),
+        ToolSectionData(R.string.tool_section_mfuev1, MFU_EV1_COMMANDS),
+    )
+    val localizedSections = sections.map { section ->
+        LocalizedToolSection(
+            title = stringResource(section.title),
+            commands = section.commands.map { command ->
+                LocalizedToolCommand(
+                    command = command,
+                    label = stringResource(command.label),
+                    description = stringResource(command.description),
+                )
+            },
+        )
+    }
+    val query = search.trim()
+    val filteredSections = localizedSections.mapNotNull { section ->
+        val commands = section.commands.filter { command ->
+            query.isEmpty() ||
+                command.label.contains(query, ignoreCase = true) ||
+                command.command.template.contains(query, ignoreCase = true) ||
+                command.description.contains(query, ignoreCase = true)
+        }
+        if (commands.isEmpty()) null else section.copy(commands = commands)
+    }
+    val recent = history.asReversed().take(5)
+
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .imePadding()
             .verticalScroll(rememberScrollState())
             .padding(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text("Strumenti", style = MaterialTheme.typography.titleLarge)
+        Text(stringResource(R.string.tools_title), style = MaterialTheme.typography.titleLarge)
         if (!enabled) {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Text(
-                    "Connetti prima il Proxmark3 (scheda Dispositivo).",
-                    modifier = Modifier.padding(8.dp),
+                    text = stringResource(R.string.tools_disconnected),
+                    modifier = Modifier.padding(10.dp),
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
         }
 
-        ToolSection("LF", LF_COMMANDS, enabled, launch)
-        ToolSection("HF — generico", HF_COMMANDS, enabled, launch)
-        ToolSection("HF — MIFARE Classic", MFC_COMMANDS, enabled, launch)
-        ToolSection("HF — MIFARE Ultralight", MFU_COMMANDS, enabled, launch)
-        ToolSection("HF — MIFARE Ultralight Ev1", MFU_EV1_COMMANDS, enabled, launch)
+        OutlinedTextField(
+            value = search,
+            onValueChange = { search = it },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            leadingIcon = {
+                Icon(Icons.Filled.Search, contentDescription = null)
+            },
+            trailingIcon = {
+                if (search.isNotEmpty()) {
+                    IconButton(onClick = { search = "" }) {
+                        Icon(Icons.Filled.Clear, contentDescription = stringResource(R.string.action_clear))
+                    }
+                }
+            },
+            placeholder = { Text(stringResource(R.string.tools_search)) },
+        )
+
+        if (recent.isNotEmpty() && query.isEmpty()) {
+            SectionCard(title = stringResource(R.string.tools_recent)) {
+                recent.forEach { command ->
+                    OutlinedButton(
+                        onClick = { viewModel.runCommand(command) },
+                        enabled = enabled,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(command, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+        }
+
+        filteredSections.forEach { section ->
+            ToolSection(section.title, section.commands, enabled, launch)
+        }
+
+        if (filteredSections.isEmpty()) {
+            Text(
+                text = stringResource(R.string.tools_no_results),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
 
         pendingCommand?.let { command ->
             ToolDialog(
@@ -184,7 +378,9 @@ fun ToolsScreen(viewModel: Pm3ViewModel) {
                 onDismiss = { pendingCommand = null },
                 onConfirm = { values, switches ->
                     pendingCommand = null
-                    viewModel.runCommand(composeCommand(command, values, switches))
+                    viewModel.runCommand(
+                        composeCommand(command.command, values, switches),
+                    )
                 },
             )
         }
@@ -224,25 +420,26 @@ private fun entryValid(entry: ToolValue, text: String?): Boolean {
 
 @Composable
 private fun ToolDialog(
-    command: ToolCommand,
+    command: LocalizedToolCommand,
     onDismiss: () -> Unit,
     onConfirm: (Map<String, String>, Map<String, Boolean>) -> Unit,
 ) {
-    val values = remember(command) {
+    val params = command.command.params
+    val values = remember(command.command) {
         mutableStateMapOf<String, String>().apply {
-            for (param in command.params) {
+            for (param in params) {
                 param.asValue()?.let { put(it.name, it.defaultValue) }
             }
         }
     }
-    val switches = remember(command) {
+    val switches = remember(command.command) {
         mutableStateMapOf<String, Boolean>().apply {
-            for (param in command.params) {
+            for (param in params) {
                 param.asSwitch()?.let { put(it.name, false) }
             }
         }
     }
-    val valid = command.params.toList().asSequence()
+    val valid = params.asSequence()
         .mapNotNull { it.asValue() }
         .all { entryValid(it, values[it.name]) }
 
@@ -251,7 +448,8 @@ private fun ToolDialog(
         title = { Text(command.label) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                command.params.forEach { param ->
+                Text(command.description, style = MaterialTheme.typography.bodySmall)
+                params.forEach { param ->
                     param.asValue()?.let { value ->
                         OutlinedTextField(
                             value = values[value.name].orEmpty(),
@@ -262,7 +460,7 @@ private fun ToolDialog(
                                     input
                                 }
                             },
-                            label = { Text(value.label) },
+                            label = { Text(stringResource(value.label)) },
                             placeholder = { Text(value.placeholder) },
                             singleLine = true,
                         )
@@ -276,7 +474,10 @@ private fun ToolDialog(
                                 checked = switches[switch.name] == true,
                                 onCheckedChange = { checked -> switches[switch.name] = checked },
                             )
-                            Text(switch.label, style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                stringResource(switch.label),
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
                         }
                     }
                 }
@@ -284,12 +485,12 @@ private fun ToolDialog(
         },
         confirmButton = {
             Button(onClick = { onConfirm(values, switches) }, enabled = valid) {
-                Text("Esegui")
+                Text(stringResource(R.string.action_execute))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Annulla")
+                Text(stringResource(R.string.action_cancel))
             }
         },
     )
@@ -298,20 +499,60 @@ private fun ToolDialog(
 @Composable
 private fun ToolSection(
     title: String,
-    commands: List<ToolCommand>,
+    commands: List<LocalizedToolCommand>,
     enabled: Boolean,
-    launch: (ToolCommand) -> Unit,
+    launch: (LocalizedToolCommand) -> Unit,
 ) {
-    Text(title, style = MaterialTheme.typography.titleMedium)
+    var expanded by rememberSaveable(title) { mutableStateOf(true) }
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(8.dp).fillMaxWidth()) {
-            for (entry in commands) {
-                OutlinedButton(
-                    onClick = { launch(entry) },
-                    enabled = enabled,
-                    modifier = Modifier.fillMaxWidth(),
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded }
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                Icon(
+                    imageVector = if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    contentDescription = stringResource(
+                        if (expanded) R.string.common_less else R.string.common_more,
+                    ),
+                )
+            }
+            if (expanded) {
+                Column(
+                    modifier = Modifier.padding(start = 8.dp, end = 8.dp, bottom = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Text(entry.label, style = MaterialTheme.typography.bodyMedium)
+                    commands.forEach { entry ->
+                        OutlinedButton(
+                            onClick = { launch(entry) },
+                            enabled = enabled,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalAlignment = Alignment.Start,
+                            ) {
+                                Text(entry.label, style = MaterialTheme.typography.bodyMedium)
+                                if (entry.description.isNotBlank()) {
+                                    Text(
+                                        text = entry.description,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

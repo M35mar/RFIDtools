@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutId="device"
+        android:shortcutLongLabel="@string/nav_device"
+        android:shortcutShortLabel="@string/nav_device">
+        <intent
+            android:action="com.farmacia.pm3android.SHORTCUT_DEVICE"
+            android:targetClass="com.farmacia.pm3android.MainActivity" />
+    </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutId="console"
+        android:shortcutLongLabel="@string/nav_console"
+        android:shortcutShortLabel="@string/nav_console">
+        <intent
+            android:action="com.farmacia.pm3android.SHORTCUT_CONSOLE"
+            android:targetClass="com.farmacia.pm3android.MainActivity" />
+    </shortcut>
+</shortcuts>

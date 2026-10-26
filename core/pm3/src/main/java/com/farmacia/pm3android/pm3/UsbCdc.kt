@@ -20,6 +20,8 @@ import android.hardware.usb.UsbEndpoint
 import android.hardware.usb.UsbInterface
 import android.hardware.usb.UsbManager
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -41,32 +43,76 @@ class UsbCdc(private val context: Context) {
         private const val ACTION_PERMISSION = "com.farmacia.pm3android.USB_PERMISSION"
     }
 
-    private val usbManager = context.getSystemService(UsbManager::class.java)
+    private val usbManager: UsbManager? = context.getSystemService(UsbManager::class.java)
+
+    fun isAvailable(): Boolean = usbManager != null
 
     /** The PM3 attached to the phone, or null. */
     fun findDevice(): UsbDevice? {
-        return usbManager.deviceList.values.firstOrNull {
+        return usbManager?.deviceList?.values?.firstOrNull {
             it.vendorId == VENDOR_ID && it.productId == PRODUCT_ID
         }
     }
 
-    fun hasPermission(device: UsbDevice): Boolean = usbManager.hasPermission(device)
+    fun hasPermission(device: UsbDevice): Boolean =
+        usbManager?.hasPermission(device) == true
+
+    /** Human-readable USB descriptor used by the diagnostics card. */
+    fun describe(device: UsbDevice): String {
+        val builder = StringBuilder()
+        builder.appendLine("deviceName: ${device.deviceName}")
+        builder.appendLine("vendorId: 0x%04X (%d)".format(device.vendorId, device.vendorId))
+        builder.appendLine("productId: 0x%04X (%d)".format(device.productId, device.productId))
+        builder.appendLine("deviceId: ${device.deviceId}")
+        builder.appendLine("manufacturer: ${device.manufacturerName ?: "-"}")
+        builder.appendLine("product: ${device.productName ?: "-"}")
+        builder.appendLine(
+            "serial: " + runCatching { device.serialNumber }.getOrNull().orEmpty().ifBlank { "-" },
+        )
+        builder.appendLine("deviceClass: ${device.deviceClass}")
+        builder.appendLine("interfaces: ${device.interfaceCount}")
+        for (index in 0 until device.interfaceCount) {
+            val iface = device.getInterface(index)
+            builder.appendLine(
+                "  [$index] class=${iface.interfaceClass} " +
+                    "subclass=${iface.interfaceSubclass} protocol=${iface.interfaceProtocol} " +
+                    "endpoints=${iface.endpointCount}",
+            )
+            for (endpointIndex in 0 until iface.endpointCount) {
+                val endpoint = iface.getEndpoint(endpointIndex)
+                builder.appendLine(
+                    "    endpoint[$endpointIndex] " +
+                        "address=0x%02X ".format(endpoint.address) +
+                        "type=${endpointTypeName(endpoint.type)} " +
+                        "dir=${if (endpoint.direction == UsbConstants.USB_DIR_IN) "IN" else "OUT"} " +
+                        "maxPacket=${endpoint.maxPacketSize} interval=${endpoint.interval}",
+                )
+            }
+        }
+        return builder.toString().trimEnd()
+    }
 
     /** Shows the system permission dialog and waits for the answer. */
-    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     suspend fun requestPermission(device: UsbDevice): Boolean {
-        if (usbManager.hasPermission(device)) {
+        val manager = usbManager ?: return false
+        if (manager.hasPermission(device)) {
             return true
         }
-        return kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
+        return suspendCancellableCoroutine { continuation ->
             val receiver = object : BroadcastReceiver() {
                 override fun onReceive(c: Context, intent: Intent) {
                     if (intent.action != ACTION_PERMISSION) {
                         return
                     }
-                    context.unregisterReceiver(this)
-                    @Suppress("DEPRECATION")
-                    continuation.resume(intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false), null)
+                    runCatching { context.unregisterReceiver(this) }
+                    if (continuation.isActive) {
+                        continuation.resume(
+                            intent.getBooleanExtra(
+                                UsbManager.EXTRA_PERMISSION_GRANTED,
+                                false,
+                            ),
+                        )
+                    }
                 }
             }
             ContextCompat.registerReceiver(
@@ -79,16 +125,12 @@ class UsbCdc(private val context: Context) {
                 context,
                 0,
                 Intent(ACTION_PERMISSION).setPackage(context.packageName),
-                PendingIntent.FLAG_MUTABLE,
+                PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
             continuation.invokeOnCancellation {
-                try {
-                    context.unregisterReceiver(receiver)
-                } catch (ignored: IllegalArgumentException) {
-                    // already unregistered by onReceive
-                }
+                runCatching { context.unregisterReceiver(receiver) }
             }
-            usbManager.requestPermission(device, pendingIntent)
+            manager.requestPermission(device, pendingIntent)
         }
     }
 
@@ -97,7 +139,8 @@ class UsbCdc(private val context: Context) {
      * returns a handle serving the bidirectional streams the bridge needs.
      */
     fun open(device: UsbDevice): OpenedPort? {
-        val connection = usbManager.openDevice(device) ?: return null
+        val manager = usbManager ?: return null
+        val connection = manager.openDevice(device) ?: return null
         for (index in 0 until device.interfaceCount) {
             val iface = device.getInterface(index)
             var input: UsbEndpoint? = null
@@ -115,7 +158,9 @@ class UsbCdc(private val context: Context) {
                 // true: reset the interface state, in case another process
                 // (or a previous run) left a transfer pending.
                 if (connection.claimInterface(iface, true)) {
-                    return OpenedPort(connection, iface, input, output)
+                    return OpenedPort(connection, iface, input, output) {
+                        manager.deviceList.values.any { it.deviceId == device.deviceId }
+                    }
                 }
             }
         }
@@ -123,33 +168,46 @@ class UsbCdc(private val context: Context) {
         return null
     }
 
-    class OpenedPort(
+    private fun endpointTypeName(type: Int): String = when (type) {
+        UsbConstants.USB_ENDPOINT_XFER_CONTROL -> "control"
+        UsbConstants.USB_ENDPOINT_XFER_ISOC -> "isochronous"
+        UsbConstants.USB_ENDPOINT_XFER_BULK -> "bulk"
+        UsbConstants.USB_ENDPOINT_XFER_INT -> "interrupt"
+        else -> "unknown($type)"
+    }
+
+    inner class OpenedPort(
         private val connection: UsbDeviceConnection,
         private val iface: UsbInterface,
-        private val input: UsbEndpoint,
-        private val output: UsbEndpoint,
+        private val inputEndpoint: UsbEndpoint,
+        private val outputEndpoint: UsbEndpoint,
+        private val isAttached: () -> Boolean,
     ) {
 
-        fun streams(): Pair<InputStream, OutputStream> {
-            return Pair(Input(), Output())
-        }
+        @Volatile
+        private var closed = false
+
+        private val inputStream = Input()
+        private val outputStream = Output()
+
+        fun streams(): Pair<InputStream, OutputStream> = inputStream to outputStream
 
         fun close() {
-            try {
-                connection.releaseInterface(iface)
-            } finally {
-                connection.close()
-            }
+            if (closed) return
+            closed = true
+            runCatching { inputStream.close() }
+            runCatching { outputStream.close() }
+            runCatching { connection.releaseInterface(iface) }
+            runCatching { connection.close() }
         }
 
         /**
          * Blocking stream from the PM3. A read returns at the first USB
          * packet; timeouts (device silent) keep waiting, a detached device is
-         * reported by the enclosing connection teardown.
+         * reported immediately so the bridge can stop instead of spinning.
          */
         private inner class Input : InputStream() {
 
-            private var closed = false
             private val staging = ByteArray(MAX_TRANSFER_BYTES)
 
             override fun read(): Int {
@@ -165,8 +223,14 @@ class UsbCdc(private val context: Context) {
                     return 0
                 }
                 while (true) {
+                    if (closed) {
+                        throw IOException("USB port closed")
+                    }
+                    if (!isAttached()) {
+                        throw IOException("USB device detached")
+                    }
                     val result = connection.bulkTransfer(
-                        input,
+                        inputEndpoint,
                         staging,
                         minOf(length, staging.size),
                         READ_TIMEOUT_MS,
@@ -175,12 +239,9 @@ class UsbCdc(private val context: Context) {
                         System.arraycopy(staging, 0, buffer, offset, result)
                         return result
                     }
-                    if (closed) {
-                        throw IOException("USB port closed")
-                    }
-                    // result <= 0: silent device (timeout) or link error. Keep
-                    // polling: the client detects its own loss of the device
-                    // and closes the connection, after which `closed` ends it.
+                    // result <= 0: silent device (timeout) or a transient
+                    // controller error. Loop, but the attachment check above
+                    // ends the stream as soon as the PM3 is unplugged.
                 }
             }
 
@@ -194,10 +255,8 @@ class UsbCdc(private val context: Context) {
         /** Bulk out. bulkTransfer is synchronous, so writes block, not queue. */
         private inner class Output : OutputStream() {
 
-            private var closed = false
-
             override fun write(byteValue: Int) {
-                write(ByteArray(1).also { it[0] = byteValue.toByte() })
+                write(byteArrayOf(byteValue.toByte()))
             }
 
             override fun write(buffer: ByteArray, offset: Int, length: Int) {
@@ -207,8 +266,11 @@ class UsbCdc(private val context: Context) {
                     if (closed) {
                         throw IOException("USB port closed")
                     }
+                    if (!isAttached()) {
+                        throw IOException("USB device detached")
+                    }
                     val result = connection.bulkTransfer(
-                        output,
+                        outputEndpoint,
                         buffer,
                         index,
                         minOf(offset + length - index, MAX_TRANSFER_BYTES),
@@ -218,11 +280,13 @@ class UsbCdc(private val context: Context) {
                         index += result
                         retries = 0
                     } else {
-                        // Endpoint busy or controller busy: brief spin-out
+                        // Endpoint busy or controller busy: brief back-off
                         // with a generous retry budget before the link dies.
-                        if (++retries > WRITE_MAX_RETRIES) {
+                        retries++
+                        if (retries > WRITE_MAX_RETRIES) {
                             throw IOException("USB write failed")
                         }
+                        runCatching { Thread.sleep(2) }
                     }
                 }
             }

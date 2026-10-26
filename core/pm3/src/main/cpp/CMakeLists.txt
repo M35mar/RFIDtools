@@ -79,6 +79,8 @@ set_target_properties(pm3rrg_rdv4_static PROPERTIES EXCLUDE_FROM_ALL TRUE)
 target_sources(pm3rrg_rdv4 PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/pm3_jni.c")
 target_link_libraries(pm3rrg_rdv4 PRIVATE log)
 target_compile_options(pm3rrg_rdv4 PRIVATE -Wno-error)
+# Android 15+ devices may use 16 KB pages; keep the native library compatible.
+target_link_options(pm3rrg_rdv4 PRIVATE "-Wl,-z,max-page-size=16384")
 
 set_target_properties(pm3rrg_rdv4 PROPERTIES
         OUTPUT_NAME pm3android
