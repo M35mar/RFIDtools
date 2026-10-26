@@ -8,14 +8,14 @@ to a PM3-compatible board over direct USB CDC-ACM. The UI is native Android
 `libpm3android.so`, and client command output is captured in-process.
 
 [![Android CI](https://github.com/M35mar/RFIDtools/actions/workflows/android.yml/badge.svg?branch=main)](https://github.com/M35mar/RFIDtools/actions/workflows/android.yml)
-[![Release](https://img.shields.io/github/v/release/M35mar/RFIDtools?include_prereleases&sort=semver)](https://github.com/M35mar/RFIDtools/releases)
+[![Release](https://img.shields.io/github/v/release/M35mar/RFIDtools?sort=semver)](https://github.com/M35mar/RFIDtools/releases)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 [![Android 8+](https://img.shields.io/badge/Android-8%2B%20(API%2026)-green.svg)](#requirements)
 [![arm64-v8a](https://img.shields.io/badge/ABI-arm64--v8a-informational.svg)](#requirements)
 
 ## Download
 
-The GitHub release contains a **debug-signed APK for testing**:
+The official `0.4.0` GitHub release contains a **debug-signed APK for testing**:
 
 **[Download `pm3-debug.apk`](https://github.com/M35mar/RFIDtools/releases/download/0.4.0/pm3-debug.apk)**
 

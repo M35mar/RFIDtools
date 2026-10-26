@@ -60,7 +60,9 @@ jobs:
           APK="core/pm3/build/outputs/apk/debug/pm3-debug.apk"
           NOTES="$(mktemp)"
           printf '%s\n' \
-            'Debug-signed APK for testing and sideloading.' \
+            "Official PM3 Android ${TAG} release." \
+            '' \
+            'The attached APK is **debug-signed** for testing and sideloading.' \
             '' \
             "- Version: \`${TAG}\`" \
             '- Package: `com.farmacia.pm3android.debug`' \
@@ -73,13 +75,14 @@ jobs:
             > "$NOTES"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release edit "$TAG" \
-              --title "PM3 Android ${TAG} (debug APK)" \
+              --title "PM3 Android ${TAG}" \
               --notes-file "$NOTES" \
-              --prerelease
+              --prerelease=false \
+              --latest
           else
             gh release create "$TAG" \
-              --title "PM3 Android ${TAG} (debug APK)" \
+              --title "PM3 Android ${TAG}" \
               --notes-file "$NOTES" \
-              --prerelease
+              --latest
           fi
           gh release upload "$TAG" "$APK" --clobber
