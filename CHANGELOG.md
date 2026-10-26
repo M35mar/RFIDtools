@@ -30,10 +30,12 @@
 - Info/settings screen with version, build, commits, licence, links, backup and
   restore of app settings, client-resource reset and install status.
 - Unit tests for the file visibility/category rules.
-- GitHub Actions CI.
+- GitHub Actions CI, with a debug APK artifact and automatic GitHub Release
+  publication when a version tag is pushed.
 - Optional release signing via `keystore.properties`.
 - 16 KB page-size linker option and pinned NDK/CMake versions.
-- `README` and build documentation refresh.
+- Complete `README` refresh with install, hardware, build, privacy and
+  troubleshooting documentation.
 
 ### Changed
 - Compile/target SDK 37, AndroidX/Compose dependency refresh, version

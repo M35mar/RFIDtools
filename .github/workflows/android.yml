@@ -3,8 +3,12 @@ name: Android CI
 on:
   push:
     branches: [ main, master ]
+    tags: [ '*' ]
   pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -36,5 +40,46 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Unit tests and debug APK
+      - name: Unit tests, lint and debug APK
         run: ./gradlew :core:pm3:testDebugUnitTest :core:pm3:lintDebug :core:pm3:assembleDebug --stacktrace
+
+      - name: Upload debug APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pm3-debug-apk
+          path: core/pm3/build/outputs/apk/debug/pm3-debug.apk
+          if-no-files-found: error
+
+      - name: Publish debug APK release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          APK="core/pm3/build/outputs/apk/debug/pm3-debug.apk"
+          NOTES="$(mktemp)"
+          printf '%s\n' \
+            'Debug-signed APK for testing and sideloading.' \
+            '' \
+            "- Version: \`${TAG}\`" \
+            '- Package: `com.farmacia.pm3android.debug`' \
+            "- Version name: \`${TAG}-debug\`" \
+            '- ABI: `arm64-v8a`' \
+            '- Minimum Android: 8.0 (API 26)' \
+            '' \
+            'This build uses the Android debug keystore. It is **not** a production-signed release.' \
+            'See the README for installation, hardware compatibility, build and troubleshooting notes.' \
+            > "$NOTES"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" \
+              --title "PM3 Android ${TAG} (debug APK)" \
+              --notes-file "$NOTES" \
+              --prerelease
+          else
+            gh release create "$TAG" \
+              --title "PM3 Android ${TAG} (debug APK)" \
+              --notes-file "$NOTES" \
+              --prerelease
+          fi
+          gh release upload "$TAG" "$APK" --clobber
