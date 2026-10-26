@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.1 — 2026-10-26
+
+### Added
+- One-tap `hf mf autopwn` command in **Tools → HF — MIFARE Classic**.
+
+### Changed
+- Removed the generic **HF — MIFARE Ultralight** Tools section; MIFARE
+  Ultralight Ev1 tooling remains available.
+- Version `0.5.1` (`versionCode` 6).
+
 ## 0.5.0 — 2026-10-26
 
 ### Added

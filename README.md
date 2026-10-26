@@ -15,12 +15,12 @@ to a PM3-compatible board over direct USB CDC-ACM. The UI is native Android
 
 ## Download
 
-The official `0.5.0` GitHub release contains a **debug-signed APK for testing**:
+The official `0.5.1` GitHub release contains a **debug-signed APK for testing**:
 
-**[Download `pm3-debug.apk`](https://github.com/M35mar/RFIDtools/releases/download/0.5.0/pm3-debug.apk)**
+**[Download `pm3-debug.apk`](https://github.com/M35mar/RFIDtools/releases/download/0.5.1/pm3-debug.apk)**
 
 > The debug APK uses package id `com.farmacia.pm3android.debug`, version
-> `0.5.0-debug`, and the Android debug keystore. It is intended for testing and
+> `0.5.1-debug`, and the Android debug keystore. It is intended for testing and
 > sideloading, not for production distribution. A release build requires your
 > own signing key. The APK includes the embedded CPython runtime used by the
 > optional Python script support, so it is larger than the 0.4.x build.
@@ -42,6 +42,13 @@ Termux/child-process architecture with a single app process:
 
 This means no external binaries, no Termux installation, no serial-port
 library, and no Bluetooth/SPP layer.
+
+## What's new in 0.5.1
+
+- **MIFARE Classic autopwn:** a new one-tap button in
+  **Tools → HF — MIFARE Classic** runs the native `hf mf autopwn` command.
+- **Tools cleanup:** the generic **HF — MIFARE Ultralight** section has been
+  removed; MIFARE Ultralight Ev1 tools remain available.
 
 ## What's new in 0.5.0
 
@@ -83,8 +90,8 @@ in-process client, the Files manager, settings and localized tools. See
 
 ### Tools
 
-- Curated, searchable command sections for LF, HF, MIFARE Classic and MIFARE
-  Ultralight/Ultralight Ev1.
+- Curated, searchable command sections for LF, HF, MIFARE Classic (including
+  the one-tap autopwn command) and MIFARE Ultralight Ev1.
 - Parameter dialogs for file names, counters and increment values.
 - Recent command list.
 - Commands are syntax-checked against the pinned client.
@@ -244,7 +251,7 @@ passwords.
 ```
 
 GitHub Actions runs tests, lint and the debug build. Pushing a tag such as
-`0.5.0` also publishes a GitHub release with the debug APK attached.
+`0.5.1` also publishes a GitHub release with the debug APK attached.
 
 ## Troubleshooting
 

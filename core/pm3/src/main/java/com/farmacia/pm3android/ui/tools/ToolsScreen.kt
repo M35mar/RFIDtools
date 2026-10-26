@@ -166,23 +166,10 @@ private val MFC_COMMANDS = listOf(
         "hf mf chk",
         R.string.tool_mfc_chk_desc,
     ),
-)
-
-private val MFU_COMMANDS = listOf(
     ToolCommand(
-        R.string.tool_mfu_info_label,
-        "hf mfu info",
-        R.string.tool_mfu_info_desc,
-    ),
-    ToolCommand(
-        R.string.tool_mfu_dump_label,
-        "hf mfu dump",
-        R.string.tool_mfu_dump_desc,
-    ),
-    ToolCommand(
-        R.string.tool_mfu_ndef_label,
-        "hf mfu ndefread",
-        R.string.tool_mfu_ndef_desc,
+        R.string.tool_mfc_autopwn_label,
+        "hf mf autopwn",
+        R.string.tool_mfc_autopwn_desc,
     ),
 )
 
@@ -283,7 +270,6 @@ fun ToolsScreen(viewModel: Pm3ViewModel) {
         ToolSectionData(R.string.tool_section_lf, LF_COMMANDS),
         ToolSectionData(R.string.tool_section_hf_generic, HF_COMMANDS),
         ToolSectionData(R.string.tool_section_mfc, MFC_COMMANDS),
-        ToolSectionData(R.string.tool_section_mfu, MFU_COMMANDS),
         ToolSectionData(R.string.tool_section_mfuev1, MFU_EV1_COMMANDS),
     )
     val localizedSections = sections.map { section ->

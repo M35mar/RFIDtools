@@ -67,7 +67,6 @@
     <string name="tool_section_lf">LF</string>
     <string name="tool_section_hf_generic">HF — generic</string>
     <string name="tool_section_mfc">HF — MIFARE Classic</string>
-    <string name="tool_section_mfu">HF — MIFARE Ultralight</string>
     <string name="tool_section_mfuev1">HF — MIFARE Ultralight Ev1</string>
     <string name="tool_lf_em410x_label">EM410x (read)</string>
     <string name="tool_lf_em410x_desc">Reads a 125 kHz EM410x tag.</string>
@@ -89,12 +88,8 @@
     <string name="tool_mfc_dump_desc">Dumps MIFARE Classic traces.</string>
     <string name="tool_mfc_chk_label">MIFARE Classic (known keys)</string>
     <string name="tool_mfc_chk_desc">Checks known keys.</string>
-    <string name="tool_mfu_info_label">MIFARE UL (info)</string>
-    <string name="tool_mfu_info_desc">Information about the MIFARE Ultralight tag.</string>
-    <string name="tool_mfu_dump_label">MIFARE UL (dump)</string>
-    <string name="tool_mfu_dump_desc">Dumps the MIFARE Ultralight tag.</string>
-    <string name="tool_mfu_ndef_label">MIFARE UL (NDEF)</string>
-    <string name="tool_mfu_ndef_desc">Reads the NDEF message.</string>
+    <string name="tool_mfc_autopwn_label">MIFARE Classic (autopwn)</string>
+    <string name="tool_mfc_autopwn_desc">Automatically recovers keys and dumps the MIFARE Classic tag.</string>
     <string name="tool_mfuev1_info_label">Info</string>
     <string name="tool_mfuev1_info_desc">Information about the tag.</string>
     <string name="tool_mfuev1_dump_label">Dump</string>
