@@ -65,9 +65,8 @@ library, and no Bluetooth/SPP layer.
   trailer first, and each write is retried once.
 - **One key field, always-visible options:** the phone-NFC screen has a single
   **Key file** field, importable from phone storage, and no longer expands.
-- **Classic autopwn shortcut and build fixes:** upstream Proxmark3 submodule
-  update, Windows-friendly native build scripts and a resource-sync fix for
-  Lua tools adopted upstream.
+- **Build fixes:** upstream Proxmark3 submodule update, Windows-friendly native
+  build scripts and a resource-sync fix for Lua tools adopted upstream.
 
 ## What's new in 0.5.1
 
