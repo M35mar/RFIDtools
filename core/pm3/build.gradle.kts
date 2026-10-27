@@ -46,6 +46,10 @@ val syncPm3ClientResources = tasks.register<Sync>("syncPm3ClientResources") {
     val client = rootProject.layout.projectDirectory
         .dir("third_party/proxmark3/client")
 
+    // Upstream occasionally adopts one of our lua-extra tools: the local copy
+    // must still win, so keep both and let the later `from` overwrite.
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+
     from(client.dir("dictionaries")) {
         exclude("extras/**")
         into("dictionaries")
@@ -116,8 +120,8 @@ android {
         applicationId = "com.farmacia.pm3android"
         minSdk = 26
         targetSdk = 37
-        versionCode = 6
-        versionName = "0.5.1"
+        versionCode = 7
+        versionName = "0.6.0"
 
         ndk {
             // The only device flavour this project targets.

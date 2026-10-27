@@ -15,12 +15,12 @@ to a PM3-compatible board over direct USB CDC-ACM. The UI is native Android
 
 ## Download
 
-The official `0.5.1` GitHub release contains a **debug-signed APK for testing**:
+The official `0.6.0` GitHub release contains a **debug-signed APK for testing**:
 
-**[Download `pm3-debug.apk`](https://github.com/M35mar/RFIDtools/releases/download/0.5.1/pm3-debug.apk)**
+**[Download `pm3-debug.apk`](https://github.com/M35mar/RFIDtools/releases/download/0.6.0/pm3-debug.apk)**
 
 > The debug APK uses package id `com.farmacia.pm3android.debug`, version
-> `0.5.1-debug`, and the Android debug keystore. It is intended for testing and
+> `0.6.0-debug`, and the Android debug keystore. It is intended for testing and
 > sideloading, not for production distribution. A release build requires your
 > own signing key. The APK includes the embedded CPython runtime used by the
 > optional Python script support, so it is larger than the 0.4.x build.
@@ -42,6 +42,32 @@ Termux/child-process architecture with a single app process:
 
 This means no external binaries, no Termux installation, no serial-port
 library, and no Bluetooth/SPP layer.
+
+## What's new in 0.6.0
+
+- **Dump editor:** tap a MIFARE Classic block or an Ultralight/NTAG page in
+  **Files** to inspect and edit its hex bytes in place. The list and the edit
+  dialog show the ASCII rendering plus decoded details (block 0, sector
+  trailers with access conditions, value blocks, Ultralight lock/OTP/
+  configuration pages) and flag the rows a restore never writes.
+- **Phone NFC — MIFARE Classic dump:** read a card with the phone's NFC reader
+  using a key file from the app folder (`hf-mf-<UID>-key.bin` from
+  `hf mf autopwn`, or any `.bin`/`.txt`). Keys are tried as Key A and Key B on
+  every sector, blocks behind a Key B read condition are re-read after
+  re-authentication, and an incomplete read is an error: nothing is saved. The
+  result is `hf-mf-<UID>-dump.bin` with the proven keys in the trailers plus
+  the sibling `hf-mf-<UID>-key.bin`.
+- **Phone NFC — MIFARE Classic restore:** the tag keeps its own UID, the dump
+  must match the tag size, and a blocking pre-check verifies every differing
+  block is writable before the first write. Trailers (keys and access bits)
+  come from the dump, the trailer is written with the key its access
+  conditions require, a read-only block is unlocked by writing the dump
+  trailer first, and each write is retried once.
+- **One key field, always-visible options:** the phone-NFC screen has a single
+  **Key file** field, importable from phone storage, and no longer expands.
+- **Classic autopwn shortcut and build fixes:** upstream Proxmark3 submodule
+  update, Windows-friendly native build scripts and a resource-sync fix for
+  Lua tools adopted upstream.
 
 ## What's new in 0.5.1
 
@@ -117,8 +143,43 @@ Proxmark3 command available to the app.
   resources.
 - Filters for dumps, traces, logs and other files.
 - Import/export with the Storage Access Framework.
+- Built-in hex editor for `.bin` dumps: tap a MIFARE Classic block or an
+  Ultralight/NTAG page to edit it, with type/UID/sector information, the ASCII
+  rendering of the bytes and decoded details (access bits, value blocks,
+  configuration pages), plus a warning for rows a restore never writes (UID,
+  lock bits, OTP, configuration).
 - Share individual files with `FileProvider`.
 - Delete confirmation and path-safety checks.
+
+### Phone NFC (no Proxmark3)
+
+- Dump a tag with the phone's NFC reader into a `.bin` file in **Files**:
+  MIFARE Ultralight/NTAG (optional 8-hex-digit password) and MIFARE Classic.
+- A MIFARE Classic dump uses the six-byte sector keys from the **Key file**
+  picked on the screen (`.bin` or `.txt`, for example `hf-mf-<UID>-key.bin`,
+  the file `hf mf autopwn` leaves next to the dump). Every sector is tried with
+  each key as Key A and as Key B, so a card whose sectors do not share one key
+  is read completely, and blocks behind a Key B read condition are re-read
+  after re-authenticating the sector. With a file selected only its keys are
+  tried; the factory `FFFFFFFFFFFF` key is used only when no file is selected.
+- The key file can be chosen from the app folder or imported with **Choose from
+  storage**; the import copies the document into the app folder, so it stays
+  available for later runs. Only `.bin` and `.txt` files are accepted.
+- The read must be complete: if any sector or block stays closed, the dump is
+  reported as an error and not saved, so a partial file can never be restored
+  as zeroes. The saved `hf-mf-<UID>-dump.bin` also holds the proven keys in the
+  sector trailers, and the sibling `hf-mf-<UID>-key.bin` keeps the layout
+  `hf mf restore` expects.
+- Restore a dump to a tag over NFC: the tag keeps its own UID (block 0 is never
+  written) and the dump must have the same size as the tag. Before writing
+  anything the app opens every sector and checks that each differing block is
+  writable; when a key is missing nothing is written. Keys and access bits of
+  the trailers always come from the dump — the key file only authenticates the
+  destination card — and the trailer is written with the key its current access
+  conditions require (Key A or Key B). A block that the current access bits
+  keep read-only makes the app install that sector's dump trailer first and
+  retry the block automatically. Every write is retried once, like MIFARE
+  Classic Tool, and the result lists every block with its status.
 
 ### Info / Settings
 
@@ -251,7 +312,7 @@ passwords.
 ```
 
 GitHub Actions runs tests, lint and the debug build. Pushing a tag such as
-`0.5.1` also publishes a GitHub release with the debug APK attached.
+`0.6.0` also publishes a GitHub release with the debug APK attached.
 
 ## Troubleshooting
 

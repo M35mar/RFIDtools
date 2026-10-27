@@ -1,5 +1,62 @@
 # Changelog
 
+## 0.6.0 — 2026-10-28
+
+### Added
+- In-app editor for `.bin` dumps in the **Data** tab: tap a MIFARE Classic
+  block or an Ultralight/NTAG page to view and edit its hex bytes, jump to a
+  row, discard changes and save in place. Every row also shows its ASCII
+  rendering and decoded details (block 0, sector trailer with access
+  conditions, value blocks, Ultralight lock/OTP/configuration pages), both in
+  the list and in the edit dialog. Rows a restore never writes (UID, lock
+  bits, OTP, configuration area) are flagged.
+- Phone-NFC dump of MIFARE Classic: pick the `hf-mf-<UID>-key.bin` file written
+  by `hf mf autopwn`, or any `.bin`/`.txt` key file already in the **Data**
+  tab. Every key is tried as Key A and as Key B on every sector, so cards whose
+  sectors do not share one key are read completely, and the read is
+  re-authenticated with Key B when a block requires it. With a file selected
+  only its keys are tried; the factory `FFFFFFFFFFFF` key is used only without
+  a file. An incomplete read is an error and nothing is saved. The dump is
+  saved as `hf-mf-<UID>-dump.bin` with the proven keys in the sector trailers
+  and the sibling `hf-mf-<UID>-key.bin`.
+- The key file can be imported from phone storage with **Choose from storage**;
+  the document is copied into the **Data** tab folder and only `.bin`/`.txt`
+  files are accepted.
+
+### Fixed
+- Phone-NFC MIFARE Classic restore could write a partial dump: it now runs a
+  blocking pre-check that opens every sector and verifies every differing block
+  is writable. Missing keys or an unreadable sector stop the restore before the
+  first write, and a dump of a different size than the tag is refused.
+- The Classic reader no longer falls back to the factory key when a key file is
+  selected, so a wrong file fails instead of silently reading the transport
+  configuration.
+- Phone-NFC MIFARE Classic restore left data blocks untouched when their access
+  condition required Key B (`011`/`100`/`110`): the restorer kept a single Key A
+  session and lost the key type. It now tracks a typed session, re-authenticates
+  with Key B where needed, writes the trailer with the key its current access
+  conditions require and retries each write once before reporting a failure.
+- A block still read-only during a restore is repaired automatically: the
+  sector trailer from the dump is written first and the failed blocks are
+  retried, instead of being reported as unwritable.
+- The hex bytes of a dump block or page were blank in the editor and in the
+  edit dialog: `toHexSpaced()` looped over the empty `StringBuilder` instead of
+  the byte array, so it always returned an empty string.
+- Dumping a MIFARE Classic over phone NFC failed with `GET_version` because
+  the reader treated every tag as Ultralight; the tag technology now decides
+  between the Classic and the Ultralight reader.
+
+### Changed
+- The phone-NFC Classic restore has a single **Key file** field: no dictionary
+  and no manual key entry. The key file only authenticates the destination
+  tag; keys and access bits written into the sector trailers always come from
+  the dump.
+- The phone-NFC options are always visible, without an expand step.
+- The phone-NFC restore no longer writes a `*-pre-restore.bin` copy next to the
+  dump.
+- Version `0.6.0` (`versionCode` 7), built against the Proxmark3 submodule
+  `61ede21`.
+
 ## 0.5.1 — 2026-10-26
 
 ### Added
