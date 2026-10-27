@@ -26,6 +26,9 @@ OUT_DIR="$REPO_ROOT/core/pm3/src/main/jniLibs/arm64-v8a"
 SDK="${ANDROID_SDK:-${ANDROID_SDK_ROOT:-}}"
 if [[ -z "$SDK" && -f "$REPO_ROOT/local.properties" ]]; then
     SDK="$(grep -E '^sdk\.dir=' "$REPO_ROOT/local.properties" | head -n1 | cut -d'=' -f2 | tr -d '\r')"
+    # Property files escape the drive letter ("C\:/path") and double each
+    # backslash; normalise both forms to forward slashes.
+    SDK="$(printf '%s' "$SDK" | sed -e 's/\\\\/\//g' -e 's/\\:/:/g')"
 fi
 if [[ -z "$SDK" ]]; then
     for candidate in "$HOME/AppData/Local/Android/Sdk" "$HOME/Android/Sdk" "$HOME/Library/Android/sdk"; do
@@ -34,6 +37,12 @@ if [[ -z "$SDK" ]]; then
             break
         fi
     done
+    if [[ -z "$SDK" && -n "${USERPROFILE:-}" ]]; then
+        candidate="$(echo "$USERPROFILE" | tr '\\' '/')/AppData/Local/Android/Sdk"
+        if [[ -d "$candidate" ]]; then
+            SDK="$candidate"
+        fi
+    fi
 fi
 
 if [[ -n "$SDK" ]]; then
@@ -53,6 +62,13 @@ if [[ -n "${ANDROID_NDK:-}" ]]; then
 else
     SDK="${SDK:?ANDROID_SDK or ANDROID_SDK_ROOT must be set (or set ANDROID_NDK)}"
     NDK="$SDK/ndk/$NDK_VERSION"
+    if [[ ! -f "$NDK/build/cmake/android.toolchain.cmake" && -d "$SDK/ndk" ]]; then
+        NDK_CANDIDATE="$(ls -1 "$SDK/ndk" | sort -V | tail -n1)"
+        if [[ -n "$NDK_CANDIDATE" && -f "$SDK/ndk/$NDK_CANDIDATE/build/cmake/android.toolchain.cmake" ]]; then
+            NDK="$SDK/ndk/$NDK_CANDIDATE"
+            NDK_VERSION="$NDK_CANDIDATE"
+        fi
+    fi
 fi
 if [[ ! -f "$NDK/build/cmake/android.toolchain.cmake" ]]; then
     echo "NDK not found at $NDK" >&2
@@ -76,6 +92,7 @@ else
 fi
 
 echo ">> configure (ndk=$NDK)"
+rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 # Configure every time: CMake is incremental and this makes flag changes
 # (NDK version, 16 KB page support, ...) take effect on existing build dirs.
@@ -87,6 +104,13 @@ mkdir -p "$BUILD_DIR"
     -DANDROID_STL=c++_static \
     -DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON \
     -DCMAKE_BUILD_TYPE=Release
+
+if [[ "$(uname -s)" == MINGW* || "$(uname -s)" == MSYS* ]]; then
+    # The embedded deps are built with GNU make (shipped with the NDK) which,
+    # with SHELL unset, picks up the sh.exe from Git's usr/bin.
+    export PATH="$NDK/prebuilt/windows-x86_64/bin:$PATH"
+    unset SHELL
+fi
 
 echo ">> external project archives (bzip2, lz4)"
 "$CMAKE" --build "$BUILD_DIR" --target pm3client/bzip2 pm3client/lz4

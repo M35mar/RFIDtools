@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Nfc
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SaveAlt
 import androidx.compose.material.icons.filled.Share
@@ -62,7 +63,11 @@ import com.farmacia.pm3android.util.formatBytes
 import com.farmacia.pm3android.util.formatDate
 
 @Composable
-fun FilesScreen(viewModel: Pm3ViewModel) {
+fun FilesScreen(
+    viewModel: Pm3ViewModel,
+    onRestore: (java.io.File) -> Unit,
+    onEditDump: (java.io.File) -> Unit,
+) {
     val files by viewModel.files.collectAsState()
     val loading by viewModel.filesLoading.collectAsState()
     val fileOpBusy by viewModel.fileOpBusy.collectAsState()
@@ -196,6 +201,8 @@ fun FilesScreen(viewModel: Pm3ViewModel) {
                     FileRow(
                         entry = entry,
                         enabled = !fileOpBusy,
+                        onOpen = { onEditDump(entry.file) },
+                        onRestore = { onRestore(entry.file) },
                         onShare = { shareFile(context, entry.file) },
                         onExport = {
                             pendingExport = entry
@@ -230,58 +237,121 @@ fun FilesScreen(viewModel: Pm3ViewModel) {
 private fun FileRow(
     entry: Pm3File,
     enabled: Boolean,
+    onOpen: () -> Unit,
+    onRestore: () -> Unit,
     onShare: () -> Unit,
     onExport: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.padding(10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+    val lowerName = entry.file.name.lowercase()
+    val editable = entry.category == FileCategory.DUMP &&
+        lowerName.endsWith(".bin") &&
+        !lowerName.endsWith("-key.bin")
+    // Only editable rows use the clickable Card variant: the plain one keeps
+    // the normal (non-disabled) colours for traces, logs and other dumps.
+    if (editable) {
+        Card(
+            onClick = onOpen,
+            enabled = enabled,
+            modifier = Modifier.fillMaxWidth(),
         ) {
-            Column(modifier = Modifier.weight(1f)) {
+            FileRowContent(
+                entry = entry,
+                enabled = enabled,
+                editable = true,
+                onRestore = onRestore,
+                onShare = onShare,
+                onExport = onExport,
+                onDelete = onDelete,
+            )
+        }
+    } else {
+        Card(modifier = Modifier.fillMaxWidth()) {
+            FileRowContent(
+                entry = entry,
+                enabled = enabled,
+                editable = false,
+                onRestore = onRestore,
+                onShare = onShare,
+                onExport = onExport,
+                onDelete = onDelete,
+            )
+        }
+    }
+}
+
+@Composable
+private fun FileRowContent(
+    entry: Pm3File,
+    enabled: Boolean,
+    editable: Boolean,
+    onRestore: () -> Unit,
+    onShare: () -> Unit,
+    onExport: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = entry.file.name,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = entry.relativePath,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = stringResource(
+                    R.string.files_size_date,
+                    formatBytes(entry.size),
+                    formatDate(entry.lastModified),
+                ),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (editable) {
                 Text(
-                    text = entry.file.name,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = entry.relativePath,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = stringResource(
-                        R.string.files_size_date,
-                        formatBytes(entry.size),
-                        formatDate(entry.lastModified),
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
+                    text = stringResource(R.string.dump_editor_tap_hint),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
                 )
             }
-            IconButton(onClick = onShare, enabled = enabled) {
+        }
+        if (entry.category == FileCategory.DUMP) {
+            IconButton(onClick = onRestore, enabled = enabled) {
                 Icon(
-                    imageVector = Icons.Filled.Share,
-                    contentDescription = stringResource(R.string.action_share),
+                    imageVector = Icons.Filled.Nfc,
+                    contentDescription = stringResource(R.string.nfc_restore_action),
+                    tint = MaterialTheme.colorScheme.primary,
                 )
             }
-            IconButton(onClick = onExport, enabled = enabled) {
-                Icon(
-                    imageVector = Icons.Filled.SaveAlt,
-                    contentDescription = stringResource(R.string.action_export),
-                )
-            }
-            IconButton(onClick = onDelete, enabled = enabled) {
-                Icon(
-                    imageVector = Icons.Filled.Delete,
-                    contentDescription = stringResource(R.string.action_delete),
-                    tint = MaterialTheme.colorScheme.error,
-                )
-            }
+        }
+        IconButton(onClick = onShare, enabled = enabled) {
+            Icon(
+                imageVector = Icons.Filled.Share,
+                contentDescription = stringResource(R.string.action_share),
+            )
+        }
+        IconButton(onClick = onExport, enabled = enabled) {
+            Icon(
+                imageVector = Icons.Filled.SaveAlt,
+                contentDescription = stringResource(R.string.action_export),
+            )
+        }
+        IconButton(onClick = onDelete, enabled = enabled) {
+            Icon(
+                imageVector = Icons.Filled.Delete,
+                contentDescription = stringResource(R.string.action_delete),
+                tint = MaterialTheme.colorScheme.error,
+            )
         }
     }
 }

@@ -6,10 +6,13 @@
 #      (the upstream script get_linenoise.sh needs `unzip`, which the build
 #      host may not have), generating the same linenoise.cmake it would;
 #   2. apply the upstream one-line autocompletion patch (done via sed instead
-#      of `patch` so it is deterministic).
+#      of `patch` so it is deterministic);
+#   3. make the bzip2/lz4 ExternalProject steps portable, so the build also
+#      works on Windows where cmd.exe is the shell.
 #
-# Everything this script writes is ignored by client/deps/.gitignore, so the
-# submodule stays clean for updates.
+# The deps extraction is ignored by client/deps/.gitignore, so the submodule
+# stays clean for updates; step 3 edits two tracked CMakeLists.txt files and is
+# idempotent.
 #
 # Usage: scripts/prepare-pm3.sh
 set -euo pipefail
@@ -150,5 +153,24 @@ target_compile_options(pm3rrg_rdv4_linenoise PRIVATE -Wall -Werror -O3)
 set_property(TARGET pm3rrg_rdv4_linenoise PROPERTY POSITION_INDEPENDENT_CODE ON)
 EOF
 fi
+
+# Ninja hands custom commands to cmd.exe on Windows, where the upstream
+# `mkdir -p` in the bzip2/lz4 configure steps is a syntax error. Use CMake's
+# portable equivalent and read the archive from stdin (`-f -`): bsdtar, the
+# tar shipped with Windows, has no implicit stdin.
+portable_dep_step() {
+    local file="$1"
+    grep -q 'mkdir -p \${BZIP2_BUILD_DIR}' "$file" || return 0
+    echo ">> portable bzip2/lz4 configure steps in ${file#$PM3_ROOT/}"
+    sed -e 's#mkdir -p \${BZIP2_BUILD_DIR}#${CMAKE_COMMAND} -E make_directory ${BZIP2_BUILD_DIR}#' \
+        -e 's#mkdir -p \${LZ4_BUILD_DIR}#${CMAKE_COMMAND} -E make_directory ${LZ4_BUILD_DIR}#' \
+        -e 's#tar -C \${BZIP2_BUILD_DIR} -x#tar -C ${BZIP2_BUILD_DIR} -x -f -#' \
+        -e 's#tar -C \${LZ4_BUILD_DIR} -x#tar -C ${LZ4_BUILD_DIR} -x -f -#' \
+        "$file" > "$file.tmp"
+    mv "$file.tmp" "$file"
+}
+
+portable_dep_step "$PM3_ROOT/client/CMakeLists.txt"
+portable_dep_step "$PM3_ROOT/client/experimental_lib/CMakeLists.txt"
 
 echo ">> proxmark3 submodule ready ($PM3_ROOT)"

@@ -57,23 +57,41 @@ import com.farmacia.pm3android.ui.components.StatusPill
 import com.farmacia.pm3android.ui.console.ConsoleScreen
 import com.farmacia.pm3android.ui.console.Pm3ViewModel
 import com.farmacia.pm3android.ui.device.DeviceScreen
+import com.farmacia.pm3android.ui.files.DumpEditorScreen
+import com.farmacia.pm3android.ui.files.DumpEditorViewModel
 import com.farmacia.pm3android.ui.files.FilesScreen
+import com.farmacia.pm3android.ui.nfc.NfcRestoreScreen
 import com.farmacia.pm3android.ui.settings.SettingsScreen
 import com.farmacia.pm3android.ui.theme.Pm3Theme
 import com.farmacia.pm3android.ui.tools.ToolsScreen
+import com.farmacia.pm3android.nfc.NfcRestoreViewModel
 
 private data class Tab(
     @StringRes val labelRes: Int,
     val icon: ImageVector,
-    val content: @Composable (Pm3ViewModel) -> Unit,
+    val content: @Composable (Pm3ViewModel, NfcRestoreViewModel, DumpEditorViewModel) -> Unit,
 )
 
 private val TABS = listOf(
-    Tab(R.string.nav_device, Icons.Filled.Usb) { DeviceScreen(it) },
-    Tab(R.string.nav_console, Icons.AutoMirrored.Filled.List) { ConsoleScreen(viewModel = it) },
-    Tab(R.string.nav_tools, Icons.Filled.PlayArrow) { ToolsScreen(it) },
-    Tab(R.string.nav_files, Icons.Filled.Share) { FilesScreen(it) },
-    Tab(R.string.nav_settings, Icons.Filled.Info) { SettingsScreen(it) },
+    Tab(R.string.nav_device, Icons.Filled.Usb) { viewModel, _, _ -> DeviceScreen(viewModel) },
+    Tab(R.string.nav_console, Icons.AutoMirrored.Filled.List) { viewModel, _, _ ->
+        ConsoleScreen(viewModel = viewModel)
+    },
+    Tab(R.string.nav_tools, Icons.Filled.PlayArrow) { viewModel, restore, _ ->
+        ToolsScreen(
+            viewModel,
+            onRestore = restore::open,
+            onDump = restore::startDump,
+        )
+    },
+    Tab(R.string.nav_files, Icons.Filled.Share) { viewModel, restore, editor ->
+        FilesScreen(
+            viewModel,
+            onRestore = restore::open,
+            onEditDump = editor::open,
+        )
+    },
+    Tab(R.string.nav_settings, Icons.Filled.Info) { viewModel, _, _ -> SettingsScreen(viewModel) },
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -83,9 +101,13 @@ fun Pm3App(
     onTabRequestHandled: () -> Unit = {},
 ) {
     val viewModel: Pm3ViewModel = viewModel()
+    val restoreViewModel: NfcRestoreViewModel = viewModel()
+    val editorViewModel: DumpEditorViewModel = viewModel()
     val settings by viewModel.settings.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
     val device by viewModel.device.collectAsState()
+    val restoreState by restoreViewModel.state.collectAsState()
+    val editorState by editorViewModel.state.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var selected by rememberSaveable { mutableIntStateOf(0) }
 
@@ -125,54 +147,88 @@ fun Pm3App(
         }
     }
 
+    // A dump created with the phone NFC reader lands in the app folder, so the
+    // Files tab must be refreshed to show it without a manual pull.
+    LaunchedEffect(restoreState.savedName) {
+        if (restoreState.savedName != null) viewModel.refreshFiles()
+    }
+
+    // The editor writes to an existing file: refresh the Data tab so size and
+    // modification date stay in sync with what was saved.
+    LaunchedEffect(editorState.savedToken) {
+        if (editorState.savedToken > 0) viewModel.refreshFiles()
+    }
+
     Pm3Theme(settings) {
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colorScheme.background,
         ) {
-            Scaffold(
-                topBar = {
-                    TopAppBar(
-                        title = { Text(stringResource(TABS[selected].labelRes)) },
-                        actions = {
-                            ConnectionPill(connectionState, device != null)
-                            Spacer(modifier = Modifier.width(4.dp))
-                            IconButton(
-                                onClick = {
-                                    viewModel.refreshDevice()
-                                    viewModel.refreshFiles()
-                                },
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.Refresh,
-                                    contentDescription = stringResource(R.string.action_refresh),
+            Box(modifier = Modifier.fillMaxSize()) {
+                Scaffold(
+                    topBar = {
+                        TopAppBar(
+                            title = { Text(stringResource(TABS[selected].labelRes)) },
+                            actions = {
+                                ConnectionPill(connectionState, device != null)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                IconButton(
+                                    onClick = {
+                                        viewModel.refreshDevice()
+                                        viewModel.refreshFiles()
+                                    },
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Refresh,
+                                        contentDescription = stringResource(R.string.action_refresh),
+                                    )
+                                }
+                            },
+                        )
+                    },
+                    bottomBar = {
+                        NavigationBar {
+                            TABS.forEachIndexed { index, tab ->
+                                NavigationBarItem(
+                                    selected = selected == index,
+                                    onClick = { selected = index },
+                                    icon = {
+                                        Icon(
+                                            imageVector = tab.icon,
+                                            contentDescription = stringResource(tab.labelRes),
+                                        )
+                                    },
+                                    label = { Text(stringResource(tab.labelRes)) },
                                 )
                             }
-                        },
-                    )
-                },
-                bottomBar = {
-                    NavigationBar {
-                        TABS.forEachIndexed { index, tab ->
-                            NavigationBarItem(
-                                selected = selected == index,
-                                onClick = { selected = index },
-                                icon = {
-                                    Icon(
-                                        imageVector = tab.icon,
-                                        contentDescription = stringResource(tab.labelRes),
-                                    )
-                                },
-                                label = { Text(stringResource(tab.labelRes)) },
-                            )
                         }
+                    },
+                    snackbarHost = { SnackbarHost(snackbarHostState) },
+                ) { padding ->
+                    // All tabs share the same ViewModel instance and state.
+                    Box(modifier = Modifier.padding(padding)) {
+                        TABS[selected].content(viewModel, restoreViewModel, editorViewModel)
                     }
-                },
-                snackbarHost = { SnackbarHost(snackbarHostState) },
-            ) { padding ->
-                // All tabs share the same ViewModel instance and state.
-                Box(modifier = Modifier.padding(padding)) {
-                    TABS[selected].content(viewModel)
+                }
+
+                // The dump editor covers the bottom navigation, like the NFC
+                // overlay: the Data tab is not reachable while it is open.
+                if (editorState.visible) {
+                    DumpEditorScreen(
+                        state = editorState,
+                        viewModel = editorViewModel,
+                    )
+                }
+
+                // The NFC restore overlay lives above the Scaffold so it
+                // covers the bottom navigation and keeps reader mode active
+                // while a tag is being written.
+                if (restoreState.visible) {
+                    NfcRestoreScreen(
+                        state = restoreState,
+                        viewModel = restoreViewModel,
+                        onClose = restoreViewModel::close,
+                    )
                 }
             }
         }

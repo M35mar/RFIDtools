@@ -11,6 +11,13 @@
         android:name="android.hardware.usb.host"
         android:required="true" />
 
+    <!-- Optional phone-NFC restore path: the PM3 remains the primary tool, so
+         a device without NFC can still install and use every other feature. -->
+    <uses-permission android:name="android.permission.NFC" />
+    <uses-feature
+        android:name="android.hardware.nfc"
+        android:required="false" />
+
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
