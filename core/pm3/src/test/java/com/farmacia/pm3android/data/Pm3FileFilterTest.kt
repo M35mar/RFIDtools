@@ -38,6 +38,8 @@ class Pm3FileFilterTest {
         assertEquals(FileCategory.TRACE, Pm3FileFilter.categoryOf(".proxmark3/traces/hf.trace"))
         assertEquals(FileCategory.TRACE, Pm3FileFilter.categoryOf("capture.trc"))
         assertEquals(FileCategory.LOG, Pm3FileFilter.categoryOf(".proxmark3/logs/pm3.log"))
+        assertEquals(FileCategory.REPORT, Pm3FileFilter.categoryOf("hf-mf-04112233-report.txt"))
+        assertEquals(FileCategory.REPORT, Pm3FileFilter.categoryOf("dir/HF-MF-A-report.txt"))
         assertEquals(FileCategory.OTHER, Pm3FileFilter.categoryOf("notes.txt"))
     }
 

@@ -14,12 +14,16 @@ enum class FileCategory {
     DUMP,
     TRACE,
     LOG,
+    REPORT,
     OTHER,
 }
 
 object Pm3FileFilter {
 
     private const val CLIENT_DIR = ".proxmark3"
+
+    /** Reports written by the NFC inspector; key `.txt` files stay OTHER. */
+    const val REPORT_SUFFIX = "-report.txt"
 
     fun normalize(relativePath: String): String =
         relativePath.replace('\\', '/').trimStart('/')
@@ -38,6 +42,7 @@ object Pm3FileFilter {
     fun categoryOf(relativePath: String): FileCategory {
         val path = normalize(relativePath).lowercase()
         return when {
+            path.endsWith(REPORT_SUFFIX) -> FileCategory.REPORT
             path.startsWith("$CLIENT_DIR/logs/") || path.endsWith(".log") -> FileCategory.LOG
             path.startsWith("$CLIENT_DIR/traces/") ||
                 path.endsWith(".trace") ||

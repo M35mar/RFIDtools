@@ -21,6 +21,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Nfc
 import androidx.compose.material.icons.filled.Refresh
@@ -38,6 +39,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -61,12 +63,26 @@ import com.farmacia.pm3android.nfc.DumpStage
 import com.farmacia.pm3android.nfc.DumpState
 import com.farmacia.pm3android.nfc.InspectError
 import com.farmacia.pm3android.nfc.NfcSession
+import com.farmacia.pm3android.nfc.ReportStage
+import com.farmacia.pm3android.nfc.ReportState
 import com.farmacia.pm3android.nfc.TagInspectState
 import com.farmacia.pm3android.nfc.TagInspectViewModel
 import com.farmacia.pm3android.nfc.inspect.DesfireVersion
 import com.farmacia.pm3android.nfc.inspect.TagConfidence
 import com.farmacia.pm3android.nfc.inspect.TagIdentity
 import com.farmacia.pm3android.nfc.inspect.TagNote
+import com.farmacia.pm3android.nfc.inspect.content.CapabilityContainer
+import com.farmacia.pm3android.nfc.inspect.content.ClassicContent
+import com.farmacia.pm3android.nfc.inspect.content.ClassicSector
+import com.farmacia.pm3android.nfc.inspect.content.MadDirectory
+import com.farmacia.pm3android.nfc.inspect.content.MfuCounter
+import com.farmacia.pm3android.nfc.inspect.content.NdefContent
+import com.farmacia.pm3android.nfc.inspect.content.NdefKind
+import com.farmacia.pm3android.nfc.inspect.content.NdefRecord
+import com.farmacia.pm3android.nfc.inspect.content.NdefStatus
+import com.farmacia.pm3android.nfc.inspect.content.SectorRole
+import com.farmacia.pm3android.nfc.inspect.content.TagContent
+import com.farmacia.pm3android.nfc.inspect.content.UltralightContent
 import com.farmacia.pm3android.ui.components.InfoRow
 import com.farmacia.pm3android.ui.components.SectionCard
 import com.farmacia.pm3android.ui.components.StatusPill
@@ -176,6 +192,17 @@ private fun ResultContent(
     val desfire = state.desfire
     if (desfire != null) DesfireCard(desfire, state.applications)
 
+    val content = state.content
+    if (content != null) {
+        ContentCards(content)
+    } else if (identity.dumpable) {
+        Text(
+            text = stringResource(R.string.inspect_content_unavailable),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+
     if (identity.dumpable) {
         DumpCard(state.dump, viewModel, onOpenDumpFlow)
     } else {
@@ -185,6 +212,8 @@ private fun ResultContent(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
+
+    ReportCard(state.report, viewModel)
 
     Button(onClick = viewModel::start, modifier = Modifier.fillMaxWidth()) {
         Icon(
@@ -342,6 +371,368 @@ private fun DesfireCard(version: DesfireVersion, applications: List<Int>?) {
         InfoRow(stringResource(R.string.inspect_applications), applicationsText)
     }
 }
+
+@Composable
+private fun ContentCards(content: TagContent) {
+    val classic = content.classic
+    if (classic != null) {
+        content.mad?.let { mad -> MadCard(mad) }
+        NdefCard(classic.ndef)
+        SectorTableCard(classic)
+        return
+    }
+    val ultralight = content.ultralight
+    if (ultralight != null) {
+        Type2Card(ultralight)
+        ultralight.cc?.let { cc -> CapabilityCard(cc) }
+        NdefCard(ultralight.ndef)
+        CountersCard(ultralight.counters)
+    }
+}
+
+@Composable
+private fun MadCard(mad: MadDirectory) {
+    SectionCard(title = stringResource(R.string.inspect_mad_title)) {
+        InfoRow(stringResource(R.string.inspect_mad_version), mad.version.toString())
+        InfoRow(stringResource(R.string.inspect_mad_publisher), mad.publisherSector.toString())
+        InfoRow(stringResource(R.string.inspect_mad_multi), yesNo(mad.multiApplication))
+        InfoRow(stringResource(R.string.inspect_mad_directory), yesNo(mad.directoryAvailable))
+        Text(
+            text = stringResource(
+                if (mad.crcOk) R.string.inspect_mad_crc_ok else R.string.inspect_mad_crc_bad,
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color = if (mad.crcOk) {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            } else {
+                MaterialTheme.colorScheme.error
+            },
+        )
+        if (mad.assigned.isEmpty()) {
+            Text(
+                text = stringResource(R.string.inspect_mad_empty),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            mad.assigned.forEach { entry ->
+                val name = entry.name?.let { " $it" }.orEmpty()
+                InfoRow(
+                    stringResource(R.string.inspect_mad_sector, entry.sector),
+                    "${entry.aidHex}$name",
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun NdefCard(ndef: NdefContent) {
+    SectionCard(title = stringResource(R.string.inspect_ndef_title)) {
+        when (ndef.status) {
+            NdefStatus.ABSENT -> Text(
+                text = stringResource(R.string.inspect_ndef_absent),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            NdefStatus.TRUNCATED -> Text(
+                text = stringResource(R.string.inspect_ndef_truncated),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.tertiary,
+            )
+
+            NdefStatus.INVALID -> Text(
+                text = stringResource(R.string.inspect_ndef_invalid),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+
+            NdefStatus.FOUND -> {
+                Text(
+                    text = stringResource(
+                        R.string.inspect_ndef_summary,
+                        ndef.records.size,
+                        ndef.bytes,
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                ndef.records.forEach { record -> NdefRecordRow(record) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NdefRecordRow(record: NdefRecord) {
+    val body = record.text
+        ?: record.type.takeIf { it.isNotEmpty() }
+        ?: stringResource(R.string.inspect_empty_value)
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(1.dp),
+    ) {
+        Text(
+            text = stringResource(
+                R.string.inspect_ndef_record,
+                ndefKindText(record.kind),
+                record.payloadBytes,
+            ),
+            style = MaterialTheme.typography.labelMedium,
+        )
+        Text(
+            text = body,
+            style = MaterialTheme.typography.bodySmall,
+            fontFamily = FontFamily.Monospace,
+        )
+    }
+}
+
+@Composable
+private fun SectorTableCard(content: ClassicContent) {
+    var expanded by remember { mutableStateOf(false) }
+    val visible = if (expanded) content.sectors else content.sectors.take(SECTOR_PREVIEW)
+    SectionCard(title = stringResource(R.string.inspect_sectors_title)) {
+        Text(
+            text = stringResource(
+                R.string.inspect_sectors_summary,
+                content.readableSectors,
+                content.totalSectors,
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        visible.forEach { sector -> SectorRow(sector) }
+        if (content.sectors.size > SECTOR_PREVIEW) {
+            TextButton(
+                onClick = { expanded = !expanded },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    text = if (expanded) {
+                        stringResource(R.string.inspect_sectors_less)
+                    } else {
+                        stringResource(R.string.inspect_sectors_all, content.sectors.size)
+                    },
+                )
+            }
+        }
+        Text(
+            text = stringResource(R.string.inspect_access_legend),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun SectorRow(sector: ClassicSector) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(
+                    R.string.inspect_sector_line,
+                    sector.sector,
+                    sector.blocks,
+                    roleText(sector.role),
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.weight(1f),
+            )
+            if (!sector.readable) {
+                Text(
+                    text = stringResource(R.string.inspect_sector_unreadable),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+        val access = sector.access
+        if (access != null) {
+            Text(
+                text = access.data.joinToString("   ") { it.compact() },
+                style = MaterialTheme.typography.labelSmall,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = access.trailerCompact(),
+                style = MaterialTheme.typography.labelSmall,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (!sector.accessConsistent) {
+                Text(
+                    text = stringResource(R.string.inspect_access_inconsistent),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+        if (sector.valueBlock) {
+            Text(
+                text = stringResource(R.string.inspect_sector_value),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.tertiary,
+            )
+        }
+        sector.firstDataHex?.let { hex ->
+            Text(
+                text = hex.take(16).chunked(2).joinToString(" ") + " …",
+                style = MaterialTheme.typography.labelSmall,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun Type2Card(content: UltralightContent) {
+    SectionCard(title = stringResource(R.string.inspect_type2_title)) {
+        InfoRow(stringResource(R.string.inspect_type2_pages), content.pages.toString())
+        if (content.cc == null) {
+            Text(
+                text = stringResource(R.string.inspect_type2_cc_none),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CapabilityCard(cc: CapabilityContainer) {
+    SectionCard(title = stringResource(R.string.inspect_type2_cc)) {
+        InfoRow(
+            stringResource(R.string.inspect_type2_cc_version),
+            "${cc.versionMajor}.${cc.versionMinor}",
+        )
+        InfoRow(
+            stringResource(R.string.inspect_type2_cc_capacity),
+            stringResource(R.string.inspect_memory_bytes, cc.capacityBytes),
+        )
+        InfoRow(stringResource(R.string.inspect_type2_cc_read), "0x%X".format(cc.readAccess))
+        InfoRow(stringResource(R.string.inspect_type2_cc_write), "0x%X".format(cc.writeAccess))
+    }
+}
+
+@Composable
+private fun CountersCard(counters: List<MfuCounter>) {
+    SectionCard(title = stringResource(R.string.inspect_counters_title)) {
+        counters.forEachIndexed { index, counter ->
+            val value = counter.value?.toString()
+                ?: stringResource(R.string.inspect_counter_none)
+            val suffix = if (counter.tearing) {
+                " · " + stringResource(R.string.inspect_counter_tearing)
+            } else {
+                ""
+            }
+            InfoRow(
+                stringResource(R.string.inspect_counter_line, index + 1),
+                value + suffix,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReportCard(report: ReportState, viewModel: TagInspectViewModel) {
+    SectionCard(title = stringResource(R.string.inspect_report_title)) {
+        when (report.stage) {
+            ReportStage.IDLE, ReportStage.FAILED -> {
+                if (report.stage == ReportStage.FAILED) {
+                    Text(
+                        text = stringResource(R.string.inspect_report_error),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                Text(
+                    text = stringResource(R.string.inspect_report_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Button(onClick = viewModel::saveReport, modifier = Modifier.fillMaxWidth()) {
+                    Icon(
+                        imageVector = Icons.Filled.Description,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Text(
+                        text = stringResource(R.string.inspect_report_save),
+                        modifier = Modifier.padding(start = 8.dp),
+                    )
+                }
+            }
+
+            ReportStage.SAVED -> {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.CheckCircle,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Text(
+                        text = stringResource(R.string.inspect_report_saved),
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                }
+                report.savedName?.let {
+                    InfoRow(stringResource(R.string.inspect_report_name), it)
+                }
+                Text(
+                    text = stringResource(R.string.inspect_dump_saved_note),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+private const val SECTOR_PREVIEW = 8
+
+@Composable
+private fun roleText(role: SectorRole): String = stringResource(
+    when (role) {
+        SectorRole.MANUFACTURER -> R.string.inspect_role_manufacturer
+        SectorRole.MAD1 -> R.string.inspect_role_mad1
+        SectorRole.MAD2 -> R.string.inspect_role_mad2
+        SectorRole.NDEF -> R.string.inspect_role_ndef
+        SectorRole.DATA -> R.string.inspect_role_data
+    },
+)
+
+@Composable
+private fun ndefKindText(kind: NdefKind): String = stringResource(
+    when (kind) {
+        NdefKind.TEXT -> R.string.inspect_ndef_kind_text
+        NdefKind.URI -> R.string.inspect_ndef_kind_uri
+        NdefKind.MIME -> R.string.inspect_ndef_kind_mime
+        NdefKind.EXTERNAL -> R.string.inspect_ndef_kind_external
+        NdefKind.SMART_POSTER -> R.string.inspect_ndef_kind_poster
+        NdefKind.EMPTY -> R.string.inspect_ndef_kind_empty
+        NdefKind.UNKNOWN -> R.string.inspect_ndef_kind_unknown
+    },
+)
+
+@Composable
+private fun yesNo(value: Boolean): String = stringResource(
+    if (value) R.string.inspect_yes else R.string.inspect_no,
+)
 
 @Composable
 private fun DumpCard(

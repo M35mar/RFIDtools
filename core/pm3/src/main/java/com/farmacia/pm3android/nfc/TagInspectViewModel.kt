@@ -20,6 +20,9 @@ import com.farmacia.pm3android.nfc.inspect.DesfireVersion
 import com.farmacia.pm3android.nfc.inspect.NfcTech
 import com.farmacia.pm3android.nfc.inspect.TagIdentifier
 import com.farmacia.pm3android.nfc.inspect.TagIdentity
+import com.farmacia.pm3android.nfc.inspect.content.TagContent
+import com.farmacia.pm3android.nfc.inspect.content.TagContentAnalyzer
+import com.farmacia.pm3android.nfc.inspect.content.TagReport
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -55,7 +58,7 @@ enum class DumpError {
     READ,
 }
 
-class DumpState(
+data class DumpState(
     val stage: DumpStage = DumpStage.NONE,
     val savedName: String? = null,
     val savedKeyName: String? = null,
@@ -66,15 +69,30 @@ class DumpState(
     val blocksMissing: Int = 0,
 )
 
-class TagInspectState(
+/** Where the text report of the identified tag is. */
+enum class ReportStage {
+    IDLE,
+    SAVED,
+    FAILED,
+}
+
+data class ReportState(
+    val stage: ReportStage = ReportStage.IDLE,
+    val savedName: String? = null,
+)
+
+data class TagInspectState(
     val visible: Boolean = false,
     val busy: Boolean = false,
     val identity: TagIdentity? = null,
     val desfire: DesfireVersion? = null,
     /** Null means the list was never read, empty means the card has none. */
     val applications: List<Int>? = null,
+    /** Content of the capture, available once the memory has been read. */
+    val content: TagContent? = null,
     val error: InspectError? = null,
     val dump: DumpState = DumpState(),
+    val report: ReportState = ReportState(),
 ) {
     /**
      * Reader mode stays enabled while a read is in progress: disabling it drops
@@ -110,8 +128,10 @@ class TagInspectViewModel(application: Application) : AndroidViewModel(applicati
             identity = null,
             desfire = null,
             applications = null,
+            content = null,
             error = null,
             dump = DumpState(),
+            report = ReportState(),
         )
     }
 
@@ -156,7 +176,10 @@ class TagInspectViewModel(application: Application) : AndroidViewModel(applicati
     fun startDump() {
         val current = stateFlow.value
         if (!current.visible || current.identity?.dumpable != true) return
-        stateFlow.value = current.copy(dump = DumpState(stage = DumpStage.WAITING))
+        stateFlow.value = current.copy(
+            dump = DumpState(stage = DumpStage.WAITING),
+            report = ReportState(),
+        )
     }
 
     fun cancelDump() {
@@ -170,7 +193,10 @@ class TagInspectViewModel(application: Application) : AndroidViewModel(applicati
         if (current.dump.stage != DumpStage.INCOMPLETE && current.dump.stage != DumpStage.FAILED) {
             return
         }
-        stateFlow.value = current.copy(dump = DumpState(stage = DumpStage.WAITING))
+        stateFlow.value = current.copy(
+            dump = DumpState(stage = DumpStage.WAITING),
+            report = ReportState(),
+        )
     }
 
     private fun readDump(tag: Tag) {
@@ -178,15 +204,27 @@ class TagInspectViewModel(application: Application) : AndroidViewModel(applicati
         val classic = MifareClassic.get(tag) != null
         viewModelScope.launch {
             try {
-                val saved = withContext(Dispatchers.IO) { captureAndSave(tag, classic) }
+                val result = withContext(Dispatchers.IO) { captureAndSave(tag, classic) }
                 val latest = stateFlow.value
                 if (!latest.visible) return@launch
+                val missing = result.missing
                 stateFlow.value = latest.copy(
-                    dump = DumpState(
-                        stage = DumpStage.SAVED,
-                        savedName = saved.dump.name,
-                        savedKeyName = saved.keyFile?.name,
-                    ),
+                    content = result.content,
+                    dump = if (missing == null) {
+                        DumpState(
+                            stage = DumpStage.SAVED,
+                            savedName = result.saved?.dump?.name,
+                            savedKeyName = result.saved?.keyFile?.name,
+                        )
+                    } else {
+                        DumpState(
+                            stage = DumpStage.INCOMPLETE,
+                            error = DumpError.INCOMPLETE,
+                            sectorsMissing = missing.sectorsMissing,
+                            blocksMissing = missing.blocksMissing,
+                        )
+                    },
+                    report = ReportState(),
                 )
             } catch (t: CancellationException) {
                 throw t
@@ -194,17 +232,6 @@ class TagInspectViewModel(application: Application) : AndroidViewModel(applicati
                 dumpFailed(DumpError.TAG_LOST)
             } catch (_: TagAuthException) {
                 dumpFailed(if (classic) DumpError.KEYS else DumpError.PASSWORD)
-            } catch (t: MfcIncompleteReadException) {
-                val latest = stateFlow.value
-                if (!latest.visible) return@launch
-                stateFlow.value = latest.copy(
-                    dump = latest.dump.copy(
-                        stage = DumpStage.INCOMPLETE,
-                        error = DumpError.INCOMPLETE,
-                        sectorsMissing = t.missingSectors.size,
-                        blocksMissing = t.unreadableBlocks,
-                    ),
-                )
             } catch (_: Throwable) {
                 dumpFailed(DumpError.READ)
             }
@@ -212,10 +239,12 @@ class TagInspectViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     /**
-     * Reads the whole tag with the factory keys and saves it only when nothing
-     * is missing: a partial dump looks valid and would restore zeroes later.
+     * Reads the whole tag with the factory keys. The capture is analyzed even
+     * when it is incomplete, so the inspector can show what was readable; the
+     * `.bin` is written only when nothing is missing, because a partial dump
+     * looks valid and would restore zeroes later.
      */
-    private fun captureAndSave(tag: Tag, classic: Boolean): SavedDump {
+    private fun captureAndSave(tag: Tag, classic: Boolean): CaptureResult {
         val context = getApplication<Application>()
         val progress = RestoreProgress { done, total ->
             val current = stateFlow.value
@@ -228,12 +257,18 @@ class TagInspectViewModel(application: Application) : AndroidViewModel(applicati
         if (classic) {
             val transport = AndroidClassicTransport(tag)
             try {
-                val capture = MfcReader(transport).read(requireComplete = true, progress = progress)
-                return NfcDumpSaver.save(
+                val capture = MfcReader(transport).read(progress = progress)
+                val content = TagContentAnalyzer.of(capture)
+                val missing = incomplete(capture)
+                if (missing != null) {
+                    return CaptureResult(content = content, missing = missing)
+                }
+                val saved = NfcDumpSaver.save(
                     context = context,
                     name = "hf-mf-${capture.uidHex}-dump",
                     classic = capture,
                 )
+                return CaptureResult(content = content, saved = saved)
             } finally {
                 transport.close()
             }
@@ -241,13 +276,87 @@ class TagInspectViewModel(application: Application) : AndroidViewModel(applicati
         val transport = AndroidUltralightTransport(tag)
         try {
             val capture = MfuReader(transport).read(progress = progress)
-            return NfcDumpSaver.save(
+            val saved = NfcDumpSaver.save(
                 context = context,
                 name = capture.defaultName,
                 ultralight = capture,
             )
+            return CaptureResult(
+                content = TagContentAnalyzer.of(capture),
+                saved = saved,
+            )
         } finally {
             transport.close()
+        }
+    }
+
+    /** Counts of an incomplete Classic capture, null when every block was read. */
+    private fun incomplete(capture: MfcCapture): Missing? {
+        val sectors = (0 until capture.size.sectors).count { sector ->
+            sector !in capture.readableSectors ||
+                (0 until MfcGeometry.blocksInSector(sector)).any { offset ->
+                    MfcGeometry.firstBlockOfSector(sector) + offset !in capture.readableBlocks
+                }
+        }
+        val blocks = capture.unreadableBlocks.size
+        return if (sectors == 0 && blocks == 0) null else Missing(sectors, blocks)
+    }
+
+    private class CaptureResult(
+        val content: TagContent,
+        val saved: SavedDump? = null,
+        val missing: Missing? = null,
+    )
+
+    private class Missing(val sectorsMissing: Int, val blocksMissing: Int)
+
+    // -----------------------------------------------------------------------
+    // Report
+    // -----------------------------------------------------------------------
+
+    /**
+     * Writes identity, notes and content as `<base>-report.txt`, next to the
+     * dumps. Available as soon as the identity is known, with or without a dump.
+     */
+    fun saveReport() {
+        val current = stateFlow.value
+        val identity = current.identity ?: return
+        if (current.report.stage == ReportStage.SAVED || current.busy) return
+        if (current.dump.stage == DumpStage.READING) return
+        val content = current.content
+        val desfire = current.desfire
+        val applications = current.applications
+        val dumpName = current.dump.savedName
+        viewModelScope.launch {
+            val saved = try {
+                withContext(Dispatchers.IO) {
+                    val text = TagReport.build(
+                        identity = identity,
+                        content = content,
+                        desfire = desfire,
+                        applications = applications,
+                        dumpName = dumpName,
+                    )
+                    NfcReport.save(
+                        context = getApplication<Application>(),
+                        baseName = TagReport.baseName(identity, dumpName),
+                        text = text,
+                    )
+                }
+            } catch (t: CancellationException) {
+                throw t
+            } catch (_: Throwable) {
+                null
+            }
+            val latest = stateFlow.value
+            if (!latest.visible || latest.identity !== identity) return@launch
+            stateFlow.value = latest.copy(
+                report = if (saved == null) {
+                    ReportState(stage = ReportStage.FAILED)
+                } else {
+                    ReportState(stage = ReportStage.SAVED, savedName = saved.name)
+                },
+            )
         }
     }
 

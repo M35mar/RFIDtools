@@ -167,6 +167,11 @@ fun FilesScreen(
                 label = { Text(stringResource(R.string.files_filter_logs)) },
             )
             FilterChip(
+                selected = filter == FileCategory.REPORT,
+                onClick = { filter = FileCategory.REPORT },
+                label = { Text(stringResource(R.string.files_filter_reports)) },
+            )
+            FilterChip(
                 selected = filter == FileCategory.OTHER,
                 onClick = { filter = FileCategory.OTHER },
                 label = { Text(stringResource(R.string.files_filter_other)) },
