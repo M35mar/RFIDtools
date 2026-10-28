@@ -46,7 +46,7 @@ object TagIdentifier {
             else -> simple(
                 snapshot,
                 TagFamily.UNKNOWN,
-                "Tag non riconosciuto",
+                "Unknown tag",
                 TagConfidence.LOW,
                 notes,
             )
@@ -55,6 +55,27 @@ object TagIdentifier {
 
     /** True for SAKs Android reports for Classic and Plus level 1 cards. */
     fun isClassicSak(sak: Int): Boolean = SAK_BYTES.containsKey(sak and 0xFF)
+
+    /**
+     * Upgrades an ISO-DEP guess to a confirmed DESFire once GetVersion answered.
+     * The UID and the discovery data are kept: GetVersion adds the generation,
+     * the memory size and the NXP vendor.
+     */
+    fun refineWithDesfire(identity: TagIdentity, version: DesfireVersion): TagIdentity =
+        TagIdentity(
+            family = TagFamily.DESFIRE,
+            label = version.label,
+            confidence = TagConfidence.HIGH,
+            uid = identity.uid,
+            vendor = version.vendorName,
+            atqa = identity.atqa,
+            sak = identity.sak,
+            memoryBytes = version.storageBytes,
+            techs = identity.techs,
+            version = null,
+            notes = (identity.notes - TagNote.VERSION_UNAVAILABLE + TagNote.DESFIRE_NO_DUMP)
+                .distinct(),
+        )
 
     private fun fromVersion(
         snapshot: TagSnapshot,
@@ -107,7 +128,7 @@ object TagIdentifier {
         notes += TagNote.VERSION_UNAVAILABLE
         return TagIdentity(
             family = TagFamily.ISO_DEP,
-            label = "ISO-DEP (DESFire o Plus SL3)",
+            label = "ISO-DEP (DESFire or Plus SL3)",
             confidence = TagConfidence.MEDIUM,
             uid = snapshot.uid,
             vendor = vendorOfUid(snapshot.uid, TagFamily.ISO_DEP),

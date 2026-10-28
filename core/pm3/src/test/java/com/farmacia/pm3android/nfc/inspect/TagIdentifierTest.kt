@@ -69,7 +69,7 @@ class TagIdentifierTest {
         assertTrue(identity.notes.contains(TagNote.CLASSIC_WITHOUT_TECH))
         assertTrue(identity.notes.contains(TagNote.VERSION_UNAVAILABLE))
         assertFalse(identity.dumpable)
-        assertEquals("7 byte (doppio)", identity.uidKind)
+        assertEquals(7, identity.uidLength)
     }
 
     @Test
@@ -120,6 +120,40 @@ class TagIdentifierTest {
         assertEquals(TagFamily.FELICA, felica.family)
         assertFalse(vic.dumpable)
         assertFalse(felica.dumpable)
+    }
+
+    @Test
+    fun `desfire refinement keeps the uid and adds the note`() {
+        val base = TagIdentifier.identify(
+            TagSnapshot(
+                uid = sevenByteUid,
+                techs = listOf(NfcTech.NFC_A, NfcTech.ISO_DEP),
+                sak = 0x20,
+            ),
+        )
+        val version = DesfireVersion(
+            hardwareVendor = 0x04,
+            hardwareType = 0x01,
+            hardwareSubtype = 0x02,
+            hardwareMajor = 1,
+            hardwareMinor = 3,
+            storageCode = 0x19,
+            protocolCode = 0x05,
+            softwareMajor = 2,
+            softwareMinor = 0,
+        )
+
+        val refined = TagIdentifier.refineWithDesfire(base, version)
+
+        assertEquals(TagFamily.DESFIRE, refined.family)
+        assertEquals("MIFARE DESFire EV2 4 KB", refined.label)
+        assertEquals(TagConfidence.HIGH, refined.confidence)
+        assertEquals("NXP", refined.vendor)
+        assertEquals(4096, refined.memoryBytes)
+        assertEquals(base.uidHex, refined.uidHex)
+        assertTrue(refined.notes.contains(TagNote.DESFIRE_NO_DUMP))
+        assertFalse(refined.notes.contains(TagNote.VERSION_UNAVAILABLE))
+        assertFalse(refined.dumpable)
     }
 
     @Test

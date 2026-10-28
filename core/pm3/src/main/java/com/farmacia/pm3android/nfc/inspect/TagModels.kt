@@ -116,13 +116,4 @@ class TagIdentity(
         get() = techs.contains(NfcTech.MIFARE_CLASSIC) ||
             family == TagFamily.MIFARE_ULTRALIGHT ||
             family == TagFamily.NTAG
-
-    /** UID byte count as Android reports it, described for the UI. */
-    val uidKind: String
-        get() = when (uid.size) {
-            4 -> "4 byte (singolo)"
-            7 -> "7 byte (doppio)"
-            10 -> "10 byte (ISO 15693)"
-            else -> "${uid.size} byte"
-        }
 }

@@ -65,37 +65,47 @@ import com.farmacia.pm3android.ui.files.DumpEditorViewModel
 import com.farmacia.pm3android.ui.files.FilesScreen
 import com.farmacia.pm3android.ui.nfc.NfcRestoreScreen
 import com.farmacia.pm3android.ui.nfc.NfcScreen
+import com.farmacia.pm3android.ui.nfc.TagInspectScreen
 import com.farmacia.pm3android.ui.settings.SettingsScreen
 import com.farmacia.pm3android.ui.theme.Pm3Theme
 import com.farmacia.pm3android.ui.update.UpdatePromptDialog
 import com.farmacia.pm3android.nfc.NfcRestoreViewModel
+import com.farmacia.pm3android.nfc.TagInspectViewModel
 import com.farmacia.pm3android.update.UpdateState
 
 private data class Tab(
     @StringRes val labelRes: Int,
     val icon: ImageVector,
-    val content: @Composable (Pm3ViewModel, NfcRestoreViewModel, DumpEditorViewModel) -> Unit,
+    val content: @Composable (
+        Pm3ViewModel,
+        NfcRestoreViewModel,
+        DumpEditorViewModel,
+        TagInspectViewModel,
+    ) -> Unit,
 )
 
 private val TABS = listOf(
-    Tab(R.string.nav_device, Icons.Filled.Usb) { viewModel, _, _ -> DeviceScreen(viewModel) },
-    Tab(R.string.nav_console, Icons.AutoMirrored.Filled.List) { viewModel, _, _ ->
+    Tab(R.string.nav_device, Icons.Filled.Usb) { viewModel, _, _, _ -> DeviceScreen(viewModel) },
+    Tab(R.string.nav_console, Icons.AutoMirrored.Filled.List) { viewModel, _, _, _ ->
         ConsoleScreen(viewModel = viewModel)
     },
-    Tab(R.string.nav_nfc, Icons.Filled.Nfc) { viewModel, restore, _ ->
+    Tab(R.string.nav_nfc, Icons.Filled.Nfc) { viewModel, restore, _, inspect ->
         NfcScreen(
             viewModel = viewModel,
             restoreViewModel = restore,
+            onIdentify = inspect::start,
         )
     },
-    Tab(R.string.nav_files, Icons.Filled.Share) { viewModel, restore, editor ->
+    Tab(R.string.nav_files, Icons.Filled.Share) { viewModel, restore, editor, _ ->
         FilesScreen(
             viewModel,
             onRestore = restore::open,
             onEditDump = editor::open,
         )
     },
-    Tab(R.string.nav_settings, Icons.Filled.Info) { viewModel, _, _ -> SettingsScreen(viewModel) },
+    Tab(R.string.nav_settings, Icons.Filled.Info) { viewModel, _, _, _ ->
+        SettingsScreen(viewModel)
+    },
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -107,6 +117,7 @@ fun Pm3App(
     val viewModel: Pm3ViewModel = viewModel()
     val restoreViewModel: NfcRestoreViewModel = viewModel()
     val editorViewModel: DumpEditorViewModel = viewModel()
+    val inspectViewModel: TagInspectViewModel = viewModel()
     val settings by viewModel.settings.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
     val device by viewModel.device.collectAsState()
@@ -114,6 +125,7 @@ fun Pm3App(
     val updatePrompt by viewModel.updatePrompt.collectAsState()
     val restoreState by restoreViewModel.state.collectAsState()
     val editorState by editorViewModel.state.collectAsState()
+    val inspectState by inspectViewModel.state.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var selected by rememberSaveable { mutableIntStateOf(0) }
 
@@ -224,7 +236,12 @@ fun Pm3App(
                 ) { padding ->
                     // All tabs share the same ViewModel instance and state.
                     Box(modifier = Modifier.padding(padding)) {
-                        TABS[selected].content(viewModel, restoreViewModel, editorViewModel)
+                        TABS[selected].content(
+                            viewModel,
+                            restoreViewModel,
+                            editorViewModel,
+                            inspectViewModel,
+                        )
                     }
                 }
 
@@ -257,6 +274,16 @@ fun Pm3App(
                         state = restoreState,
                         viewModel = restoreViewModel,
                         onClose = restoreViewModel::close,
+                    )
+                }
+
+                // The inspector is a second NFC overlay, independent from the
+                // restore flow: it only reads and never writes the tag.
+                if (inspectState.visible) {
+                    TagInspectScreen(
+                        state = inspectState,
+                        viewModel = inspectViewModel,
+                        onClose = inspectViewModel::close,
                     )
                 }
             }

@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Nfc
 import androidx.compose.material.icons.filled.SaveAlt
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -63,6 +64,7 @@ import com.farmacia.pm3android.ui.console.Pm3ViewModel
 fun NfcScreen(
     viewModel: Pm3ViewModel,
     restoreViewModel: NfcRestoreViewModel,
+    onIdentify: () -> Unit,
 ) {
     val files by viewModel.files.collectAsState()
     val context = LocalContext.current
@@ -109,6 +111,14 @@ fun NfcScreen(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 4.dp),
+            )
+            NfcActionCard(
+                icon = Icons.Filled.Search,
+                title = stringResource(R.string.nfc_identify_title),
+                description = stringResource(R.string.nfc_identify_desc),
+                supporting = stringResource(R.string.nfc_identify_supporting),
+                enabled = nfcEnabled,
+                onClick = onIdentify,
             )
             NfcActionCard(
                 icon = Icons.Filled.SaveAlt,

@@ -7,8 +7,11 @@
 package com.farmacia.pm3android.nfc
 
 import android.nfc.Tag
+import android.nfc.TagLostException
+import android.nfc.tech.IsoDep
 import android.nfc.tech.MifareClassic
 import android.nfc.tech.NfcA
+import com.farmacia.pm3android.nfc.inspect.IsoDepTransport
 import java.io.IOException
 
 class AndroidClassicTransport(tag: Tag) : ClassicTransport {
@@ -46,6 +49,41 @@ class AndroidClassicTransport(tag: Tag) : ClassicTransport {
 
     override fun close() {
         runCatching { tech.close() }
+    }
+}
+
+/**
+ * ISO-DEP carrier for the DESFire client. The phone's NFC stack handles the
+ * ISO 7816 framing; the DESFire client only builds the wrapped APDUs.
+ */
+class AndroidIsoDepTransport(tag: Tag) : IsoDepTransport {
+
+    private val tech: IsoDep = IsoDep.get(tag)
+        ?: throw TagUnusableException("il tag non supporta ISO-DEP")
+
+    init {
+        try {
+            tech.connect()
+            tech.timeout = ISO_TIMEOUT_MS
+        } catch (lost: TagLostException) {
+            throw lost
+        } catch (t: Exception) {
+            throw TagUnusableException("connessione al tag non riuscita", t)
+        }
+    }
+
+    override fun transceive(command: ByteArray): ByteArray {
+        val response = tech.transceive(command)
+            ?: throw IOException("risposta NFC vuota")
+        return response
+    }
+
+    fun close() {
+        runCatching { tech.close() }
+    }
+
+    private companion object {
+        const val ISO_TIMEOUT_MS = 5000
     }
 }
 
