@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.8.0 — 2026-10-28
+
+### Added
+- **Identifica tag** in the **NFC** tab: a read-only overlay that identifies the
+  tag in the hand with the phone's reader and shows everything it can learn
+  without keys. Identification prefers GET_VERSION, then the Android tech list,
+  then SAK, and labels the result as confirmed, likely or uncertain. Covers
+  MIFARE Classic 1K/2K/4K, Ultralight, NTAG and EV1, Plus, DESFire, ISO 15693
+  and FeliCa, including 4-byte and 7-byte UIDs and common clones.
+- DESFire summary from the free commands: generation, software version, memory
+  size and application IDs.
+- Content of the memory once read: MAD1/MAD2 directory with CRC check and AID
+  names, NDEF records (text, URI, MIME, external, smart poster), sector roles,
+  access bits decoded with the NXP tables, value blocks, Type 2 capability
+  container and NTAG counters.
+- Dump from the inspector using the factory keys. The `.bin` and its
+  `hf-mf-<UID>-key.bin` are written only when the read is complete, matching
+  `hf mf dump`; an incomplete read keeps the readable content on screen and
+  offers the full read flow for key files and passwords.
+- Text report (`<base>-report.txt`) available as soon as the identity is known,
+  with identity, notes, GET_VERSION/DESFire data, MAD, NDEF and the sector
+  table. A new **Report** filter in **Data** lists these files.
+
+### Changed
+- **Data** filters gain **Report**; key `.txt` files stay under **Other**.
+- Version `0.8.0` (`versionCode` 9).
+
 ## 0.7.0 — 2026-10-28
 
 ### Added

@@ -43,8 +43,8 @@ from **Info → Links → Check for updates**. The first install is a manual sid
 | --- | --- |
 | **Device** | USB status, vendor/product IDs, serial and interface diagnostics with copy/share. Sub-tab **PM3 tools**: searchable LF, HF, MIFARE Classic (one-tap autopwn) and Ultralight Ev1 commands, parameter dialogs, recent commands. |
 | **Console** | Free-form command input with history, follow mode, font size, copy/share of the output. Commands run through the in-process client, not a shell. |
-| **NFC** | Read and write tags with the phone's reader only: Ultralight/NTAG and MIFARE Classic dumps, restored with the keys from `hf-mf-<UID>-key.bin`. No Proxmark3 required. |
-| **Data** | Dumps, traces and logs; filters, import/export via the Storage Access Framework, share. Built-in hex editor for `.bin` blocks and pages, with decoded access bits and value blocks. |
+| **NFC** | Identify a tag with the phone's reader: family, UID, memory, MAD directory, NDEF, sectors with access bits and counters. Read and write Ultralight/NTAG and MIFARE Classic dumps, restored with the keys from `hf-mf-<UID>-key.bin`, and save a text report of what was read. No Proxmark3 required. |
+| **Data** | Dumps, traces, logs and tag reports; filters, import/export via the Storage Access Framework, share. Built-in hex editor for `.bin` blocks and pages, with decoded access bits and value blocks. |
 | **Info** | Version, build and client commit, theme, settings backup/restore, client-resource reset, in-app updates, licence and links. |
 
 **Scripts:** import `.lua`, `.cmd` and `.py` files, run them with arguments and keep them
@@ -59,9 +59,9 @@ fail). Only import scripts you trust.
 3. Open the app and accept the Android USB permission prompt.
 4. Go to **Device → Device**, tap **Connect**, then use **Console** or **PM3 tools**.
 
-Use **Data** for dumps, traces and logs, and **NFC** to work with tags using the phone
-alone. If the board is not detected, check the cable/adapter and confirm it enumerates
-as `0x9ac4:0x4b8f`.
+Use **Data** for dumps, traces, logs and reports, and **NFC** to identify tags and work with
+them using the phone alone. If the board is not detected, check the cable/adapter and confirm
+it enumerates as `0x9ac4:0x4b8f`.
 
 ## Requirements
 
