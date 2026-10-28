@@ -467,4 +467,21 @@
     <string name="inspect_error_read">Non è stato possibile leggere il tag. Riprova.</string>
     <string name="inspect_retry">Riprova</string>
     <string name="inspect_unavailable_value">—</string>
+    <string name="inspect_dump_title">Dump della memoria</string>
+    <string name="inspect_dump_hint">Il dump viene salvato solo se la lettura è completa. Ti basta avvicinare di nuovo il tag.</string>
+    <string name="inspect_dump_read">Leggi memoria e salva dump</string>
+    <string name="inspect_dump_waiting">Avvicina di nuovo il tag: parte la lettura della memoria.</string>
+    <string name="inspect_dump_cancel">Annulla</string>
+    <string name="inspect_dump_progress">Lettura %1$d/%2$d</string>
+    <string name="inspect_dump_saved">Dump salvato</string>
+    <string name="inspect_dump_saved_name">File</string>
+    <string name="inspect_dump_saved_key">Chiavi</string>
+    <string name="inspect_dump_saved_note">Il file compare nella scheda Files.</string>
+    <string name="inspect_dump_incomplete">Lettura incompleta: %1$d settori e %2$d blocchi non leggibili. Il dump non è stato salvato.</string>
+    <string name="inspect_dump_open_full">Apri lettura completa</string>
+    <string name="inspect_dump_unavailable">Questo tag non espone una memoria lineare da salvare.</string>
+    <string name="inspect_dump_error_lost">Tag allontanato: il dump non è stato salvato. Riprova.</string>
+    <string name="inspect_dump_error_keys">Nessuna chiave di fabbrica ha aperto il tag: il dump non è stato salvato. Usa la lettura completa per scegliere un file di chiavi.</string>
+    <string name="inspect_dump_error_password">Il tag richiede una password: il dump non è stato salvato. Usa la lettura completa per inserirla.</string>
+    <string name="inspect_dump_error_read">Lettura o salvataggio non riusciti: il dump non è stato salvato.</string>
 </resources>

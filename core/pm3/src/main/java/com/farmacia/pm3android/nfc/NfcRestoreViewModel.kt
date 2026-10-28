@@ -602,29 +602,13 @@ class NfcRestoreViewModel(application: Application) : AndroidViewModel(applicati
         viewModelScope.launch {
             try {
                 val saved = withContext(Dispatchers.IO) {
-                    val dir = Pm3Resources.home(getApplication())
-                    dir.mkdirs()
-                    if (classic != null) {
-                        val dump = MfuDumpFiles.uniqueDump(dir, name)
-                        dump.writeBytes(classic.toBin())
-                        var keyName: String? = null
-                        if (saveKeys) {
-                            // Without every Key B the file only holds the Key A
-                            // half: restore then keeps the keys already on the
-                            // card instead of writing zeroes.
-                            val keys = classic.keysToBin()
-                            if (keys != null) {
-                                val keyFile = MfuDumpFiles.keyFileFor(dump)
-                                keyFile.writeBytes(keys)
-                                keyName = keyFile.name
-                            }
-                        }
-                        dump to keyName
-                    } else {
-                        val dump = MfuDumpFiles.unique(dir, name)
-                        dump.writeBytes(MfuDumpWriter.toBin(ultralight!!))
-                        dump to null
-                    }
+                    NfcDumpSaver.save(
+                        context = getApplication(),
+                        name = name,
+                        classic = classic,
+                        ultralight = ultralight,
+                        saveKeys = saveKeys,
+                    )
                 }
                 mfcCapture = null
                 mfuCapture = null
@@ -633,9 +617,9 @@ class NfcRestoreViewModel(application: Application) : AndroidViewModel(applicati
                         stage = RestoreStage.SAVED,
                         error = null,
                         saving = false,
-                        dumpName = saved.first.name,
-                        savedName = saved.first.name,
-                        savedKeyName = saved.second,
+                        dumpName = saved.dump.name,
+                        savedName = saved.dump.name,
+                        savedKeyName = saved.keyFile?.name,
                     )
                 }
             } catch (t: CancellationException) {

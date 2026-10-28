@@ -284,6 +284,12 @@ fun Pm3App(
                         state = inspectState,
                         viewModel = inspectViewModel,
                         onClose = inspectViewModel::close,
+                        onOpenDumpFlow = {
+                            // The full read flow owns key files and passwords:
+                            // hand the tag over instead of duplicating them here.
+                            inspectViewModel.close()
+                            restoreViewModel.startDump()
+                        },
                     )
                 }
             }

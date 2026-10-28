@@ -467,4 +467,21 @@
     <string name="inspect_error_read">The tag could not be read. Retry.</string>
     <string name="inspect_retry">Retry</string>
     <string name="inspect_unavailable_value">—</string>
+    <string name="inspect_dump_title">Memory dump</string>
+    <string name="inspect_dump_hint">The dump is saved only when the read is complete. Just present the tag again.</string>
+    <string name="inspect_dump_read">Read memory and save dump</string>
+    <string name="inspect_dump_waiting">Present the tag again: the memory read starts now.</string>
+    <string name="inspect_dump_cancel">Cancel</string>
+    <string name="inspect_dump_progress">Reading %1$d/%2$d</string>
+    <string name="inspect_dump_saved">Dump saved</string>
+    <string name="inspect_dump_saved_name">File</string>
+    <string name="inspect_dump_saved_key">Keys</string>
+    <string name="inspect_dump_saved_note">The file appears in the Files tab.</string>
+    <string name="inspect_dump_incomplete">Incomplete read: %1$d sectors and %2$d blocks unreadable. The dump was not saved.</string>
+    <string name="inspect_dump_open_full">Open full read</string>
+    <string name="inspect_dump_unavailable">This tag has no linear memory to save.</string>
+    <string name="inspect_dump_error_lost">Tag moved away: the dump was not saved. Retry.</string>
+    <string name="inspect_dump_error_keys">No factory key opened the tag: the dump was not saved. Use the full read to pick a key file.</string>
+    <string name="inspect_dump_error_password">The tag needs a password: the dump was not saved. Use the full read to enter it.</string>
+    <string name="inspect_dump_error_read">Read or save failed: the dump was not saved.</string>
 </resources>

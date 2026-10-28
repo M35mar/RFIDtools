@@ -20,9 +20,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Nfc
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -30,6 +32,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -53,6 +56,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.farmacia.pm3android.R
+import com.farmacia.pm3android.nfc.DumpError
+import com.farmacia.pm3android.nfc.DumpStage
+import com.farmacia.pm3android.nfc.DumpState
 import com.farmacia.pm3android.nfc.InspectError
 import com.farmacia.pm3android.nfc.NfcSession
 import com.farmacia.pm3android.nfc.TagInspectState
@@ -71,6 +77,7 @@ fun TagInspectScreen(
     state: TagInspectState,
     viewModel: TagInspectViewModel,
     onClose: () -> Unit,
+    onOpenDumpFlow: () -> Unit,
 ) {
     val activity = LocalActivity.current
     val session = remember(activity) { activity?.let { NfcSession(it) } }
@@ -105,7 +112,10 @@ fun TagInspectScreen(
                 TopAppBar(
                     title = { Text(stringResource(R.string.inspect_title)) },
                     navigationIcon = {
-                        IconButton(onClick = onClose, enabled = !state.busy) {
+                        IconButton(
+                            onClick = onClose,
+                            enabled = !state.busy && state.dump.stage != DumpStage.READING,
+                        ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = stringResource(R.string.nfc_back),
@@ -128,6 +138,7 @@ fun TagInspectScreen(
                         state = state,
                         viewModel = viewModel,
                         onClose = onClose,
+                        onOpenDumpFlow = onOpenDumpFlow,
                     )
 
                     state.busy -> ReadingCard()
@@ -155,6 +166,7 @@ private fun ResultContent(
     state: TagInspectState,
     viewModel: TagInspectViewModel,
     onClose: () -> Unit,
+    onOpenDumpFlow: () -> Unit,
 ) {
     val identity = state.identity ?: return
     IdentityHero(identity)
@@ -163,6 +175,16 @@ private fun ResultContent(
 
     val desfire = state.desfire
     if (desfire != null) DesfireCard(desfire, state.applications)
+
+    if (identity.dumpable) {
+        DumpCard(state.dump, viewModel, onOpenDumpFlow)
+    } else {
+        Text(
+            text = stringResource(R.string.inspect_dump_unavailable),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 
     Button(onClick = viewModel::start, modifier = Modifier.fillMaxWidth()) {
         Icon(
@@ -320,6 +342,137 @@ private fun DesfireCard(version: DesfireVersion, applications: List<Int>?) {
         InfoRow(stringResource(R.string.inspect_applications), applicationsText)
     }
 }
+
+@Composable
+private fun DumpCard(
+    dump: DumpState,
+    viewModel: TagInspectViewModel,
+    onOpenDumpFlow: () -> Unit,
+) {
+    SectionCard(title = stringResource(R.string.inspect_dump_title)) {
+        when (dump.stage) {
+            DumpStage.NONE -> {
+                Text(
+                    text = stringResource(R.string.inspect_dump_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Button(onClick = viewModel::startDump, modifier = Modifier.fillMaxWidth()) {
+                    Icon(
+                        imageVector = Icons.Filled.Save,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Text(
+                        text = stringResource(R.string.inspect_dump_read),
+                        modifier = Modifier.padding(start = 8.dp),
+                    )
+                }
+            }
+
+            DumpStage.WAITING -> {
+                Text(
+                    text = stringResource(R.string.inspect_dump_waiting),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                OutlinedButton(
+                    onClick = viewModel::cancelDump,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.inspect_dump_cancel))
+                }
+            }
+
+            DumpStage.READING -> {
+                Text(
+                    text = stringResource(
+                        R.string.inspect_dump_progress,
+                        dump.progressDone,
+                        dump.progressTotal,
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                LinearProgressIndicator(
+                    progress = { fraction(dump.progressDone, dump.progressTotal) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+
+            DumpStage.SAVED -> {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.CheckCircle,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Text(
+                        text = stringResource(R.string.inspect_dump_saved),
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                }
+                dump.savedName?.let {
+                    InfoRow(stringResource(R.string.inspect_dump_saved_name), it)
+                }
+                dump.savedKeyName?.let {
+                    InfoRow(stringResource(R.string.inspect_dump_saved_key), it)
+                }
+                Text(
+                    text = stringResource(R.string.inspect_dump_saved_note),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            DumpStage.INCOMPLETE -> {
+                Text(
+                    text = stringResource(
+                        R.string.inspect_dump_incomplete,
+                        dump.sectorsMissing,
+                        dump.blocksMissing,
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                OutlinedButton(onClick = onOpenDumpFlow, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.inspect_dump_open_full))
+                }
+                OutlinedButton(onClick = viewModel::retryDump, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.inspect_retry))
+                }
+            }
+
+            DumpStage.FAILED -> {
+                Text(
+                    text = dumpErrorText(dump.error),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                OutlinedButton(onClick = onOpenDumpFlow, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.inspect_dump_open_full))
+                }
+                OutlinedButton(onClick = viewModel::retryDump, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.inspect_retry))
+                }
+            }
+        }
+    }
+}
+
+private fun fraction(done: Int, total: Int): Float =
+    if (total <= 0) 0f else (done.toFloat() / total).coerceIn(0f, 1f)
+
+@Composable
+private fun dumpErrorText(error: DumpError?): String = stringResource(
+    when (error) {
+        DumpError.TAG_LOST -> R.string.inspect_dump_error_lost
+        DumpError.KEYS -> R.string.inspect_dump_error_keys
+        DumpError.PASSWORD -> R.string.inspect_dump_error_password
+        DumpError.INCOMPLETE, DumpError.READ, null -> R.string.inspect_dump_error_read
+    },
+)
 
 @Composable
 private fun WaitingCard() {
