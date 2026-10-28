@@ -376,7 +376,7 @@ private fun DesfireCard(version: DesfireVersion, applications: List<Int>?) {
 private fun ContentCards(content: TagContent) {
     val classic = content.classic
     if (classic != null) {
-        content.mad?.let { mad -> MadCard(mad) }
+        classic.mad?.let { mad -> MadCard(mad) }
         NdefCard(classic.ndef)
         SectorTableCard(classic)
         return

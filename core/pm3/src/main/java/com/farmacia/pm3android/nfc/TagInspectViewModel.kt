@@ -13,7 +13,6 @@ import android.nfc.TagLostException
 import android.nfc.tech.MifareClassic
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.farmacia.pm3android.nfc.inspect.AndroidIsoDepTransport
 import com.farmacia.pm3android.nfc.inspect.AndroidTagProbe
 import com.farmacia.pm3android.nfc.inspect.DesfireClient
 import com.farmacia.pm3android.nfc.inspect.DesfireVersion
