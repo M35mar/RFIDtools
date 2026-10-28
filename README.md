@@ -1,7 +1,13 @@
 # PM3 Android
 
-[![Sponsorizza RFIDtools](https://shields.io)](https://github.com)
+## 💖 Support the Project
 
+**RFIDtools** is a free, open-source app for Android 
+If this project saves you time or makes your pentesting easier, consider supporting its independent development!
+
+* 🚀 **Help keep it ad-free** [![Sponsor on GitHub](https://shields.io)](https://github.com)
+* ☕ **Buy me a coffee** [![Donate via PayPal](https://shields.io)](https://paypal.biz/acquistaliSRL)
+---
 
 **Proxmark3 in your pocket — no Termux, no external process, no Bluetooth bridge.**
 
