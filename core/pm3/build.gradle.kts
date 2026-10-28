@@ -120,8 +120,8 @@ android {
         applicationId = "com.farmacia.pm3android"
         minSdk = 26
         targetSdk = 37
-        versionCode = 7
-        versionName = "0.6.0"
+        versionCode = 8
+        versionName = "0.7.0"
 
         ndk {
             // The only device flavour this project targets.
@@ -211,6 +211,7 @@ dependencies {
     implementation("androidx.compose.foundation:foundation")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }
 
 kotlin {

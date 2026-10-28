@@ -15,19 +15,21 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
@@ -35,6 +37,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -50,8 +55,34 @@ import com.farmacia.pm3android.ui.components.shareText
 import com.farmacia.pm3android.ui.console.Pm3DeviceInfo
 import com.farmacia.pm3android.ui.console.Pm3ViewModel
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DeviceScreen(viewModel: Pm3ViewModel) {
+    var tab by rememberSaveable { mutableIntStateOf(0) }
+    Column(modifier = Modifier.fillMaxSize()) {
+        PrimaryTabRow(selectedTabIndex = tab) {
+            Tab(
+                selected = tab == 0,
+                onClick = { tab = 0 },
+                text = { Text(stringResource(R.string.device_tab_device)) },
+                icon = { Icon(Icons.Filled.Usb, contentDescription = null) },
+            )
+            Tab(
+                selected = tab == 1,
+                onClick = { tab = 1 },
+                text = { Text(stringResource(R.string.device_tab_tools)) },
+                icon = { Icon(Icons.Filled.Build, contentDescription = null) },
+            )
+        }
+        when (tab) {
+            0 -> DeviceOverview(viewModel)
+            else -> Pm3ToolsScreen(viewModel)
+        }
+    }
+}
+
+@Composable
+private fun DeviceOverview(viewModel: Pm3ViewModel) {
     val device by viewModel.device.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
     val busy by viewModel.busy.collectAsState()
@@ -78,8 +109,8 @@ fun DeviceScreen(viewModel: Pm3ViewModel) {
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         SectionCard {
             Row(

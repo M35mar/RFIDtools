@@ -1,4 +1,4 @@
-# PM3 Android
+# RFIDtools
 
 ## 💖 Support the Project
 
@@ -12,10 +12,11 @@ If this project saves you time or makes your pentesting easier, consider support
 
 **Proxmark3 in your pocket — no Termux, no external process, no Bluetooth bridge.**
 
-PM3 Android runs the Proxmark3 Iceman client **inside the app process** and talks
+RFIDtools runs the Proxmark3 Iceman client **inside the app process** and talks
 to a PM3-compatible board over direct USB CDC-ACM. The UI is native Android
 (Compose + Material 3), the client is the upstream Proxmark3 code compiled into
-`libpm3android.so`, and client command output is captured in-process.
+`libpm3android.so`, and client command output is captured in-process. The
+phone's own NFC reader is available as a separate section, without a Proxmark3.
 
 [![Android CI](https://github.com/M35mar/RFIDtools/actions/workflows/android.yml/badge.svg?branch=main)](https://github.com/M35mar/RFIDtools/actions/workflows/android.yml)
 [![Release](https://img.shields.io/github/v/release/M35mar/RFIDtools?sort=semver)](https://github.com/M35mar/RFIDtools/releases)
@@ -25,15 +26,23 @@ to a PM3-compatible board over direct USB CDC-ACM. The UI is native Android
 
 ## Download
 
-The official `0.6.0` GitHub release contains a **debug-signed APK for testing**:
+The official `0.7.0` GitHub release contains the **signed release APK**:
 
-**[Download `pm3-debug.apk`](https://github.com/M35mar/RFIDtools/releases/download/0.6.0/pm3-debug.apk)**
+**[Download `pm3-release.apk`](https://github.com/M35mar/RFIDtools/releases/latest/download/pm3-release.apk)**
 
-> The debug APK uses package id `com.farmacia.pm3android.debug`, version
-> `0.6.0-debug`, and the Android debug keystore. It is intended for testing and
-> sideloading, not for production distribution. A release build requires your
-> own signing key. The APK includes the embedded CPython runtime used by the
-> optional Python script support, so it is larger than the 0.4.x build.
+> The release APK uses package id `com.farmacia.pm3android`, version `0.7.0`,
+> and the stable RFIDtools release key. It installs over any previous release
+> build, so in-app updates work. Debug builds (`pm3-debug.apk`, package id
+> `com.farmacia.pm3android.debug`) are produced only as CI artifacts and are
+> **not** attached to GitHub releases.
+
+Starting with `0.7.0` the app checks GitHub releases at startup and can download
+and install a newer release from **Info → Links → Check for updates**. The first
+installation is still a manual sideload.
+
+> **Coming from a debug build?** A debug install cannot be updated in place to
+> the release build: export your data, uninstall the debug app, then install
+> `pm3-release.apk` once.
 
 Prefer building it yourself? See [Building from source](#building-from-source).
 
@@ -52,6 +61,26 @@ Termux/child-process architecture with a single app process:
 
 This means no external binaries, no Termux installation, no serial-port
 library, and no Bluetooth/SPP layer.
+
+## What's new in 0.7.0
+
+- **The app is now RFIDtools.** New name and launcher label; the package id is
+  unchanged, so existing data is preserved.
+- **New navigation.** The bottom bar is **Device · Console · NFC · Data · Info**.
+  **Device** and the Proxmark3 tools are grouped under one section with two
+  sub-tabs: **Device** (USB status and diagnostics) and **PM3 tools**.
+- **NFC is its own section**, dedicated to the phone's NFC reader and ready for
+  future features. It works without a Proxmark3 and no longer shows
+  PM3-disconnected warnings: read a tag into a dump, or write a saved dump.
+- **In-app updates.** At startup RFIDtools asks GitHub for the latest release
+  and shows a dialog when a newer version exists. **Info → Links → Check for
+  updates** offers the same check, a progress bar during the APK download and an
+  **Install now** button that opens the system installer. The check can be
+  disabled in **Info → Links**.
+- **Signed releases only.** CI now builds a signed release APK and publishes
+  only `pm3-release.apk`; the tag must match `versionName`.
+- **Cleaner layout.** Consistent card spacing, no duplicated refresh action in
+  the top bar, and an update badge on the **Info** tab.
 
 ## What's new in 0.6.0
 
@@ -111,10 +140,22 @@ in-process client, the Files manager, settings and localized tools. See
 
 ### Device
 
+The **Device** tab has two sub-tabs.
+
+**Device**
+
 - USB descriptor, vendor/product IDs, serial and interface diagnostics.
 - Permission state and connection status.
 - Quick commands for common device checks.
 - Copy/share the complete diagnostics report.
+
+**PM3 tools**
+
+- Curated, searchable command sections for LF, HF, MIFARE Classic (including
+  the one-tap autopwn command) and MIFARE Ultralight Ev1.
+- Parameter dialogs for file names, counters and increment values.
+- Recent command list.
+- Commands are syntax-checked against the pinned client.
 
 ### Console
 
@@ -122,14 +163,6 @@ in-process client, the Files manager, settings and localized tools. See
 - Copy all output, share output, follow mode and font-size control.
 - Clear confirmation and a bounded output buffer.
 - Runs commands through the in-process client, not a shell.
-
-### Tools
-
-- Curated, searchable command sections for LF, HF, MIFARE Classic (including
-  the one-tap autopwn command) and MIFARE Ultralight Ev1.
-- Parameter dialogs for file names, counters and increment values.
-- Recent command list.
-- Commands are syntax-checked against the pinned client.
 
 ### Scripts
 
@@ -146,7 +179,7 @@ in-process client, the Files manager, settings and localized tools. See
 Only run scripts you trust: imported scripts are code and can execute any
 Proxmark3 command available to the app.
 
-### Files
+### Data
 
 - Shows user dumps, traces and logs; hides client dictionaries, libraries and
   resources.
@@ -160,9 +193,16 @@ Proxmark3 command available to the app.
 - Share individual files with `FileProvider`.
 - Delete confirmation and path-safety checks.
 
-### Phone NFC (no Proxmark3)
+### NFC (phone reader)
 
-- Dump a tag with the phone's NFC reader into a `.bin` file in **Files**:
+The **NFC** tab uses only the phone's NFC hardware and works without a
+Proxmark3.
+
+- The tab shows whether NFC is available and active, with a shortcut to the
+  Android NFC settings when it is off.
+- **Read tag** creates a `.bin` dump from a tag held against the phone.
+- **Write tag** restores a dump picked from the **Data** tab.
+- Dump a tag with the phone's NFC reader into a `.bin` file in **Data**:
   MIFARE Ultralight/NTAG (optional 8-hex-digit password) and MIFARE Classic.
 - A MIFARE Classic dump uses the six-byte sector keys from the **Key file**
   picked on the screen (`.bin` or `.txt`, for example `hf-mf-<UID>-key.bin`,
@@ -197,6 +237,10 @@ Proxmark3 command available to the app.
 - Settings backup/restore as JSON.
 - Client-resource reset and install status.
 - Licence viewer and project links.
+- **Check for updates**: fetches the latest GitHub release, shows its notes,
+  downloads the signed APK with a progress bar and opens the system installer.
+- **Check for updates on startup** toggle (on by default). A dismissed version
+  is not shown again until a newer one is published.
 
 ## Requirements
 
@@ -220,12 +264,14 @@ a PC with a desktop client.
 
 ## Quick start
 
-1. Install the debug APK from the release.
+1. Install `pm3-release.apk` from the latest release.
 2. Connect the Proxmark3 with a USB OTG adapter or cable.
 3. Open the app and grant the Android USB permission prompt.
-4. Go to **Device** and tap **Connect**.
-5. Use **Console** for free-form commands or **Tools** for curated commands.
-6. Use **Files** to inspect, export or share dumps, traces and logs.
+4. Go to **Device → Device** and tap **Connect**.
+5. Use **Console** for free-form commands or **Device → PM3 tools** for
+   curated commands.
+6. Use **Data** to inspect, export or share dumps, traces and logs.
+7. Use **NFC** to read or write tags with the phone, without a Proxmark3.
 
 If the device is not detected, check the cable/adapter, confirm USB host mode,
 and verify that the board enumerates with vendor ID `0x9ac4` and product ID
@@ -235,7 +281,7 @@ and verify that the board enumerates with vendor ID `0x9ac4` and product ID
 
 ```text
 ┌────────────────────────────── app process ──────────────────────────────┐
-│  Compose UI (Device / Console / Tools / Files / Info)                  │
+│  Compose UI (Device / Console / NFC / Data / Info)                     │
 │        │  commands as strings                                           │
 │        ▼                                                                │
 │  Pm3Client ─→ Pm3Native (JNI, libpm3android.so)                         │
@@ -288,7 +334,7 @@ are synced from the submodule into `core/pm3/src/main/assets/`.
 Both generated directories are build artifacts and are excluded from git.
 `dictionaries/extras` (28 MB of generic brute-force dictionaries) is
 deliberately not packaged. The embedded CPython runtime adds roughly 20 MB to
-the debug APK.
+the APK.
 
 The Python bridge source lives in `core/pm3/src/main/python/`:
 `pm3.py` is the compatibility shim and `pm3_runner.py` captures script output
@@ -301,16 +347,40 @@ The native build enables 16 KB page compatibility:
 
 ### Release signing
 
-Release builds are unsigned unless `keystore.properties` exists. Copy the
-example and fill in your own paths/passwords:
+Release builds are signed when `keystore.properties` exists; otherwise Gradle
+produces an unsigned APK that cannot be installed over a release build. Copy
+the example and fill in the keystore path and passwords:
 
 ```bash
 cp keystore.properties.example keystore.properties
-# edit keystore.properties, keep it out of git
+# storeFile=release.jks  keyAlias=rfidtools
+# keep the file and the keystore out of git
 ```
 
-The Gradle build picks it up automatically. Never commit the keystore or its
-passwords.
+The Gradle build picks it up automatically. **Back up `release.jks` and
+`keystore.properties`**: losing the key means future APKs cannot update an
+installed release.
+
+CI signs tagged builds with these repository secrets:
+
+| Secret | Value |
+| --- | --- |
+| `ANDROID_KEYSTORE_BASE64` | `base64` of `release.jks` |
+| `ANDROID_KEYSTORE_PASSWORD` | keystore password |
+| `ANDROID_KEY_ALIAS` | `rfidtools` |
+| `ANDROID_KEY_PASSWORD` | key password |
+
+On Linux/macOS, encode the keystore with:
+
+```bash
+base64 -w0 release.jks
+```
+
+On Windows PowerShell:
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("release.jks")) | Set-Clipboard
+```
 
 ### Tests and CI
 
@@ -320,8 +390,17 @@ passwords.
 ./gradlew :core:pm3:assembleDebug
 ```
 
-GitHub Actions runs tests, lint and the debug build. Pushing a tag such as
-`0.6.0` also publishes a GitHub release with the debug APK attached.
+GitHub Actions runs tests, lint and the debug build on every push and pull
+request. Pushing a tag such as `0.7.0` additionally:
+
+1. checks that the tag equals `versionName`;
+2. builds a signed release APK;
+3. publishes a GitHub release with only `pm3-release.apk` attached.
+
+The in-app updater reads the latest non-prerelease, non-draft release and
+requires the exact asset name `pm3-release.apk`. `versionCode` and
+`versionName` in `core/pm3/build.gradle.kts` must be bumped together before
+tagging.
 
 ## Troubleshooting
 
@@ -354,22 +433,35 @@ GitHub Actions runs tests, lint and the debug build. Pushing a tag such as
 
 **I need to reset the client resources**
 
-Open **Info / Settings → Reset client resources** while disconnected. Dumps,
-traces and logs are preserved, as are scripts imported through **Tools →
+Open **Info → Reset client resources** while disconnected. Dumps, traces and
+logs are preserved, as are scripts imported through **Device → PM3 tools →
 Custom scripts**. Dictionaries, bundled Lua/Cmd/Python scripts and resources
 are reinstalled on the next connection.
 
+**The update check fails**
+
+- The check needs a working internet connection and reads the public GitHub
+  API; rate limiting or a temporary GitHub outage can make it fail. Retry from
+  **Info → Links → Check for updates**.
+- A release without an asset named exactly `pm3-release.apk` is reported as
+  incompatible instead of downloading the wrong file.
+- If Android blocks the install, allow **Install unknown apps** for RFIDtools
+  when prompted, then tap **Install now** again.
+- Debug builds look for `pm3-debug.apk`, which is published only as a CI
+  artifact, so in-app updates apply to release installations.
+
 ## Privacy and security
 
-- No `INTERNET` permission.
-- No analytics, telemetry or advertising SDKs.
+- `INTERNET` is used only for the GitHub release check and APK download. There
+  is no analytics, telemetry or advertising SDK.
 - Client data stays in the app's private `filesDir`.
 - Files leave the app only through an explicit share or export action.
 - USB access is requested through the Android USB permission dialog.
 - The app does not flash firmware or expose a network service.
-- Imported scripts execute with the app's permissions. Only import scripts
-  you trust. The app has no `INTERNET` permission, so Python scripts cannot
-  open network connections even though the Python standard library is present.
+- APK installation always goes through the system package installer and the
+  **Install unknown apps** permission; the app never installs silently.
+- Imported scripts execute with the app's permissions and, because the app has
+  `INTERNET`, they can open network connections. Only import scripts you trust.
 
 ## Project layout
 
@@ -377,9 +469,10 @@ are reinstalled on the next connection.
 core/pm3/
   src/main/java/com/farmacia/pm3android/
     pm3/         USB CDC, socket bridge, JNI facade, resource installer
+    nfc/         phone NFC reader, dump and restore logic
     data/        preferences, file model and visibility rules
+    update/      GitHub release check, APK download and installer
     ui/          Compose app, screens, components and theme
-    util/        formatting helpers
   src/main/cpp/  JNI glue and native client build
   src/main/python/  Chaquopy compatibility shim and script runner
   src/test/      unit tests

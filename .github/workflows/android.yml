@@ -45,49 +45,94 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
 
-      - name: Unit tests, lint and debug APK
+      - name: Unit tests, lint and debug build
         run: ./gradlew :core:pm3:testDebugUnitTest :core:pm3:lintDebug :core:pm3:assembleDebug --stacktrace
 
+      - name: Check release tag matches versionName
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          VERSION_NAME=$(sed -n 's/^[[:space:]]*versionName = "\(.*\)"/\1/p' core/pm3/build.gradle.kts | head -n1)
+          if [ "${GITHUB_REF_NAME}" != "${VERSION_NAME}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match versionName ${VERSION_NAME}." >&2
+            exit 1
+          fi
+
+      - name: Prepare release signing
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+            echo "Missing ANDROID_KEYSTORE_BASE64 repository secret." >&2
+            exit 1
+          fi
+          KEYSTORE="${RUNNER_TEMP}/release.jks"
+          echo "${ANDROID_KEYSTORE_BASE64}" | base64 -d > "${KEYSTORE}"
+          cat > keystore.properties <<EOF
+          storeFile=${KEYSTORE}
+          storePassword=${ANDROID_KEYSTORE_PASSWORD}
+          keyAlias=${ANDROID_KEY_ALIAS}
+          keyPassword=${ANDROID_KEY_PASSWORD}
+          EOF
+
+      - name: Build signed release APK
+        if: startsWith(github.ref, 'refs/tags/')
+        run: ./gradlew :core:pm3:assembleRelease --stacktrace
+
       - name: Upload debug APK artifact
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: actions/upload-artifact@v7
         with:
-          name: pm3-debug-apk
+          name: rfidtools-debug-apk
           path: core/pm3/build/outputs/apk/debug/pm3-debug.apk
           if-no-files-found: error
 
-      - name: Publish debug APK release
+      - name: Upload release APK artifact
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v7
+        with:
+          name: rfidtools-release-apk
+          path: core/pm3/build/outputs/apk/release/pm3-release.apk
+          if-no-files-found: error
+
+      - name: Publish release APK
         if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
-          APK="core/pm3/build/outputs/apk/debug/pm3-debug.apk"
+          APK="core/pm3/build/outputs/apk/release/pm3-release.apk"
           NOTES="$(mktemp)"
           printf '%s\n' \
-            "Official PM3 Android ${TAG} release." \
+            "Official RFIDtools ${TAG} release." \
             '' \
-            'The attached APK is **debug-signed** for testing and sideloading.' \
+            'The attached APK is signed with the stable release key and can be installed as an in-app update.' \
             '' \
             "- Version: \`${TAG}\`" \
-            '- Package: `com.farmacia.pm3android.debug`' \
-            "- Version name: \`${TAG}-debug\`" \
+            '- Package: `com.farmacia.pm3android`' \
+            "- Version name: \`${TAG}\`" \
             '- ABI: `arm64-v8a`' \
             '- Minimum Android: 8.0 (API 26)' \
             '- Scripts: Lua, Cmd, Python (experimental)' \
             '' \
-            'This build uses the Android debug keystore. It is **not** a production-signed release.' \
+            'The app checks GitHub releases at startup. The **Check for updates** button in **Info → Links** downloads and installs the APK.' \
             'See the README for installation, hardware compatibility, build and troubleshooting notes.' \
             > "$NOTES"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release edit "$TAG" \
-              --title "PM3 Android ${TAG}" \
+              --title "RFIDtools ${TAG}" \
               --notes-file "$NOTES" \
               --prerelease=false \
               --latest
           else
             gh release create "$TAG" \
-              --title "PM3 Android ${TAG}" \
+              --title "RFIDtools ${TAG}" \
               --notes-file "$NOTES" \
               --latest
           fi

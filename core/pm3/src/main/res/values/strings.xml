@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">PM3 Android</string>
+    <string name="app_name">RFIDtools</string>
 
     <string name="nav_device">Dispositivo</string>
     <string name="nav_console">Console</string>
-    <string name="nav_tools">Strumenti</string>
+    <string name="nav_nfc">NFC</string>
     <string name="nav_files">Dati</string>
     <string name="nav_settings">Info</string>
 
@@ -41,6 +41,8 @@
     <string name="device_copy_diagnostics">Copia diagnostica</string>
     <string name="device_share_diagnostics">Condividi diagnostica</string>
     <string name="device_quick_commands">Comandi rapidi</string>
+    <string name="device_tab_device">Dispositivo</string>
+    <string name="device_tab_tools">Strumenti PM3</string>
     <string name="device_unknown_value">non disponibile</string>
     <string name="device_disconnected_message">Dispositivo disconnesso.</string>
     <string name="device_detached_message">PM3 scollegato: connessione chiusa.</string>
@@ -59,7 +61,6 @@
     <string name="console_history_empty">Nessun comando eseguito.</string>
     <string name="common_copied">Copiato.</string>
 
-    <string name="tools_title">Strumenti</string>
     <string name="tools_disconnected">Connetti prima il Proxmark3 (scheda Dispositivo).</string>
     <string name="tools_search">Cerca un comando…</string>
     <string name="tools_no_results">Nessun comando corrisponde alla ricerca.</string>
@@ -196,7 +197,6 @@
     <string name="dump_editor_unsaved_body">Le modifiche a %1$s andranno perse.</string>
     <string name="dump_editor_discard">Esci senza salvare</string>
 
-    <string name="settings_title">Info e impostazioni</string>
     <string name="settings_appearance">Aspetto</string>
     <string name="settings_theme">Tema</string>
     <string name="theme_system">Sistema</string>
@@ -242,6 +242,33 @@
     <string name="settings_license_summary">Software libero distribuito secondo la GNU General Public License v3. Il client Proxmark3 (Iceman fork) è incluso con la stessa licenza. Il runtime Python usa Chaquopy e la Python Software Foundation License.</string>
     <string name="settings_third_party_notices">Licenze di terze parti</string>
 
+    <string name="settings_updates">Aggiornamenti</string>
+    <string name="settings_update_installed">Versione installata</string>
+    <string name="settings_update_not_checked">Nessun controllo eseguito.</string>
+    <string name="settings_update_check">Controlla aggiornamenti</string>
+    <string name="settings_update_checking">Controllo aggiornamenti…</string>
+    <string name="settings_update_current">Hai l’ultima versione (%1$s).</string>
+    <string name="settings_update_available">Nuova versione disponibile: %1$s</string>
+    <string name="settings_update_notes">Novità</string>
+    <string name="settings_update_download">Scarica e installa</string>
+    <string name="settings_update_downloading">Download della versione %1$s…</string>
+    <string name="settings_update_progress">%1$s di %2$s</string>
+    <string name="settings_update_ready">Download completato. Installa l’aggiornamento.</string>
+    <string name="settings_update_install">Installa ora</string>
+    <string name="settings_update_error">Controllo non riuscito: %1$s</string>
+    <string name="settings_update_auto">Controlla aggiornamenti all’avvio</string>
+    <string name="update_no_asset">La release %1$s non contiene un APK compatibile.</string>
+    <string name="update_dialog_title">Aggiornamento disponibile</string>
+    <string name="update_dialog_body">La versione %1$s è disponibile. Versione installata: %2$s.</string>
+    <string name="update_dialog_install">Scarica e installa</string>
+    <string name="update_dialog_later">Più tardi</string>
+    <string name="update_download_started">Download dell’aggiornamento avviato.</string>
+    <string name="update_download_failed">Download non riuscito: %1$s</string>
+    <string name="update_install_failed">Installazione non avviata. Riprova dalle impostazioni.</string>
+    <string name="update_permission_message">Consenti l’installazione da questa fonte, poi apri Info e premi Installa ora.</string>
+    <string name="update_permission_body">Consenti a RFIDtools di installare app sconosciute, poi torna qui e premi Installa ora.</string>
+    <string name="update_badge_desc">Aggiornamento disponibile</string>
+
     <string name="common_more">Altro</string>
     <string name="common_less">Meno</string>
     <string name="common_no_app">Nessuna app disponibile.</string>
@@ -262,8 +289,21 @@
 
     <!-- Phone NFC restore -->
     <string name="nfc_title">NFC del telefono</string>
+    <string name="nfc_screen_subtitle">Lettore del telefono</string>
+    <string name="nfc_screen_desc">Leggi e scrivi tag con l’NFC del telefono, senza Proxmark3.</string>
+    <string name="nfc_status_active">Attivo</string>
+    <string name="nfc_status_off">Disattivato</string>
+    <string name="nfc_status_unavailable">Non disponibile</string>
+    <string name="nfc_read_title">Leggi tag</string>
+    <string name="nfc_read_desc">Crea un dump .bin dal tag avvicinato al telefono.</string>
+    <string name="nfc_write_title">Scrivi tag</string>
+    <string name="nfc_write_desc">Ripristina un dump salvato su un tag compatibile.</string>
+    <string name="nfc_dumps_available">%1$d dump disponibili</string>
+    <string name="nfc_howto_title">Come funziona</string>
+    <string name="nfc_howto_read">Tocca Leggi tag, poi avvicina il tag al retro del telefono: la lettura parte da sola.</string>
+    <string name="nfc_howto_write">Tocca Scrivi tag, scegli un dump, poi avvicina il tag: la scrittura parte da sola.</string>
+    <string name="nfc_howto_classic">Per MIFARE Classic serve un file chiavi (.bin o .txt) con le chiavi dei settori.</string>
     <string name="nfc_restore_action">Scrivi su NFC</string>
-    <string name="nfc_tools_desc">Legge un tag in un dump o scrive un dump sul tag usando l’NFC del telefono, senza Proxmark3.</string>
     <string name="nfc_pick_dump">Ripristina</string>
     <string name="nfc_dump_action">Dump</string>
     <string name="nfc_dump_waiting_title">Avvicina il tag da leggere</string>
@@ -363,7 +403,7 @@
     <string name="nfc_note_write">Scrittura non riuscita</string>
     <string name="nfc_note_verify">Verifica non riuscita</string>
     <string name="nfc_off_title">NFC disattivato</string>
-    <string name="nfc_off_body">Attiva l’NFC nelle impostazioni di Android per scrivere il tag con il telefono.</string>
+    <string name="nfc_off_body">Attiva l’NFC nelle impostazioni di Android per leggere e scrivere tag con il telefono.</string>
     <string name="nfc_off_settings">Apri impostazioni NFC</string>
     <string name="nfc_unavailable_title">NFC non disponibile</string>
     <string name="nfc_unavailable_body">Questo telefono non ha un lettore NFC. Puoi comunque usare il Proxmark3.</string>

@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.7.0 — 2026-10-28
+
+### Added
+- In-app updater: the app checks the latest GitHub release at startup and shows
+  a dialog when a newer version exists. **Info → Links** also has a **Check for
+  updates** button with release notes, a download progress bar and an **Install
+  now** action that opens the system package installer. Downloads are verified
+  with the GitHub asset SHA-256 digest when it is available.
+- **Check for updates on startup** setting, on by default. A dismissed version
+  is not shown again until a newer one is published.
+- Dedicated **NFC** tab for the phone's NFC reader, with reader status, a tag
+  read action, a dump picker for writing, and a short how-to. It works without
+  a Proxmark3 and does not show PM3-disconnected warnings.
+- **Device** now has two sub-tabs: **Device** (USB status and diagnostics) and
+  **PM3 tools** (the curated command sections and custom scripts).
+- Unit tests for the release parser: version comparison, asset selection,
+  prerelease rejection and debug/release channel separation.
+
+### Changed
+- The app is now named **RFIDtools** (launcher label and UI). The package id is
+  unchanged, so existing data is preserved.
+- Bottom navigation is now **Device · Console · NFC · Data · Info**. The old
+  **Tools** tab has been removed and its contents moved to **Device → PM3
+  tools**.
+- The top bar no longer duplicates a global refresh action; each screen owns
+  its refresh. The **Info** tab shows a badge when an update is available.
+- Consistent card spacing and section order across screens.
+- CI now builds a signed release APK on tags, checks that the tag equals
+  `versionName`, and publishes only `pm3-release.apk`. Debug APKs remain CI
+  artifacts and are no longer attached to GitHub releases.
+- Version `0.7.0` (`versionCode` 8).
+
+### Security
+- Added `INTERNET` (update check and APK download only) and
+  `REQUEST_INSTALL_PACKAGES` (system installer) permissions.
+- Release builds are signed with the new stable RFIDtools keystore. Keep
+  `release.jks` and `keystore.properties` backed up: losing them prevents
+  in-place updates.
+
 ## 0.6.0 — 2026-10-28
 
 ### Added

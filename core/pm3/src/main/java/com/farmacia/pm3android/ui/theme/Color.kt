@@ -1,4 +1,4 @@
-// Brand palette for PM3 Android. The Material 3 schemes are built from these
+// Brand palette for RFIDtools. The Material 3 schemes are built from these
 // colours in Theme.kt; dynamic colours can replace them on Android 12+.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later

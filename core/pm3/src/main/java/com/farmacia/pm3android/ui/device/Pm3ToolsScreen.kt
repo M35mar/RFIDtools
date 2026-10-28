@@ -1,31 +1,27 @@
-// Tools screen: curated command buttons, searchable and collapsible. Every
-// command is syntax-checked against the pinned client (the command trees in
-// client/src/cmd*.c). Parametric commands show a dialog to fill in values.
+// PM3 tools, shown as the second sub-tab of the Device section: curated
+// command buttons, searchable and collapsible. Every command is syntax-checked
+// against the pinned client (the command trees in client/src/cmd*.c).
+// Parametric commands show a dialog to fill in values.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-package com.farmacia.pm3android.ui.tools
+package com.farmacia.pm3android.ui.device
 
 import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.Nfc
-import androidx.compose.material.icons.filled.SaveAlt
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -52,8 +48,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.farmacia.pm3android.R
-import com.farmacia.pm3android.data.FileCategory
-import com.farmacia.pm3android.data.Pm3File
 import com.farmacia.pm3android.pm3.Pm3ConnectionState
 import com.farmacia.pm3android.ui.components.SectionCard
 import com.farmacia.pm3android.ui.console.Pm3ViewModel
@@ -256,20 +250,14 @@ private val MFU_EV1_COMMANDS = listOf(
 )
 
 @Composable
-fun ToolsScreen(
-    viewModel: Pm3ViewModel,
-    onRestore: (java.io.File) -> Unit,
-    onDump: () -> Unit,
-) {
+fun Pm3ToolsScreen(viewModel: Pm3ViewModel) {
     val connectionState by viewModel.connectionState.collectAsState()
     val busy by viewModel.busy.collectAsState()
     val history by viewModel.history.collectAsState()
-    val files by viewModel.files.collectAsState()
     val enabled = connectionState == Pm3ConnectionState.CONNECTED && !busy
 
     var pendingCommand by remember { mutableStateOf<LocalizedToolCommand?>(null) }
     var search by rememberSaveable { mutableStateOf("") }
-    var pickingDump by remember { mutableStateOf(false) }
 
     val launch: (LocalizedToolCommand) -> Unit = { command ->
         if (command.command.params.isEmpty()) {
@@ -314,28 +302,17 @@ fun ToolsScreen(
             .fillMaxSize()
             .imePadding()
             .verticalScroll(rememberScrollState())
-            .padding(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(stringResource(R.string.tools_title), style = MaterialTheme.typography.titleLarge)
         if (!enabled) {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Text(
                     text = stringResource(R.string.tools_disconnected),
-                    modifier = Modifier.padding(10.dp),
+                    modifier = Modifier.padding(12.dp),
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
-        }
-
-        if (query.isEmpty()) {
-            PhoneNfcCard(
-                onPick = {
-                    viewModel.refreshFiles()
-                    pickingDump = true
-                },
-                onDump = onDump,
-            )
         }
 
         OutlinedTextField(
@@ -349,7 +326,10 @@ fun ToolsScreen(
             trailingIcon = {
                 if (search.isNotEmpty()) {
                     IconButton(onClick = { search = "" }) {
-                        Icon(Icons.Filled.Clear, contentDescription = stringResource(R.string.action_clear))
+                        Icon(
+                            Icons.Filled.Clear,
+                            contentDescription = stringResource(R.string.action_clear),
+                        )
                     }
                 }
             },
@@ -398,98 +378,7 @@ fun ToolsScreen(
                 },
             )
         }
-
-        if (pickingDump) {
-            DumpPickerDialog(
-                files = files,
-                onDismiss = { pickingDump = false },
-                onPick = { file ->
-                    pickingDump = false
-                    onRestore(file)
-                },
-            )
-        }
     }
-}
-
-@Composable
-private fun PhoneNfcCard(onPick: () -> Unit, onDump: () -> Unit) {
-    SectionCard(title = stringResource(R.string.nfc_title)) {
-        Text(
-            text = stringResource(R.string.nfc_tools_desc),
-            style = MaterialTheme.typography.bodySmall,
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Button(onClick = onDump, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Filled.SaveAlt, contentDescription = null)
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(stringResource(R.string.nfc_dump_action))
-            }
-            OutlinedButton(onClick = onPick, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Filled.Nfc, contentDescription = null)
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(stringResource(R.string.nfc_pick_dump))
-            }
-        }
-    }
-}
-
-@Composable
-private fun DumpPickerDialog(
-    files: List<Pm3File>,
-    onDismiss: () -> Unit,
-    onPick: (java.io.File) -> Unit,
-) {
-    val dumps = files.filter { it.category == FileCategory.DUMP }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.nfc_pick_dump)) },
-        text = {
-            if (dumps.isEmpty()) {
-                Text(stringResource(R.string.nfc_pick_empty))
-            } else {
-                Column(
-                    modifier = Modifier
-                        .heightIn(max = 360.dp)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    dumps.forEach { entry ->
-                        OutlinedButton(
-                            onClick = { onPick(entry.file) },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Column(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalAlignment = Alignment.Start,
-                            ) {
-                                Text(
-                                    text = entry.file.name,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                                Text(
-                                    text = entry.relativePath,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.action_close))
-            }
-        },
-    )
 }
 
 private fun composeCommand(
@@ -615,7 +504,7 @@ private fun ToolSection(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { expanded = !expanded }
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
@@ -632,8 +521,8 @@ private fun ToolSection(
             }
             if (expanded) {
                 Column(
-                    modifier = Modifier.padding(start = 8.dp, end = 8.dp, bottom = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.padding(start = 10.dp, end = 10.dp, bottom = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     commands.forEach { entry ->
                         OutlinedButton(

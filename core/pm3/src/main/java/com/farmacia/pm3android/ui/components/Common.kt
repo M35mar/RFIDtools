@@ -173,7 +173,7 @@ fun ConfirmDialog(
 
 fun copyText(context: Context, text: String) {
     val clipboard = context.getSystemService(ClipboardManager::class.java)
-    clipboard?.setPrimaryClip(ClipData.newPlainText("PM3 Android", text))
+    clipboard?.setPrimaryClip(ClipData.newPlainText("RFIDtools", text))
     Toast.makeText(context, R.string.common_copied, Toast.LENGTH_SHORT).show()
 }
 

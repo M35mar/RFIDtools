@@ -1,4 +1,4 @@
-// pm3-android — Proxmark3 tools for Android.
+// RFIDtools — Proxmark3 and NFC tools for Android.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 package com.farmacia.pm3android

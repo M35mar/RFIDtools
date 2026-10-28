@@ -24,6 +24,7 @@ data class AppSettings(
     val confirmDelete: Boolean = true,
     val keepScreenOn: Boolean = false,
     val followConsole: Boolean = true,
+    val autoCheckUpdates: Boolean = true,
 )
 
 class AppPreferences(context: Context) {
@@ -36,6 +37,8 @@ class AppPreferences(context: Context) {
         const val KEY_CONFIRM_DELETE = "confirm_delete"
         const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
         const val KEY_FOLLOW_CONSOLE = "follow_console"
+        const val KEY_AUTO_CHECK_UPDATES = "auto_check_updates"
+        const val KEY_LAST_NOTIFIED_UPDATE = "last_notified_update"
 
         const val MIN_FONT_SIZE = 10
         const val MAX_FONT_SIZE = 22
@@ -53,6 +56,15 @@ class AppPreferences(context: Context) {
     fun setConfirmDelete(enabled: Boolean) = update { copy(confirmDelete = enabled) }
     fun setKeepScreenOn(enabled: Boolean) = update { copy(keepScreenOn = enabled) }
     fun setFollowConsole(enabled: Boolean) = update { copy(followConsole = enabled) }
+    fun setAutoCheckUpdates(enabled: Boolean) = update { copy(autoCheckUpdates = enabled) }
+
+    /** Version already shown in the startup update dialog, so it is not repeated. */
+    fun lastNotifiedUpdateVersion(): String? =
+        prefs.getString(KEY_LAST_NOTIFIED_UPDATE, null)
+
+    fun markUpdateNotified(version: String) {
+        prefs.edit { putString(KEY_LAST_NOTIFIED_UPDATE, version) }
+    }
 
     fun backupJson(): String {
         val value = _settings.value
@@ -64,6 +76,7 @@ class AppPreferences(context: Context) {
             .put("confirmDelete", value.confirmDelete)
             .put("keepScreenOn", value.keepScreenOn)
             .put("followConsole", value.followConsole)
+            .put("autoCheckUpdates", value.autoCheckUpdates)
             .toString(2)
     }
 
@@ -80,6 +93,7 @@ class AppPreferences(context: Context) {
             confirmDelete = json.optBoolean("confirmDelete", true),
             keepScreenOn = json.optBoolean("keepScreenOn", false),
             followConsole = json.optBoolean("followConsole", true),
+            autoCheckUpdates = json.optBoolean("autoCheckUpdates", true),
         )
         _settings.value = restored
         persist(restored)
@@ -97,6 +111,7 @@ class AppPreferences(context: Context) {
             confirmDelete = prefs.getBoolean(KEY_CONFIRM_DELETE, true),
             keepScreenOn = prefs.getBoolean(KEY_KEEP_SCREEN_ON, false),
             followConsole = prefs.getBoolean(KEY_FOLLOW_CONSOLE, true),
+            autoCheckUpdates = prefs.getBoolean(KEY_AUTO_CHECK_UPDATES, true),
         )
     }
 
@@ -114,6 +129,7 @@ class AppPreferences(context: Context) {
             putBoolean(KEY_CONFIRM_DELETE, value.confirmDelete)
             putBoolean(KEY_KEEP_SCREEN_ON, value.keepScreenOn)
             putBoolean(KEY_FOLLOW_CONSOLE, value.followConsole)
+            putBoolean(KEY_AUTO_CHECK_UPDATES, value.autoCheckUpdates)
         }
     }
 }

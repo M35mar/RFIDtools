@@ -2,4 +2,5 @@
 <!-- The client's output files live in filesDir ($HOME for the client) -->
 <paths>
     <files-path name="pm3home" path="" />
+    <cache-path name="updates" path="updates/" />
 </paths>

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    pm3-android — Proxmark3 tools for Android.
+    RFIDtools — Proxmark3 and NFC tools for Android.
     SPDX-License-Identifier: GPL-3.0-or-later
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
@@ -10,6 +10,10 @@
     <uses-feature
         android:name="android.hardware.usb.host"
         android:required="true" />
+
+    <!-- Update check and APK download from GitHub. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- Optional phone-NFC restore path: the PM3 remains the primary tool, so
          a device without NFC can still install and use every other feature. -->

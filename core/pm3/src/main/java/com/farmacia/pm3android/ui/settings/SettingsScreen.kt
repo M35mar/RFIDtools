@@ -28,8 +28,8 @@ import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.SaveAlt
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
@@ -59,6 +59,7 @@ import com.farmacia.pm3android.ui.components.InfoRow
 import com.farmacia.pm3android.ui.components.SectionCard
 import com.farmacia.pm3android.ui.components.openUrl
 import com.farmacia.pm3android.ui.console.Pm3ViewModel
+import com.farmacia.pm3android.ui.update.UpdateSection
 import kotlin.math.roundToInt
 
 @Composable
@@ -67,6 +68,7 @@ fun SettingsScreen(viewModel: Pm3ViewModel) {
     val connectionState by viewModel.connectionState.collectAsState()
     val fileOpBusy by viewModel.fileOpBusy.collectAsState()
     val resourcesInstalled by viewModel.resourcesInstalled.collectAsState()
+    val updateState by viewModel.updateState.collectAsState()
     val context = LocalContext.current
 
     var showLicense by remember { mutableStateOf(false) }
@@ -108,24 +110,11 @@ fun SettingsScreen(viewModel: Pm3ViewModel) {
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(
-                text = stringResource(R.string.settings_title),
-                style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.weight(1f),
-            )
-            if (fileOpBusy) {
-                CircularProgressIndicator(
-                    modifier = Modifier.padding(4.dp),
-                    strokeWidth = 2.dp,
-                )
-            }
+        if (fileOpBusy) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
 
         SectionCard(title = stringResource(R.string.settings_appearance)) {
@@ -200,7 +189,7 @@ fun SettingsScreen(viewModel: Pm3ViewModel) {
                 ),
             )
             OutlinedButton(
-                onClick = { backupLauncher.launch("pm3-android-settings.json") },
+                onClick = { backupLauncher.launch("rfidtools-settings.json") },
                 enabled = !fileOpBusy,
                 modifier = Modifier.fillMaxWidth(),
             ) {
@@ -278,6 +267,14 @@ fun SettingsScreen(viewModel: Pm3ViewModel) {
                 Icon(Icons.Filled.Description, contentDescription = null)
                 Text(stringResource(R.string.settings_license))
             }
+            UpdateSection(
+                state = updateState,
+                autoCheck = settings.autoCheckUpdates,
+                onAutoCheckChange = viewModel::setAutoCheckUpdates,
+                onCheck = { viewModel.checkForUpdates(manual = true) },
+                onDownload = viewModel::downloadUpdate,
+                onInstall = viewModel::installUpdate,
+            )
         }
 
         SectionCard(title = stringResource(R.string.settings_home_paths)) {

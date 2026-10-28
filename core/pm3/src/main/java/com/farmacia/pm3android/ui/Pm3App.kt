@@ -18,13 +18,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Nfc
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Usb
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -48,9 +48,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.farmacia.pm3android.R
+import com.farmacia.pm3android.BuildConfig
 import com.farmacia.pm3android.data.ThemeMode
 import com.farmacia.pm3android.pm3.Pm3ConnectionState
 import com.farmacia.pm3android.ui.components.StatusPill
@@ -61,10 +64,12 @@ import com.farmacia.pm3android.ui.files.DumpEditorScreen
 import com.farmacia.pm3android.ui.files.DumpEditorViewModel
 import com.farmacia.pm3android.ui.files.FilesScreen
 import com.farmacia.pm3android.ui.nfc.NfcRestoreScreen
+import com.farmacia.pm3android.ui.nfc.NfcScreen
 import com.farmacia.pm3android.ui.settings.SettingsScreen
 import com.farmacia.pm3android.ui.theme.Pm3Theme
-import com.farmacia.pm3android.ui.tools.ToolsScreen
+import com.farmacia.pm3android.ui.update.UpdatePromptDialog
 import com.farmacia.pm3android.nfc.NfcRestoreViewModel
+import com.farmacia.pm3android.update.UpdateState
 
 private data class Tab(
     @StringRes val labelRes: Int,
@@ -77,11 +82,10 @@ private val TABS = listOf(
     Tab(R.string.nav_console, Icons.AutoMirrored.Filled.List) { viewModel, _, _ ->
         ConsoleScreen(viewModel = viewModel)
     },
-    Tab(R.string.nav_tools, Icons.Filled.PlayArrow) { viewModel, restore, _ ->
-        ToolsScreen(
-            viewModel,
-            onRestore = restore::open,
-            onDump = restore::startDump,
+    Tab(R.string.nav_nfc, Icons.Filled.Nfc) { viewModel, restore, _ ->
+        NfcScreen(
+            viewModel = viewModel,
+            restoreViewModel = restore,
         )
     },
     Tab(R.string.nav_files, Icons.Filled.Share) { viewModel, restore, editor ->
@@ -106,6 +110,8 @@ fun Pm3App(
     val settings by viewModel.settings.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
     val device by viewModel.device.collectAsState()
+    val updateState by viewModel.updateState.collectAsState()
+    val updatePrompt by viewModel.updatePrompt.collectAsState()
     val restoreState by restoreViewModel.state.collectAsState()
     val editorState by editorViewModel.state.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -170,18 +176,9 @@ fun Pm3App(
                         TopAppBar(
                             title = { Text(stringResource(TABS[selected].labelRes)) },
                             actions = {
-                                ConnectionPill(connectionState, device != null)
-                                Spacer(modifier = Modifier.width(4.dp))
-                                IconButton(
-                                    onClick = {
-                                        viewModel.refreshDevice()
-                                        viewModel.refreshFiles()
-                                    },
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Refresh,
-                                        contentDescription = stringResource(R.string.action_refresh),
-                                    )
+                                if (selected == 0 || selected == 1) {
+                                    ConnectionPill(connectionState, device != null)
+                                    Spacer(modifier = Modifier.width(4.dp))
                                 }
                             },
                         )
@@ -189,14 +186,34 @@ fun Pm3App(
                     bottomBar = {
                         NavigationBar {
                             TABS.forEachIndexed { index, tab ->
+                                val showUpdateBadge = index == TABS.lastIndex &&
+                                    (updateState is UpdateState.Available ||
+                                        updateState is UpdateState.Downloading ||
+                                        updateState is UpdateState.Ready)
+                                val updateBadgeDescription =
+                                    stringResource(R.string.update_badge_desc)
                                 NavigationBarItem(
                                     selected = selected == index,
                                     onClick = { selected = index },
                                     icon = {
-                                        Icon(
-                                            imageVector = tab.icon,
-                                            contentDescription = stringResource(tab.labelRes),
-                                        )
+                                        if (showUpdateBadge) {
+                                            BadgedBox(
+                                                badge = { Badge() },
+                                                modifier = Modifier.semantics {
+                                                    contentDescription = updateBadgeDescription
+                                                },
+                                            ) {
+                                                Icon(
+                                                    imageVector = tab.icon,
+                                                    contentDescription = null,
+                                                )
+                                            }
+                                        } else {
+                                            Icon(
+                                                imageVector = tab.icon,
+                                                contentDescription = stringResource(tab.labelRes),
+                                            )
+                                        }
                                     },
                                     label = { Text(stringResource(tab.labelRes)) },
                                 )
@@ -213,6 +230,18 @@ fun Pm3App(
 
                 // The dump editor covers the bottom navigation, like the NFC
                 // overlay: the Data tab is not reachable while it is open.
+                updatePrompt?.let { release ->
+                    UpdatePromptDialog(
+                        release = release,
+                        currentVersion = BuildConfig.VERSION_NAME.removeSuffix("-debug"),
+                        onInstall = {
+                            viewModel.dismissUpdatePrompt()
+                            viewModel.downloadUpdate()
+                        },
+                        onDismiss = viewModel::dismissUpdatePrompt,
+                    )
+                }
+
                 if (editorState.visible) {
                     DumpEditorScreen(
                         state = editorState,

@@ -31,6 +31,11 @@ import com.farmacia.pm3android.pm3.Pm3Client
 import com.farmacia.pm3android.pm3.Pm3ConnectionState
 import com.farmacia.pm3android.pm3.Pm3PythonRunner
 import com.farmacia.pm3android.pm3.Pm3Resources
+import com.farmacia.pm3android.update.ApkInstaller
+import com.farmacia.pm3android.update.ReleaseCheck
+import com.farmacia.pm3android.update.ReleaseInfo
+import com.farmacia.pm3android.update.UpdateManager
+import com.farmacia.pm3android.update.UpdateState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -66,6 +71,7 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
 
     private val client = Pm3Client(application)
     private val preferences = AppPreferences(application)
+    private val updateManager = UpdateManager(application)
 
     val connectionState: StateFlow<Pm3ConnectionState> = client.state
     val connectLog: StateFlow<String> = client.connectLog
@@ -104,6 +110,15 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
     private val messagesFlow = MutableSharedFlow<String>(extraBufferCapacity = 16)
     val messages: SharedFlow<String> = messagesFlow
 
+    private val updateStateFlow = MutableStateFlow<UpdateState>(UpdateState.Idle)
+    val updateState: StateFlow<UpdateState> = updateStateFlow
+
+    /** Release to show in the startup dialog; null once dismissed. */
+    private val updatePromptFlow = MutableStateFlow<ReleaseInfo?>(null)
+    val updatePrompt: StateFlow<ReleaseInfo?> = updatePromptFlow
+
+    private var updateJob: Job? = null
+
     var execJob: Job? = null
         private set
 
@@ -139,6 +154,9 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
         refreshDevice()
         refreshFiles()
         refreshScripts()
+        if (preferences.settings.value.autoCheckUpdates) {
+            checkForUpdates(manual = false)
+        }
     }
 
     fun refreshDevice() {
@@ -575,7 +593,7 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
         val device = deviceFlow.value
         val log = connectLog.value
         return buildString {
-            appendLine("PM3 Android diagnostics")
+            appendLine("RFIDtools diagnostics")
             appendLine("app: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
             appendLine("app commit: ${BuildConfig.APP_GIT_COMMIT}")
             appendLine("client commit: ${BuildConfig.PM3_CLIENT_COMMIT}")
@@ -603,6 +621,118 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
     fun setConfirmDelete(enabled: Boolean) = preferences.setConfirmDelete(enabled)
     fun setKeepScreenOn(enabled: Boolean) = preferences.setKeepScreenOn(enabled)
     fun setFollowConsole(enabled: Boolean) = preferences.setFollowConsole(enabled)
+    fun setAutoCheckUpdates(enabled: Boolean) = preferences.setAutoCheckUpdates(enabled)
+
+    // -----------------------------------------------------------------------
+    // In-app updates
+    // -----------------------------------------------------------------------
+
+    fun checkForUpdates(manual: Boolean) {
+        val current = updateStateFlow.value
+        if (current is UpdateState.Checking || current is UpdateState.Downloading) return
+        updateJob?.cancel()
+        updateStateFlow.value = UpdateState.Checking
+        val app = getApplication<Application>()
+        updateJob = viewModelScope.launch {
+            try {
+                when (val result = updateManager.check(
+                    BuildConfig.VERSION_NAME,
+                    BuildConfig.APPLICATION_ID,
+                )) {
+                    is ReleaseCheck.Newer -> {
+                        updateStateFlow.value = UpdateState.Available(result.release)
+                        if (!manual &&
+                            preferences.lastNotifiedUpdateVersion() != result.release.versionName
+                        ) {
+                            updatePromptFlow.value = result.release
+                        }
+                    }
+
+                    is ReleaseCheck.Current ->
+                        updateStateFlow.value = UpdateState.UpToDate(BuildConfig.VERSION_NAME)
+
+                    is ReleaseCheck.Incompatible -> {
+                        // Debug builds are not published as release assets, so
+                        // an automatic check there is not a user-facing error.
+                        updateStateFlow.value = if (manual) {
+                            UpdateState.Error(
+                                app.getString(
+                                    R.string.update_no_asset,
+                                    result.release.versionName,
+                                ),
+                            )
+                        } else {
+                            UpdateState.Idle
+                        }
+                    }
+                }
+            } catch (t: CancellationException) {
+                updateStateFlow.value = UpdateState.Idle
+                throw t
+            } catch (t: Throwable) {
+                if (manual) {
+                    updateStateFlow.value = UpdateState.Error(errorText(t))
+                } else {
+                    // A background check must never bother the user with a
+                    // snackbar when the phone is offline or GitHub is down.
+                    updateStateFlow.value = UpdateState.Idle
+                }
+            }
+        }
+    }
+
+    fun dismissUpdatePrompt() {
+        updatePromptFlow.value?.let { preferences.markUpdateNotified(it.versionName) }
+        updatePromptFlow.value = null
+    }
+
+    fun downloadUpdate() {
+        val available = updateStateFlow.value as? UpdateState.Available ?: return
+        val asset = available.release.asset ?: return
+        if (updateStateFlow.value is UpdateState.Downloading) return
+        updateJob?.cancel()
+        updateStateFlow.value = UpdateState.Downloading(
+            release = available.release,
+            bytesRead = 0L,
+            totalBytes = asset.sizeBytes,
+        )
+        val app = getApplication<Application>()
+        notify(app.getString(R.string.update_download_started))
+        updateJob = viewModelScope.launch {
+            try {
+                val file = updateManager.download(asset) { read, total ->
+                    updateStateFlow.value = UpdateState.Downloading(
+                        release = available.release,
+                        bytesRead = read,
+                        totalBytes = total,
+                    )
+                }
+                updateStateFlow.value = UpdateState.Ready(available.release, file)
+                installUpdate()
+            } catch (t: CancellationException) {
+                updateStateFlow.value = UpdateState.Available(available.release)
+                throw t
+            } catch (t: Throwable) {
+                updateStateFlow.value = UpdateState.Error(errorText(t))
+                notify(app.getString(R.string.update_download_failed, errorText(t)))
+            }
+        }
+    }
+
+    fun installUpdate() {
+        val ready = updateStateFlow.value as? UpdateState.Ready ?: return
+        val app = getApplication<Application>()
+        if (!ApkInstaller.canInstall(app)) {
+            updateStateFlow.value = ready.copy(needsPermission = true)
+            notify(app.getString(R.string.update_permission_message))
+            ApkInstaller.openInstallPermission(app)
+            return
+        }
+        if (!ApkInstaller.install(app, ready.file)) {
+            updateStateFlow.value = ready.copy(needsPermission = true)
+            notify(app.getString(R.string.update_install_failed))
+        }
+    }
 
     fun notify(text: String) {
         messagesFlow.tryEmit(text)
