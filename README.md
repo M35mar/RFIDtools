@@ -1,5 +1,8 @@
 # PM3 Android
 
+[![Sponsorizza RFIDtools](https://shields.io)](https://github.com)
+
+
 **Proxmark3 in your pocket — no Termux, no external process, no Bluetooth bridge.**
 
 PM3 Android runs the Proxmark3 Iceman client **inside the app process** and talks
