@@ -23,6 +23,24 @@ enum class TagFamily {
     EMV,
     CIPURSE,
     PIV,
+    /** ICAO 9303 travel document: passport, ID card, residence permit. */
+    EMRTD,
+    /** National electronic identity card with its own applet (CIE, eID, ...). */
+    EID,
+    /** STMicroelectronics ST25 family: ST25TA, ST25TN, ST25TV, ST25DV. */
+    ST25,
+    /** NXP ICODE / ISO 15693 label ICs. */
+    ICODE,
+    /** Infineon SLE66R family, including my-d move. */
+    SLE66R,
+    /** Infineon my-d move lean, the reduced SLE66R variant. */
+    MY_D,
+    /** NXP SmartMX secure element: ISO-DEP applets, no linear memory. */
+    SMARTMX,
+    /** EM Microelectronic HF parts (EM4233, EM4237, EM4423, EM4425). */
+    EM_MICROELECTRONIC,
+    /** ISO/IEC 18092 passive communication, as exposed by Android NfcF. */
+    ISO_18092,
     UNKNOWN,
 }
 
@@ -62,6 +80,8 @@ class TagSnapshot(
     val ndefCapacity: Int? = null,
     /** ISO 14443-3B ATQB bytes, when the tag exposes NfcB. */
     val atqb: ByteArray? = null,
+    /** ISO 14443-4 ATS (answer to select), when the tag exposes IsoDep. */
+    val ats: ByteArray? = null,
     /** ISO 14443-4 ATS historical bytes, when the transport exposed them. */
     val historicalBytes: ByteArray? = null,
     /** Technology specific facts collected by the probe, when any. */
@@ -108,6 +128,45 @@ enum class TagNote {
 
     /** The free DESFire directory commands answered "authentication required". */
     DESFIRE_LOCKED,
+
+    /** An eMRTD needs the MRZ (BAC) or PACE before any data file can be read. */
+    EMRTD_NEEDS_MRZ,
+
+    /** The document advertises PACE; BAC may be disabled by the issuer. */
+    EMRTD_PACE,
+
+    /** DG2/DG3 carry biometric data: read only on explicit user request. */
+    EMRTD_BIOMETRIC,
+
+    /** A national eID applet with a proprietary protocol, not ICAO BAC. */
+    EID_PROPRIETARY,
+
+    /** Infineon SLE66R/my-d commands are proprietary and partly not public. */
+    SLE66R_PROPRIETARY,
+
+    /** The my-d move variant comes from the memory size, not from GET_VERSION. */
+    MY_D_VARIANT_INFERRED,
+
+    /** SmartMX is a secure element: applets only, no linear memory. */
+    SMARTMX_NO_MEMORY,
+
+    /** ISO 15693 user memory is protected by a password. */
+    ISO_15693_PASSWORD,
+
+    /** GET SYSTEM INFO did not answer, so the memory geometry is partial. */
+    ISO15693_NO_SYSTEM_INFO,
+
+    /** The ST25 part answered, but the exact variant needs a vendor command. */
+    ST25_VARIANT,
+
+    /** NFC-DEP (ISO 18092 peer-to-peer) is not exposed by the Android NFC API. */
+    FELICA_NO_P2P,
+
+    /** NDEF was found but the message could not be read completely. */
+    NDEF_READ_FAILED,
+
+    /** Only the APDU console can go further on this card. */
+    APDU_ONLY,
 }
 
 /** Result of [TagIdentifier.identify], ready to be shown by the inspector UI. */
@@ -139,4 +198,19 @@ class TagIdentity(
         get() = techs.contains(NfcTech.MIFARE_CLASSIC) ||
             family == TagFamily.MIFARE_ULTRALIGHT ||
             family == TagFamily.NTAG
+
+    /** Same identity with extra notes, de-duplicated and order preserved. */
+    fun withNotes(extra: List<TagNote>): TagIdentity = TagIdentity(
+        family = family,
+        label = label,
+        confidence = confidence,
+        uid = uid,
+        vendor = vendor,
+        atqa = atqa,
+        sak = sak,
+        memoryBytes = memoryBytes,
+        techs = techs,
+        version = version,
+        notes = (notes + extra).distinct(),
+    )
 }

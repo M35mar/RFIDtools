@@ -7,6 +7,7 @@
 package com.farmacia.pm3android.nfc.inspect
 
 import android.nfc.Tag
+import android.nfc.tech.IsoDep
 import android.nfc.tech.MifareClassic
 import android.nfc.tech.Ndef
 import android.nfc.tech.NfcA
@@ -40,6 +41,7 @@ object AndroidTagProbe {
         val iso15693 = runCatching { nfcVDetails(tag) }.getOrNull()
         val felica = runCatching { nfcFDetails(tag) }.getOrNull()
         val capacity = runCatching { Ndef.get(tag)?.maxSize }.getOrNull()
+        val isoDepInfo = runCatching { isoDepInfo(tag) }.getOrNull()
 
         return TagSnapshot(
             uid = tag.id ?: ByteArray(0),
@@ -49,9 +51,30 @@ object AndroidTagProbe {
             version = version,
             ndefCapacity = capacity?.takeIf { it > 0 },
             atqb = runCatching { NfcB.get(tag)?.applicationData }.getOrNull(),
+            ats = isoDepInfo?.ats,
+            historicalBytes = isoDepInfo?.historicalBytes,
             details = plus ?: iso15693 ?: felica,
         )
     }
+
+    /** ATS and historical bytes of an ISO-DEP card, when it exposes IsoDep. */
+    private fun isoDepInfo(tag: Tag): IsoDepInfo? {
+        val tech = IsoDep.get(tag) ?: return null
+        try {
+            tech.connect()
+            return IsoDepInfo(
+                ats = tech.hiLayerResponse?.copyOf(),
+                historicalBytes = tech.historicalBytes?.copyOf(),
+            )
+        } finally {
+            runCatching { tech.close() }
+        }
+    }
+
+    private class IsoDepInfo(
+        val ats: ByteArray?,
+        val historicalBytes: ByteArray?,
+    )
 
     /**
      * Reconnects to a card that did not answer as ISO-DEP and tries the native
@@ -78,8 +101,10 @@ object AndroidTagProbe {
         classicTech: Boolean,
     ): Boolean {
         if (classicTech) return false
-        if (!techs.contains(NfcTech.ISO_DEP)) return true
-        return sak != 0x20
+        // ISO-DEP cards are probed over ISO 7816 by the registry; a raw 0x60
+        // frame would only confuse an applet.
+        if (techs.contains(NfcTech.ISO_DEP)) return false
+        return true
     }
 
     /**

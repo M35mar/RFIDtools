@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -54,6 +55,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -67,6 +69,7 @@ import com.farmacia.pm3android.nfc.DumpError
 import com.farmacia.pm3android.nfc.DumpStage
 import com.farmacia.pm3android.nfc.DumpState
 import com.farmacia.pm3android.nfc.InspectError
+import com.farmacia.pm3android.nfc.MfuDumpFiles
 import com.farmacia.pm3android.nfc.NfcSession
 import com.farmacia.pm3android.nfc.PlusReadError
 import com.farmacia.pm3android.nfc.PlusReadStage
@@ -82,12 +85,19 @@ import com.farmacia.pm3android.nfc.inspect.ApplicationKind
 import com.farmacia.pm3android.nfc.inspect.CalypsoDetails
 import com.farmacia.pm3android.nfc.inspect.CalypsoFileKind
 import com.farmacia.pm3android.nfc.inspect.CalypsoFileParser
+import com.farmacia.pm3android.nfc.inspect.CommandLog
 import com.farmacia.pm3android.nfc.inspect.DesfireApplication
 import com.farmacia.pm3android.nfc.inspect.DesfireDetails
 import com.farmacia.pm3android.nfc.inspect.DesfireFile
 import com.farmacia.pm3android.nfc.inspect.DesfireFileType
+import com.farmacia.pm3android.nfc.inspect.DetailSection
+import com.farmacia.pm3android.nfc.inspect.EmrtdDetails
 import com.farmacia.pm3android.nfc.inspect.FelicaDetails
+import com.farmacia.pm3android.nfc.inspect.GenericDetails
 import com.farmacia.pm3android.nfc.inspect.Iso15693Details
+import com.farmacia.pm3android.nfc.inspect.IsoDepDetails
+import com.farmacia.pm3android.nfc.inspect.MemoryRow
+import com.farmacia.pm3android.nfc.inspect.PageMemoryDetails
 import com.farmacia.pm3android.nfc.inspect.PlusDetails
 import com.farmacia.pm3android.nfc.inspect.PlusGeometry
 import com.farmacia.pm3android.nfc.inspect.TagConfidence
@@ -218,8 +228,15 @@ private fun ResultContent(
         is Iso15693Details -> Iso15693Card(details)
         is FelicaDetails -> FelicaCard(details)
         is ApplicationDetails -> ApplicationCard(details)
+        is EmrtdDetails -> EmrtdCard(details)
+        is IsoDepDetails -> IsoDepCard(details)
+        is GenericDetails -> GenericCard(details)
+        // The page memory has its own table right below the content cards.
+        is PageMemoryDetails -> Unit
         null -> Unit
     }
+
+    if (state.commandLog.isNotEmpty()) CommandLogCard(state.commandLog)
 
     val content = state.content
     if (content != null) {
@@ -230,6 +247,13 @@ private fun ResultContent(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+
+    val pageDetails = state.details as? PageMemoryDetails
+    if (pageDetails != null) {
+        MemoryCard(pageDetails.rows, rowSize = 4)
+    } else if (state.dump.rows.isNotEmpty()) {
+        MemoryCard(state.dump.rows, rowSize = state.dump.rowSize)
     }
 
     if (identity.dumpable) {
@@ -1086,6 +1110,77 @@ private fun ApplicationCard(details: ApplicationDetails) {
 }
 
 @Composable
+private fun EmrtdCard(details: EmrtdDetails) {
+    SectionCard(title = stringResource(R.string.inspect_emrtd_title)) {
+        InfoRow(stringResource(R.string.inspect_emrtd_aid), details.aidHex)
+        details.label?.let {
+            InfoRow(stringResource(R.string.inspect_calypso_application), it)
+        }
+        InfoRow(stringResource(R.string.inspect_emrtd_pace), yesNo(details.paceSupported))
+        InfoRow(stringResource(R.string.inspect_emrtd_bac), yesNo(details.bacSupported))
+        details.cardAccess?.let {
+            InfoRow(stringResource(R.string.inspect_emrtd_card_access), it.toHexSpaced())
+        }
+    }
+}
+
+@Composable
+private fun IsoDepCard(details: IsoDepDetails) {
+    SectionCard(title = stringResource(R.string.inspect_isodep_title)) {
+        details.ats?.let {
+            InfoRow(stringResource(R.string.inspect_isodep_ats), it.toHexSpaced())
+        }
+        details.historicalBytes?.let {
+            InfoRow(stringResource(R.string.inspect_isodep_historical), it.toHexSpaced())
+        }
+        details.applications.forEach { application ->
+            InfoRow(
+                stringResource(R.string.inspect_application_aid),
+                application.aidHex + (application.label?.let { label -> " · $label" } ?: ""),
+            )
+        }
+    }
+}
+
+@Composable
+private fun GenericCard(details: GenericDetails) {
+    SectionCard(title = details.summary ?: stringResource(R.string.inspect_generic_title)) {
+        details.sections.forEach { section ->
+            Text(
+                text = section.title,
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+            section.rows.forEach { row -> InfoRow(row.label, row.value) }
+            section.table?.let { table ->
+                table.rows.forEach { cells -> InfoRow(cells.firstOrNull().orEmpty(), cells.drop(1).joinToString(" · ")) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CommandLogCard(entries: List<CommandLog.Entry>) {
+    SectionCard(title = stringResource(R.string.inspect_log_title)) {
+        entries.takeLast(LOG_ROWS).forEach { entry ->
+            Text(
+                text = "→ " + entry.command.toHexSpaced(),
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
+            )
+            Text(
+                text = "← " + (entry.response?.toHexSpaced() ?: entry.error ?: ""),
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+private const val LOG_ROWS = 12
+
+@Composable
 private fun applicationKindText(kind: ApplicationKind): String = when (kind) {
     ApplicationKind.EMV -> "EMV"
     ApplicationKind.CIPURSE -> "CIPURSE"
@@ -1110,7 +1205,10 @@ private fun ContentCards(content: TagContent) {
         ultralight.cc?.let { cc -> CapabilityCard(cc) }
         NdefCard(ultralight.ndef)
         CountersCard(ultralight.counters)
+        return
     }
+    // Type 3, 4 and 5 tags only carry the message read over their own transport.
+    if (content.ndef.status != NdefStatus.ABSENT) NdefCard(content.ndef)
 }
 
 @Composable
@@ -1463,6 +1561,7 @@ private fun DumpCard(
     viewModel: TagInspectViewModel,
     onOpenDumpFlow: () -> Unit,
 ) {
+    var showSave by remember(dump.suggestedName, dump.stage) { mutableStateOf(false) }
     SectionCard(title = stringResource(R.string.inspect_dump_title)) {
         when (dump.stage) {
             DumpStage.NONE -> {
@@ -1473,7 +1572,7 @@ private fun DumpCard(
                 )
                 Button(onClick = viewModel::startDump, modifier = Modifier.fillMaxWidth()) {
                     Icon(
-                        imageVector = Icons.Filled.Save,
+                        imageVector = Icons.Filled.Nfc,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp),
                     )
@@ -1510,6 +1609,40 @@ private fun DumpCard(
                     progress = { fraction(dump.progressDone, dump.progressTotal) },
                     modifier = Modifier.fillMaxWidth(),
                 )
+            }
+
+            DumpStage.DONE -> {
+                Text(
+                    text = stringResource(
+                        R.string.inspect_dump_read_done,
+                        dump.rows.size,
+                        dump.rowSize,
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                dump.error?.let { error ->
+                    Text(
+                        text = dumpErrorText(error),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                Text(
+                    text = stringResource(R.string.inspect_dump_not_saved),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Button(onClick = { showSave = true }, modifier = Modifier.fillMaxWidth()) {
+                    Icon(
+                        imageVector = Icons.Filled.Save,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Text(
+                        text = stringResource(R.string.inspect_dump_save),
+                        modifier = Modifier.padding(start = 8.dp),
+                    )
+                }
             }
 
             DumpStage.SAVED -> {
@@ -1570,6 +1703,105 @@ private fun DumpCard(
                 OutlinedButton(onClick = viewModel::retryDump, modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(R.string.inspect_retry))
                 }
+            }
+        }
+    }
+    if (showSave) {
+        SaveDumpDialog(
+            initialName = dump.suggestedName,
+            onDismiss = { showSave = false },
+            onSave = { name ->
+                showSave = false
+                viewModel.saveDump(name)
+            },
+        )
+    }
+}
+
+/** Name dialog for the explicit save: `.bin` is added, nothing is overwritten. */
+@Composable
+private fun SaveDumpDialog(
+    initialName: String,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit,
+) {
+    var name by remember(initialName) { mutableStateOf(initialName) }
+    val valid = MfuDumpFiles.fileName(name) != null
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.inspect_dump_name_title)) },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(stringResource(R.string.inspect_dump_name_label)) },
+                singleLine = true,
+                isError = !valid,
+                supportingText = {
+                    Text(
+                        stringResource(
+                            if (valid) {
+                                R.string.inspect_dump_name_help
+                            } else {
+                                R.string.inspect_dump_name_invalid
+                            },
+                        ),
+                    )
+                },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(name) }, enabled = valid) {
+                Text(stringResource(R.string.inspect_dump_save))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.inspect_dump_cancel))
+            }
+        },
+    )
+}
+
+private const val MEMORY_PREVIEW = 16
+
+/** Hex table of the memory that was just read: page number, bytes and text. */
+@Composable
+private fun MemoryCard(rows: List<MemoryRow>, rowSize: Int) {
+    var expanded by remember(rows.size, rows.firstOrNull()?.index) { mutableStateOf(false) }
+    val visible = if (expanded) rows else rows.take(MEMORY_PREVIEW)
+    SectionCard(title = stringResource(R.string.inspect_memory_title)) {
+        Text(
+            text = stringResource(
+                R.string.inspect_memory_summary,
+                rows.size,
+                rowSize,
+                rows.size * rowSize,
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        visible.forEach { row ->
+            Text(
+                text = "%03X  %s  %s".format(row.index, row.hex, row.ascii),
+                style = MaterialTheme.typography.labelSmall,
+                fontFamily = FontFamily.Monospace,
+            )
+        }
+        if (rows.size > MEMORY_PREVIEW) {
+            TextButton(
+                onClick = { expanded = !expanded },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    text = if (expanded) {
+                        stringResource(R.string.inspect_sectors_less)
+                    } else {
+                        stringResource(R.string.inspect_memory_show_all, rows.size)
+                    },
+                )
             }
         }
     }
@@ -1753,6 +1985,19 @@ private fun noteText(note: TagNote): String = stringResource(
         TagNote.CALYPSO_KEYS -> R.string.inspect_note_calypso
         TagNote.ISO_B_WEAK -> R.string.inspect_note_iso_b
         TagNote.DESFIRE_LOCKED -> R.string.inspect_note_desfire_locked
+        TagNote.EMRTD_NEEDS_MRZ -> R.string.inspect_note_emrtd_mrz
+        TagNote.EMRTD_PACE -> R.string.inspect_note_emrtd_pace
+        TagNote.EMRTD_BIOMETRIC -> R.string.inspect_note_emrtd_biometric
+        TagNote.EID_PROPRIETARY -> R.string.inspect_note_eid
+        TagNote.SLE66R_PROPRIETARY -> R.string.inspect_note_sle66r
+        TagNote.MY_D_VARIANT_INFERRED -> R.string.inspect_note_my_d_variant
+        TagNote.SMARTMX_NO_MEMORY -> R.string.inspect_note_smartmx
+        TagNote.ISO_15693_PASSWORD -> R.string.inspect_note_iso15693_password
+        TagNote.ISO15693_NO_SYSTEM_INFO -> R.string.inspect_note_iso15693_info
+        TagNote.ST25_VARIANT -> R.string.inspect_note_st25
+        TagNote.FELICA_NO_P2P -> R.string.inspect_note_felica_p2p
+        TagNote.NDEF_READ_FAILED -> R.string.inspect_note_ndef_failed
+        TagNote.APDU_ONLY -> R.string.inspect_note_apdu_only
     },
 )
 

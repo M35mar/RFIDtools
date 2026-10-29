@@ -76,9 +76,16 @@ class UltralightContent(
 class TagContent(
     val classic: ClassicContent? = null,
     val ultralight: UltralightContent? = null,
+    /** NDEF read directly over ISO-DEP, FeliCa or ISO 15693. */
+    private val directNdef: NdefContent? = null,
 ) {
     val ndef: NdefContent
-        get() = classic?.ndef ?: ultralight?.ndef ?: NdefContent.absent
+        get() = classic?.ndef ?: ultralight?.ndef ?: directNdef ?: NdefContent.absent
+
+    companion object {
+        /** Content that only carries an NDEF message, e.g. a Type 4/5 tag. */
+        fun ndefOnly(ndef: NdefContent): TagContent = TagContent(directNdef = ndef)
+    }
 }
 
 object TagContentAnalyzer {
@@ -93,6 +100,13 @@ object TagContentAnalyzer {
     fun of(capture: MfcCapture): TagContent = TagContent(classic = classic(capture))
 
     fun of(capture: MfuCapture): TagContent = TagContent(ultralight = ultralight(capture))
+
+    /**
+     * Content of a page memory read over raw NfcA: the same Type 2 parsing as a
+     * dump, without counters because the tag never answered GET_VERSION.
+     */
+    fun pages(pages: List<ByteArray>, uidHex: String): TagContent =
+        TagContent(ultralight = ultralightOf(pages, uidHex, emptyList()))
 
     fun classic(capture: MfcCapture): ClassicContent {
         val bytes = capture.toBin()
@@ -162,8 +176,14 @@ object TagContentAnalyzer {
         )
     }
 
-    fun ultralight(capture: MfuCapture): UltralightContent {
-        val pages = capture.pages
+    fun ultralight(capture: MfuCapture): UltralightContent =
+        ultralightOf(capture.pages, capture.uidHex, capture.counters)
+
+    private fun ultralightOf(
+        pages: List<ByteArray>,
+        uidHex: String,
+        counters: List<ByteArray>,
+    ): UltralightContent {
         val cc = parseCc(pages)
         val ndef = if (cc == null) {
             NdefContent.absent
@@ -178,11 +198,11 @@ object TagContentAnalyzer {
         }
 
         return UltralightContent(
-            uidHex = capture.uidHex,
+            uidHex = uidHex,
             pages = pages.size,
             cc = cc,
             ndef = ndef,
-            counters = capture.counters.map { counter ->
+            counters = counters.map { counter ->
                 val value = (counter[0].toInt() and 0xFF) or
                     ((counter[1].toInt() and 0xFF) shl 8) or
                     ((counter[2].toInt() and 0xFF) shl 16)

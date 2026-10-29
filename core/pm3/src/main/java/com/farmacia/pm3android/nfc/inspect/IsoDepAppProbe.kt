@@ -14,12 +14,15 @@ object IsoDepAppProbe {
     private const val SW_FILE_NOT_FOUND = 0x6A82
 
     /**
-     * Tries the PPSE, then the NDEF Type 4 application. Returns null when the
-     * card refuses both, which is the normal answer of a proprietary applet.
+     * Tries the PPSE, then the NFC Forum NDEF application, then the two
+     * secure-element applets that are worth naming without any credential.
+     * Returns null when the card refuses all of them, which is the normal
+     * answer of a proprietary applet.
      */
     fun probe(transport: IsoDepTransport): ApplicationDetails? {
         payment(transport)?.let { return it }
         ndef(transport)?.let { return it }
+        applet(transport)?.let { return it }
         return null
     }
 
@@ -52,6 +55,16 @@ object IsoDepAppProbe {
         )
     }
 
+    /** CIPURSE and PIV: both answer SELECT by DF name with a plain FCI. */
+    private fun applet(transport: IsoDepTransport): ApplicationDetails? {
+        for (aid in KNOWN_APPLETS) {
+            val response = select(transport, aid) ?: continue
+            if (response.sw != SW_OK) continue
+            return AidCatalog.application(aid)
+        }
+        return null
+    }
+
     private class Response(val data: ByteArray, val sw: Int)
 
     private fun select(transport: IsoDepTransport, name: ByteArray): Response? = try {
@@ -80,5 +93,14 @@ object IsoDepAppProbe {
 
     private val NDEF_AID = byteArrayOf(
         0xD2.toByte(), 0x76, 0x00, 0x00, 0x85.toByte(), 0x01, 0x01,
+    )
+
+    /** OSPT CIPURSE and NIST PIV, the two applets the inspector can name. */
+    private val KNOWN_APPLETS = listOf(
+        byteArrayOf(0xA0.toByte(), 0x00, 0x00, 0x05, 0x07),
+        byteArrayOf(
+            0xA0.toByte(), 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10,
+            0x00, 0x01, 0x00,
+        ),
     )
 }

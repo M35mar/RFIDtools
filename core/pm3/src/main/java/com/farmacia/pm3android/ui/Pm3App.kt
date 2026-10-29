@@ -63,12 +63,14 @@ import com.farmacia.pm3android.ui.device.DeviceScreen
 import com.farmacia.pm3android.ui.files.DumpEditorScreen
 import com.farmacia.pm3android.ui.files.DumpEditorViewModel
 import com.farmacia.pm3android.ui.files.FilesScreen
+import com.farmacia.pm3android.ui.nfc.ApduConsoleScreen
 import com.farmacia.pm3android.ui.nfc.NfcRestoreScreen
 import com.farmacia.pm3android.ui.nfc.NfcScreen
 import com.farmacia.pm3android.ui.nfc.TagInspectScreen
 import com.farmacia.pm3android.ui.settings.SettingsScreen
 import com.farmacia.pm3android.ui.theme.Pm3Theme
 import com.farmacia.pm3android.ui.update.UpdatePromptDialog
+import com.farmacia.pm3android.nfc.ApduConsoleViewModel
 import com.farmacia.pm3android.nfc.NfcRestoreViewModel
 import com.farmacia.pm3android.nfc.TagInspectViewModel
 import com.farmacia.pm3android.update.UpdateState
@@ -81,29 +83,31 @@ private data class Tab(
         NfcRestoreViewModel,
         DumpEditorViewModel,
         TagInspectViewModel,
+        ApduConsoleViewModel,
     ) -> Unit,
 )
 
 private val TABS = listOf(
-    Tab(R.string.nav_device, Icons.Filled.Usb) { viewModel, _, _, _ -> DeviceScreen(viewModel) },
-    Tab(R.string.nav_console, Icons.AutoMirrored.Filled.List) { viewModel, _, _, _ ->
+    Tab(R.string.nav_device, Icons.Filled.Usb) { viewModel, _, _, _, _ -> DeviceScreen(viewModel) },
+    Tab(R.string.nav_console, Icons.AutoMirrored.Filled.List) { viewModel, _, _, _, _ ->
         ConsoleScreen(viewModel = viewModel)
     },
-    Tab(R.string.nav_nfc, Icons.Filled.Nfc) { viewModel, restore, _, inspect ->
+    Tab(R.string.nav_nfc, Icons.Filled.Nfc) { viewModel, restore, _, inspect, apdu ->
         NfcScreen(
             viewModel = viewModel,
             restoreViewModel = restore,
             onIdentify = inspect::start,
+            onOpenApduConsole = apdu::start,
         )
     },
-    Tab(R.string.nav_files, Icons.Filled.Share) { viewModel, restore, editor, _ ->
+    Tab(R.string.nav_files, Icons.Filled.Share) { viewModel, restore, editor, _, _ ->
         FilesScreen(
             viewModel,
             onRestore = restore::open,
             onEditDump = editor::open,
         )
     },
-    Tab(R.string.nav_settings, Icons.Filled.Info) { viewModel, _, _, _ ->
+    Tab(R.string.nav_settings, Icons.Filled.Info) { viewModel, _, _, _, _ ->
         SettingsScreen(viewModel)
     },
 )
@@ -118,6 +122,7 @@ fun Pm3App(
     val restoreViewModel: NfcRestoreViewModel = viewModel()
     val editorViewModel: DumpEditorViewModel = viewModel()
     val inspectViewModel: TagInspectViewModel = viewModel()
+    val apduViewModel: ApduConsoleViewModel = viewModel()
     val settings by viewModel.settings.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
     val device by viewModel.device.collectAsState()
@@ -126,6 +131,7 @@ fun Pm3App(
     val restoreState by restoreViewModel.state.collectAsState()
     val editorState by editorViewModel.state.collectAsState()
     val inspectState by inspectViewModel.state.collectAsState()
+    val apduState by apduViewModel.state.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var selected by rememberSaveable { mutableIntStateOf(0) }
 
@@ -241,6 +247,7 @@ fun Pm3App(
                             restoreViewModel,
                             editorViewModel,
                             inspectViewModel,
+                            apduViewModel,
                         )
                     }
                 }
@@ -290,6 +297,16 @@ fun Pm3App(
                             inspectViewModel.close()
                             restoreViewModel.startDump()
                         },
+                    )
+                }
+
+                // The APDU console is the manual escape hatch: same overlay
+                // level, its own ISO-DEP connection.
+                if (apduState.visible) {
+                    ApduConsoleScreen(
+                        state = apduState,
+                        viewModel = apduViewModel,
+                        onClose = apduViewModel::close,
                     )
                 }
             }

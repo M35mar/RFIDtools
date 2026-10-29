@@ -219,6 +219,18 @@ class Iso15693Details(
     val firstBlock: ByteArray? = null,
     val blockSize: Int? = null,
     val blocks: Int? = null,
+    /** GET SYSTEM INFO flags, null when the command was refused. */
+    val infoFlags: Int? = null,
+    /** IC reference byte of the manufacturer. */
+    val icReference: Int? = null,
+    /** Manufacturer name derived from the UID vendor byte. */
+    val manufacturer: String? = null,
+    /** Lock bits of the AFI/DSFID/EAS and of the password protection. */
+    val lockBits: ByteArray? = null,
+    /** True when the tag advertises password protected user memory. */
+    val passwordProtected: Boolean? = null,
+    /** EAS (Electronic Article Surveillance) state, when it answered. */
+    val eas: Boolean? = null,
 ) : TagDetails()
 
 class FelicaDetails(
@@ -227,6 +239,86 @@ class FelicaDetails(
     val pmm: ByteArray? = null,
     val manufacturer: Int? = null,
     val systemCode: Int? = null,
+    /** Additional system codes returned by Request System Code. */
+    val systemCodes: List<Int> = emptyList(),
+    /** First readable block of the NDEF service, when it answered. */
+    val ndefBlock: ByteArray? = null,
+) : TagDetails()
+
+/**
+ * Raw ISO-DEP facts for a card that no specific probe recognised: the ATS,
+ * the historical bytes and the applications found by the AID scan.
+ */
+class IsoDepDetails(
+    val ats: ByteArray? = null,
+    val historicalBytes: ByteArray? = null,
+    val applications: List<ApplicationDetails> = emptyList(),
+    /** True when the card is likely a SmartMX/secure element. */
+    val smartMx: Boolean = false,
+) : TagDetails()
+
+/**
+ * Memory of a page-addressed Type 2 tag read over raw NfcA. Android exposes no
+ * MifareUltralight for an Infineon my-d move lean, so the probe reads it with
+ * the 4-block command and the screen shows the result like TagInfo does.
+ */
+class PageMemoryDetails(
+    val pages: List<ByteArray>,
+    /** Command that produced the read, shown as evidence. */
+    val source: String = "READ 0x30",
+    /** True when the variant comes from the memory size, not from GET_VERSION. */
+    val variantInferred: Boolean = false,
+) : TagDetails() {
+    val blockCount: Int get() = pages.size
+
+    val sizeBytes: Int get() = pages.sumOf { it.size }
+
+    val rows: List<MemoryRow>
+        get() = pages.mapIndexed { index, page -> MemoryRow(index, page) }
+}
+
+/** eMRTD / eID facts collected before any BAC or PACE session. */
+class EmrtdDetails(
+    val aid: ByteArray,
+    val label: String? = null,
+    /** EF.CardAccess, when the document returned it without a session. */
+    val cardAccess: ByteArray? = null,
+    val paceSupported: Boolean = false,
+    val bacSupported: Boolean = false,
+    /** EMRTD for an ICAO 9303 document, EID for a national applet. */
+    val family: TagFamily? = null,
+) : TagDetails() {
+    val aidHex: String get() = aid.toHex()
+}
+
+// ---------------------------------------------------------------------------
+// Generic, probe-defined details
+// ---------------------------------------------------------------------------
+
+/** One key/value row of a generic section. */
+class DetailRow(val label: String, val value: String)
+
+/** A simple table rendered by the generic card and by the text report. */
+class DetailTable(
+    val headers: List<String>,
+    val rows: List<List<String>>,
+)
+
+/** A named group of rows and/or one table. */
+class DetailSection(
+    val title: String,
+    val rows: List<DetailRow> = emptyList(),
+    val table: DetailTable? = null,
+)
+
+/**
+ * Details produced by a probe that does not need a dedicated UI card. Keeping
+ * the shape generic is what lets new tag families ship without touching the
+ * Compose screen or the report writer.
+ */
+class GenericDetails(
+    val sections: List<DetailSection>,
+    val summary: String? = null,
 ) : TagDetails()
 
 /** Kind of ISO-DEP application recognised from its AID. */

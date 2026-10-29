@@ -1,6 +1,27 @@
 # Changelog
 
-## 0.9.0 — 2026-10-29
+## 1.0.0 – 2026-10-30
+
+### Added
+- Page-addressed memory over raw NfcA: when GET_VERSION does not answer and
+  Android exposes no MifareUltralight (the Infineon SLE66R01L found on transport
+  tickets), the inspector reads the memory with the 4-block command `0x30` and
+  names the card from what it read: `my-d move lean (SLE66R01L)` at 16 blocks,
+  `my-d move (SLE66R01P)` at 38. Capability container and NDEF are parsed from
+  the same read.
+- Memory table in the inspector: row number, hex bytes and ASCII, with the full
+  memory one tap away. It covers the page memory above and the blocks of a
+  MIFARE Classic read.
+- Explicit dump save: reading the memory no longer writes a file. **Read
+  memory** shows the result and **Save dump** opens a dialog with an editable
+  name, `.bin` added automatically, invalid names rejected and collisions
+  suffixed.
+
+### Fixed
+- Dumps saved from the inspector keep the `.bin` extension.
+- The seven-byte UID note no longer claims that the memory is unreadable.
+
+## 0.9.0 – 2026-10-29
 
 ### Added
 - **Identifica tag** now reaches every practical tag family, not only the
@@ -39,6 +60,31 @@
   text report.
 - ISO 15693 details (display-order UID, DSFID, AFI, first block) and FeliCa
   details (IDm, PMm, manufacturer, system code).
+- **HF probe registry**: the inspector now runs one probe per technology behind a
+  small extension interface (`HfProbe`), so a new family is added with a probe and
+  not with a change to the Compose screen. ISO-DEP probes are ordered from the
+  technology Android discovered (Calypso first on ISO 14443-B, DESFire first
+  everywhere else).
+- **eMRTD / eID**: the ICAO 9303 application, the German eID and the Italian CIE
+  are selected; EF.CardAccess is read to report PACE and GET CHALLENGE reports
+  whether BAC is still enabled. The card states that DG1..DG16 need the MRZ or
+  the PACE password and that DG2/DG3 are biometric data.
+- **ISO 15693**: GET SYSTEM INFO with manufacturer, DSFID, AFI, block count and
+  size, IC reference; first block and Type 5 NDEF. NXP ICODE, ST25, Infineon
+  SLE66R/my-d and EM Microelectronic are named from the UID manufacturer code.
+- **FeliCa / ISO 18092**: Request Response (PMm), Request System Code and the
+  Type 3 NDEF service, with a note that NFC-DEP peer-to-peer is not exposed by
+  Android.
+- **ISO-DEP fallback**: ATS and historical bytes, EMV/PPSE, NDEF Type 4 and a
+  generic AID scan, plus SmartMX/CIPURSE/PIV naming and the APDU-only note.
+- **NDEF Type 4 and Type 5** are decoded with the same parser as Type 2, and
+  DESFire cards with an NDEF application report both the filesystem and the
+  message.
+- **APDU console** in the NFC tab: an ISO-DEP overlay that keeps the connection
+  open, parses hexadecimal commands, drains `61xx`/`6Cxx` and shows the response
+  with the ISO 7816 status word description.
+- New inspector cards and text-report sections for eMRTD, ISO-DEP, generic probe
+  details and the command log, with Italian and English strings.
 - New cards in the inspector and new sections in the text report for Plus,
   Calypso, ISO 15693, FeliCa and ISO-DEP applications, with Italian and English
   strings and new notes for the keyed and ISO 14443-B cases.

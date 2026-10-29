@@ -43,7 +43,7 @@ from **Info → Links → Check for updates**. The first install is a manual sid
 | --- | --- |
 | **Device** | USB status, vendor/product IDs, serial and interface diagnostics with copy/share. Sub-tab **PM3 tools**: searchable LF, HF, MIFARE Classic (one-tap autopwn) and Ultralight Ev1 commands, parameter dialogs, recent commands. |
 | **Console** | Free-form command input with history, follow mode, font size, copy/share of the output. Commands run through the in-process client, not a shell. |
-| **NFC** | Identify a tag with the phone's reader: Classic, Plus, Ultralight/NTAG, DESFire, Calypso/BNEVT, ISO 15693 and FeliCa, plus EMV/NDEF ISO-DEP applications. Shows UID, memory, DESFire applications/files, Calypso ICC/environment/free files, MAD/NDEF, sectors with access bits and counters. Optional key-based reads: DESFire files with an AES key, MIFARE Plus SL3 sectors. Read and write Ultralight/NTAG and MIFARE Classic dumps, restored with the keys from `hf-mf-<UID>-key.bin`, and save a text report. No Proxmark3 required. |
+| **NFC** | Identify a tag with the phone's reader across the HF families Android exposes: Classic, Plus, Ultralight/NTAG, DESFire, Calypso/BNEVT, ISO 15693 (ICODE, ST25, SLE66R/my-d, EM), FeliCa/ISO 18092, eMRTD passports and national eIDs, SmartMX and generic ISO-DEP applets. Shows UID, ATQA/SAK, ATS/ATQB, memory, DESFire applications/files, Calypso ICC/environment/free files, MAD/NDEF (Type 2/3/4/5), sectors with access bits and counters. Optional key-based reads: DESFire files with an AES key, MIFARE Plus SL3 sectors. **APDU console** for ISO-DEP cards. Read and write Ultralight/NTAG and MIFARE Classic dumps, restored with the keys from `hf-mf-<UID>-key.bin`, and save a text report. No Proxmark3 required. |
 | **Data** | Dumps, traces, logs and tag reports; filters, import/export via the Storage Access Framework, share. Built-in hex editor for `.bin` blocks and pages, with decoded access bits and value blocks. |
 | **Info** | Version, build and client commit, theme, settings backup/restore, client-resource reset, in-app updates, licence and links. |
 
@@ -57,12 +57,20 @@ fail). Only import scripts you trust.
 The **NFC** section works without a Proxmark3 and identifies the tag from the phone's
 reader. Everything below is read-only.
 
-- **Keyless**: family, UID, ATQA/SAK and technologies; GET_VERSION on NXP cards;
+- **Keyless**: family, UID, ATQA/SAK, ATS/ATQB and technologies; GET_VERSION on NXP cards;
   MIFARE Classic sectors with access bits, MAD and NDEF; Ultralight/NTAG capability
-  container and counters; DESFire PICC parameters, applications, DF names and file
+  container and counters; page memory read with the `0x30` command on Type 2 chips that
+  expose no MifareUltralight (Infineon my-d move lean on transport tickets), named from
+  the memory size; DESFire PICC parameters, applications, DF names and file
   settings; Calypso FCI, ICC manufacturing record, environment and the standard free
-  files (events, contracts, counters, special events, contract list); ISO 15693 and
-  FeliCa details; EMV/NDEF ISO-DEP applications.
+  files (events, contracts, counters, special events, contract list); ISO 15693 system
+  information (manufacturer, DSFID/AFI, memory geometry, IC reference); FeliCa PMm and
+  system codes; eMRTD/eID application, EF.CardAccess and PACE/BAC status; SmartMX and
+  generic ISO-DEP ATS with the applications found by the AID scan; EMV/NDEF ISO-DEP
+  applications. NDEF messages are decoded for Type 2, Type 3, Type 4 and Type 5 tags.
+- **APDU console**: pick an ISO-DEP card, type a command in hexadecimal and read the
+  response with the ISO 7816 status word; `61xx` and `6Cxx` are handled automatically.
+  It is the manual path for applets the automatic probes do not name.
 - **DESFire authenticated read**: enter a 16-byte AES key and key number, present the
   tag again and the app runs the EV1 AES handshake and reads standard, backup, record
   and value files in plain or MACed mode. Enciphered files are reported as not read.

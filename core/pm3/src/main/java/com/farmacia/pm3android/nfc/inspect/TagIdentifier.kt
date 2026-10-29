@@ -28,12 +28,28 @@ object TagIdentifier {
             details is DesfireDetails -> desfire(snapshot, details, notes)
             details is PlusDetails -> plus(snapshot, details, notes)
             details is ApplicationDetails -> application(snapshot, details, notes)
-            details is Iso15693Details -> simple(
-                snapshot,
-                TagFamily.ISO_15693,
-                "ISO 15693 (NfcV)",
-                TagConfidence.HIGH,
-                notes,
+            details is EmrtdDetails -> emrtdIdentity(
+                snapshot = snapshot,
+                details = details,
+                family = details.family ?: if (
+                    details.label?.contains("CIE", ignoreCase = true) == true
+                ) {
+                    TagFamily.EID
+                } else {
+                    TagFamily.EMRTD
+                },
+                label = details.label ?: "eMRTD (ICAO 9303)",
+                notes = notes,
+            )
+
+            details is IsoDepDetails -> isoDepDetails(snapshot, details, notes)
+            details is GenericDetails -> generic(snapshot, details, notes)
+            details is Iso15693Details -> iso15693Identity(
+                snapshot = snapshot,
+                details = details,
+                family = familyOfManufacturer(details.manufacturer),
+                label = details.manufacturer?.let { "ISO 15693 · $it" } ?: "ISO 15693 (NfcV)",
+                notes = notes,
             )
 
             details is FelicaDetails -> simple(
@@ -179,24 +195,30 @@ object TagIdentifier {
         snapshot: TagSnapshot,
         details: ApplicationDetails,
         notes: MutableList<TagNote>,
-    ): TagIdentity = TagIdentity(
-        family = when (details.kind) {
-            ApplicationKind.EMV -> TagFamily.EMV
-            ApplicationKind.CIPURSE -> TagFamily.CIPURSE
-            ApplicationKind.PIV -> TagFamily.PIV
-            else -> TagFamily.ISO_DEP
-        },
-        label = details.label ?: "ISO-DEP · ${details.aidHex}",
-        confidence = TagConfidence.HIGH,
-        uid = snapshot.uid,
-        vendor = details.provider,
-        atqa = snapshot.atqa,
-        sak = snapshot.sak,
-        memoryBytes = null,
-        techs = snapshot.techs,
-        version = null,
-        notes = notes.toList(),
-    )
+    ): TagIdentity {
+        if (details.kind == ApplicationKind.CIPURSE || details.kind == ApplicationKind.PIV) {
+            notes += TagNote.SMARTMX_NO_MEMORY
+            notes += TagNote.APDU_ONLY
+        }
+        return TagIdentity(
+            family = when (details.kind) {
+                ApplicationKind.EMV -> TagFamily.EMV
+                ApplicationKind.CIPURSE -> TagFamily.CIPURSE
+                ApplicationKind.PIV -> TagFamily.PIV
+                else -> TagFamily.ISO_DEP
+            },
+            label = details.label ?: "ISO-DEP · ${details.aidHex}",
+            confidence = TagConfidence.HIGH,
+            uid = snapshot.uid,
+            vendor = details.provider,
+            atqa = snapshot.atqa,
+            sak = snapshot.sak,
+            memoryBytes = null,
+            techs = snapshot.techs,
+            version = null,
+            notes = notes.toList(),
+        )
+    }
 
     private fun fromVersion(
         snapshot: TagSnapshot,
@@ -311,6 +333,149 @@ object TagIdentifier {
         version = null,
         notes = notes.toList(),
     )
+
+    // -----------------------------------------------------------------------
+    // Families added by the HF probe registry
+    // -----------------------------------------------------------------------
+
+    /** Identity of an ISO 15693 / NfcV label, from the system information. */
+    fun iso15693Identity(
+        snapshot: TagSnapshot,
+        details: Iso15693Details,
+        family: TagFamily,
+        label: String,
+        notes: MutableList<TagNote> = mutableListOf(),
+    ): TagIdentity {
+        if (details.passwordProtected == true) notes += TagNote.ISO_15693_PASSWORD
+        val memory = details.blocks?.let { blocks ->
+            details.blockSize?.let { size -> blocks * size }
+        }
+        return TagIdentity(
+            family = family,
+            label = label,
+            confidence = TagConfidence.HIGH,
+            uid = snapshot.uid,
+            vendor = details.manufacturer,
+            atqa = snapshot.atqa,
+            sak = snapshot.sak,
+            memoryBytes = memory,
+            techs = snapshot.techs,
+            version = null,
+            notes = notes.distinct(),
+        )
+    }
+
+    /** Identity of an ICAO 9303 document or of a national eID applet. */
+    fun emrtdIdentity(
+        snapshot: TagSnapshot,
+        details: EmrtdDetails,
+        family: TagFamily,
+        label: String,
+        notes: MutableList<TagNote> = mutableListOf(),
+    ): TagIdentity {
+        if (family == TagFamily.EMRTD) {
+            notes += TagNote.EMRTD_NEEDS_MRZ
+            notes += TagNote.EMRTD_BIOMETRIC
+            if (details.paceSupported) notes += TagNote.EMRTD_PACE
+        } else {
+            notes += TagNote.EID_PROPRIETARY
+            if (details.paceSupported) notes += TagNote.EMRTD_PACE
+        }
+        notes += TagNote.APDU_ONLY
+        return TagIdentity(
+            family = family,
+            label = label,
+            confidence = TagConfidence.HIGH,
+            uid = snapshot.uid,
+            vendor = if (family == TagFamily.EID) "National eID" else "ICAO 9303",
+            atqa = snapshot.atqa,
+            sak = snapshot.sak,
+            memoryBytes = null,
+            techs = snapshot.techs,
+            version = null,
+            notes = notes.distinct(),
+        )
+    }
+
+    /** Raw ISO-DEP facts: a SmartMX secure element or an unnamed applet card. */
+    private fun isoDepDetails(
+        snapshot: TagSnapshot,
+        details: IsoDepDetails,
+        notes: MutableList<TagNote>,
+    ): TagIdentity {
+        if (details.smartMx) {
+            notes += TagNote.SMARTMX_NO_MEMORY
+            notes += TagNote.APDU_ONLY
+        }
+        return TagIdentity(
+            family = if (details.smartMx) TagFamily.SMARTMX else TagFamily.ISO_DEP,
+            label = if (details.smartMx) {
+                "SmartMX / secure element (ISO-DEP)"
+            } else {
+                "ISO-DEP card (ATS)"
+            },
+            confidence = TagConfidence.MEDIUM,
+            uid = snapshot.uid,
+            vendor = vendorOfUid(snapshot.uid, TagFamily.ISO_DEP),
+            atqa = snapshot.atqa,
+            sak = snapshot.sak,
+            memoryBytes = null,
+            techs = snapshot.techs,
+            version = null,
+            notes = notes.distinct(),
+        )
+    }
+
+    /** A probe supplied generic details but no family: name it from the tech. */
+    private fun generic(
+        snapshot: TagSnapshot,
+        details: GenericDetails,
+        notes: MutableList<TagNote>,
+    ): TagIdentity {
+        val family = when {
+            snapshot.hasTech(NfcTech.NFC_V) -> TagFamily.ISO_15693
+            snapshot.hasTech(NfcTech.NFC_F) -> TagFamily.FELICA
+            snapshot.hasTech(NfcTech.ISO_DEP) -> TagFamily.ISO_DEP
+            snapshot.hasTech(NfcTech.NFC_B) -> TagFamily.ISO_14443_B
+            else -> TagFamily.UNKNOWN
+        }
+        return TagIdentity(
+            family = family,
+            label = details.summary ?: "ISO-DEP card",
+            confidence = TagConfidence.MEDIUM,
+            uid = snapshot.uid,
+            vendor = vendorOfUid(snapshot.uid, family),
+            atqa = snapshot.atqa,
+            sak = snapshot.sak,
+            memoryBytes = null,
+            techs = snapshot.techs,
+            version = null,
+            notes = notes.distinct(),
+        )
+    }
+
+    /** Identity of an ISO 14443-3B card that never answered ISO-DEP. */
+    fun iso14443BIdentity(snapshot: TagSnapshot): TagIdentity = TagIdentity(
+        family = TagFamily.ISO_14443_B,
+        label = "ISO 14443-3B (NfcB)",
+        confidence = TagConfidence.MEDIUM,
+        uid = snapshot.uid,
+        vendor = null,
+        atqa = snapshot.atqa,
+        sak = snapshot.sak,
+        memoryBytes = null,
+        techs = snapshot.techs,
+        version = null,
+        notes = listOf(TagNote.ISO_B_WEAK),
+    )
+
+    private fun familyOfManufacturer(manufacturer: String?): TagFamily = when (manufacturer) {
+        "NXP" -> TagFamily.ICODE
+        "STMicroelectronics" -> TagFamily.ST25
+        "Infineon" -> TagFamily.SLE66R
+        "EM Microelectronic" -> TagFamily.EM_MICROELECTRONIC
+        else -> TagFamily.ISO_15693
+    }
 
     private fun labelForSak(sak: Int): String = when (sak and 0xFF) {
         0x08 -> "MIFARE Classic 1K"

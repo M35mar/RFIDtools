@@ -15,8 +15,12 @@ import com.farmacia.pm3android.nfc.inspect.DesfireApplication
 import com.farmacia.pm3android.nfc.inspect.DesfireDetails
 import com.farmacia.pm3android.nfc.inspect.DesfireFile
 import com.farmacia.pm3android.nfc.inspect.DesfireFileType
+import com.farmacia.pm3android.nfc.inspect.EmrtdDetails
 import com.farmacia.pm3android.nfc.inspect.FelicaDetails
+import com.farmacia.pm3android.nfc.inspect.GenericDetails
 import com.farmacia.pm3android.nfc.inspect.Iso15693Details
+import com.farmacia.pm3android.nfc.inspect.IsoDepDetails
+import com.farmacia.pm3android.nfc.inspect.PageMemoryDetails
 import com.farmacia.pm3android.nfc.inspect.PlusDetails
 import com.farmacia.pm3android.nfc.inspect.TagDetails
 import com.farmacia.pm3android.nfc.inspect.TagFamily
@@ -111,6 +115,10 @@ object TagReport {
                 is Iso15693Details -> appendIso15693(this, details)
                 is FelicaDetails -> appendFelica(this, details)
                 is ApplicationDetails -> appendApplication(this, details)
+                is EmrtdDetails -> appendEmrtd(this, details)
+                is IsoDepDetails -> appendIsoDep(this, details)
+                is GenericDetails -> appendGeneric(this, details)
+                is PageMemoryDetails -> appendPageMemory(this, details)
             }
         }
 
@@ -120,6 +128,9 @@ object TagReport {
             appendClassic(this, classic)
         } else if (ultralight != null) {
             appendUltralight(this, ultralight)
+        } else if (content != null && content.ndef.status != NdefStatus.ABSENT) {
+            // Type 3, 4 and 5: the message was read over its own transport.
+            appendNdef(this, content.ndef)
         }
 
         appendLine("Dump")
@@ -327,10 +338,13 @@ object TagReport {
     private fun appendIso15693(out: StringBuilder, details: Iso15693Details) {
         out.appendLine("ISO 15693")
         out.appendLine("  UID: ${details.uid.toHex()}")
+        details.manufacturer?.let { out.appendLine("  Manufacturer: $it") }
         details.dsfid?.let { out.appendLine("  DSFID: 0x%02X".format(it)) }
         details.afi?.let { out.appendLine("  AFI: 0x%02X".format(it)) }
         details.blocks?.let { out.appendLine("  Blocks: $it") }
         details.blockSize?.let { out.appendLine("  Block size: $it bytes") }
+        details.icReference?.let { out.appendLine("  IC reference: 0x%02X".format(it)) }
+        details.infoFlags?.let { out.appendLine("  Info flags: 0x%02X".format(it)) }
         details.firstBlock?.let { out.appendLine("  Block 0: ${it.toHexSpaced()}") }
         out.appendLine()
     }
@@ -341,6 +355,8 @@ object TagReport {
         details.pmm?.let { out.appendLine("  PMm: ${it.toHex()}") }
         details.manufacturer?.let { out.appendLine("  Manufacturer: 0x%04X".format(it)) }
         details.systemCode?.let { out.appendLine("  System code: 0x%04X".format(it)) }
+        details.systemCodes.forEach { out.appendLine("  System code: 0x%04X".format(it)) }
+        details.ndefBlock?.let { out.appendLine("  NDEF block 0: ${it.toHexSpaced()}") }
         out.appendLine()
     }
 
@@ -351,6 +367,47 @@ object TagReport {
         out.appendLine("  Kind: ${details.kind.name}")
         details.provider?.let { out.appendLine("  Provider: $it") }
         out.appendLine()
+    }
+
+    private fun appendEmrtd(out: StringBuilder, details: EmrtdDetails) {
+        out.appendLine("eMRTD / eID")
+        out.appendLine("  AID: ${details.aidHex}")
+        details.label?.let { out.appendLine("  Label: $it") }
+        out.appendLine("  PACE: ${if (details.paceSupported) "yes" else "no"}")
+        out.appendLine("  BAC: ${if (details.bacSupported) "yes" else "no"}")
+        details.cardAccess?.let { out.appendLine("  EF.CardAccess: ${it.toHexSpaced()}") }
+        out.appendLine()
+    }
+
+    private fun appendIsoDep(out: StringBuilder, details: IsoDepDetails) {
+        out.appendLine("ISO-DEP")
+        details.ats?.let { out.appendLine("  ATS: ${it.toHexSpaced()}") }
+        details.historicalBytes?.let { out.appendLine("  Historical bytes: ${it.toHexSpaced()}") }
+        details.applications.forEach { application ->
+            out.appendLine("  AID: ${application.aidHex} ${application.label.orEmpty()}".trimEnd())
+        }
+        out.appendLine()
+    }
+
+    /** Page memory of a Type 2 chip read over raw NfcA (my-d move and similar). */
+    private fun appendPageMemory(out: StringBuilder, details: PageMemoryDetails) {
+        out.appendLine("Memory (${details.blockCount} blocks, ${details.sizeBytes} bytes, ${details.source})")
+        details.rows.forEach { row ->
+            out.appendLine("  %03X  %s  %s".format(row.index, row.hex, row.ascii))
+        }
+        out.appendLine()
+    }
+
+    private fun appendGeneric(out: StringBuilder, details: GenericDetails) {
+        details.summary?.let { out.appendLine(it) }
+        details.sections.forEach { section ->
+            out.appendLine(section.title)
+            section.rows.forEach { row -> out.appendLine("  ${row.label}: ${row.value}") }
+            section.table?.let { table ->
+                table.rows.forEach { cells -> out.appendLine("  ${cells.joinToString(" | ")}") }
+            }
+            out.appendLine()
+        }
     }
 
     private fun appendClassic(out: StringBuilder, content: ClassicContent) {
@@ -471,7 +528,7 @@ object TagReport {
 
     private fun noteText(note: TagNote): String = when (note) {
         TagNote.UID_7_BYTE ->
-            "7-byte UID: clone or MIFARE Plus. Android cannot dump it."
+            "7-byte UID: Plus, my-d move or a clone. Readable only through the page commands."
         TagNote.UID_10_BYTE ->
             "10-byte UID: ISO 15693 tag, not a MIFARE memory."
         TagNote.CLASSIC_WITHOUT_TECH ->
@@ -492,6 +549,32 @@ object TagReport {
             "Some phone NFC controllers are unreliable on ISO 14443-B."
         TagNote.DESFIRE_LOCKED ->
             "The free DESFire directory commands answered authentication required."
+        TagNote.EMRTD_NEEDS_MRZ ->
+            "The document needs the MRZ (BAC) or the PACE password before its files can be read."
+        TagNote.EMRTD_PACE ->
+            "The document advertises PACE: BAC may be disabled."
+        TagNote.EMRTD_BIOMETRIC ->
+            "DG2/DG3 carry biometric data: read them only on explicit request."
+        TagNote.EID_PROPRIETARY ->
+            "The identity card uses its own applet: its protocol needs the APDU console."
+        TagNote.SLE66R_PROPRIETARY ->
+            "SLE66R/my-d commands are proprietary and partly not public."
+        TagNote.MY_D_VARIANT_INFERRED ->
+            "Variant inferred from the memory size: 16 blocks for SLE66R01L, 38 for SLE66R01P."
+        TagNote.SMARTMX_NO_MEMORY ->
+            "SmartMX is a secure element: applets only, no linear memory."
+        TagNote.ISO_15693_PASSWORD ->
+            "The ISO 15693 memory is password protected."
+        TagNote.ISO15693_NO_SYSTEM_INFO ->
+            "The tag did not answer GET SYSTEM INFO: the memory geometry is partial."
+        TagNote.ST25_VARIANT ->
+            "The ST25 part answered; the exact variant needs a vendor command."
+        TagNote.FELICA_NO_P2P ->
+            "NFC-DEP (ISO 18092 peer-to-peer) is not exposed by the Android NFC API."
+        TagNote.NDEF_READ_FAILED ->
+            "NDEF was found but cannot be read completely."
+        TagNote.APDU_ONLY ->
+            "Only the APDU console can go further on this card."
     }
 
     private fun shortTech(tech: String): String = tech.substringAfterLast('.')

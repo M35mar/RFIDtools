@@ -14,24 +14,21 @@ import android.nfc.tech.MifareClassic
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.farmacia.pm3android.nfc.inspect.AndroidTagProbe
-import com.farmacia.pm3android.nfc.inspect.CalypsoClient
-import com.farmacia.pm3android.nfc.inspect.CalypsoProbe
+import com.farmacia.pm3android.nfc.inspect.CommandLog
 import com.farmacia.pm3android.nfc.inspect.DesfireAuthException
 import com.farmacia.pm3android.nfc.inspect.DesfireClient
 import com.farmacia.pm3android.nfc.inspect.DesfireDetails
-import com.farmacia.pm3android.nfc.inspect.DesfireInspector
 import com.farmacia.pm3android.nfc.inspect.DesfireReader
-import com.farmacia.pm3android.nfc.inspect.IsoDepAppProbe
-import com.farmacia.pm3android.nfc.inspect.NfcTech
+import com.farmacia.pm3android.nfc.inspect.HfProbeRegistry
+import com.farmacia.pm3android.nfc.inspect.MemoryRow
 import com.farmacia.pm3android.nfc.inspect.PlusAuthException
 import com.farmacia.pm3android.nfc.inspect.PlusDetails
 import com.farmacia.pm3android.nfc.inspect.PlusGeometry
 import com.farmacia.pm3android.nfc.inspect.PlusReader
 import com.farmacia.pm3android.nfc.inspect.PlusSectorRead
+import com.farmacia.pm3android.nfc.inspect.ProbeContext
 import com.farmacia.pm3android.nfc.inspect.TagDetails
-import com.farmacia.pm3android.nfc.inspect.TagIdentifier
 import com.farmacia.pm3android.nfc.inspect.TagIdentity
-import com.farmacia.pm3android.nfc.inspect.TagSnapshot
 import com.farmacia.pm3android.nfc.inspect.content.TagContent
 import com.farmacia.pm3android.nfc.inspect.content.TagContentAnalyzer
 import com.farmacia.pm3android.nfc.inspect.content.TagReport
@@ -55,6 +52,11 @@ enum class DumpStage {
     /** Waiting for the tag, which has to be presented again. */
     WAITING,
     READING,
+
+    /** Memory read and on screen; no file has been written yet. */
+    DONE,
+
+    /** The user saved the memory that was on screen. */
     SAVED,
 
     /** The read missed sectors: nothing was written, the report is on screen. */
@@ -79,6 +81,11 @@ data class DumpState(
     val progressTotal: Int = 0,
     val sectorsMissing: Int = 0,
     val blocksMissing: Int = 0,
+    /** Memory on screen after a read: pages for Type 2, blocks for Classic. */
+    val rows: List<MemoryRow> = emptyList(),
+    val rowSize: Int = 4,
+    /** Base name the save dialog proposes. */
+    val suggestedName: String = "",
 )
 
 /** Where the text report of the identified tag is. */
@@ -145,6 +152,8 @@ data class TagInspectState(
     val details: TagDetails? = null,
     /** Content of the capture, available once the memory has been read. */
     val content: TagContent? = null,
+    /** Last command/response exchanges of the identification. */
+    val commandLog: List<CommandLog.Entry> = emptyList(),
     val error: InspectError? = null,
     val dump: DumpState = DumpState(),
     val report: ReportState = ReportState(),
@@ -182,10 +191,14 @@ class TagInspectViewModel(application: Application) : AndroidViewModel(applicati
     /** AES key of a pending MIFARE Plus sector read. */
     private var plusKey: ByteArray? = null
 
+    /** Memory read but not saved yet; kept out of the UI state. */
+    private var pendingCapture: PendingCapture? = null
+
     /** Opens the overlay, or restarts it for a new tag. */
     fun start() {
         desfireKey = null
         plusKey = null
+        pendingCapture = null
         stateFlow.value = TagInspectState(visible = true)
     }
 
@@ -193,16 +206,19 @@ class TagInspectViewModel(application: Application) : AndroidViewModel(applicati
         if (stateFlow.value.busy) return
         desfireKey = null
         plusKey = null
+        pendingCapture = null
         stateFlow.value = TagInspectState()
     }
 
     fun retry() {
         desfireKey = null
         plusKey = null
+        pendingCapture = null
         stateFlow.value = stateFlow.value.copy(
             identity = null,
             details = null,
             content = null,
+            commandLog = emptyList(),
             error = null,
             dump = DumpState(),
             report = ReportState(),
@@ -476,6 +492,8 @@ class TagInspectViewModel(application: Application) : AndroidViewModel(applicati
                     busy = false,
                     identity = result.identity,
                     details = result.details,
+                    content = result.content,
+                    commandLog = result.log,
                 )
             } catch (t: CancellationException) {
                 throw t
@@ -512,6 +530,7 @@ class TagInspectViewModel(application: Application) : AndroidViewModel(applicati
         if (current.dump.stage != DumpStage.INCOMPLETE && current.dump.stage != DumpStage.FAILED) {
             return
         }
+        pendingCapture = null
         stateFlow.value = current.copy(
             dump = DumpState(stage = DumpStage.WAITING),
             report = ReportState(),
@@ -521,19 +540,31 @@ class TagInspectViewModel(application: Application) : AndroidViewModel(applicati
     private fun readDump(tag: Tag) {
         stateFlow.value = stateFlow.value.copy(dump = DumpState(stage = DumpStage.READING))
         val classic = MifareClassic.get(tag) != null
+        val progress = RestoreProgress { done, total ->
+            val current = stateFlow.value
+            if (current.dump.stage == DumpStage.READING) {
+                stateFlow.value = current.copy(
+                    dump = current.dump.copy(progressDone = done, progressTotal = total),
+                )
+            }
+        }
         viewModelScope.launch {
             try {
-                val result = withContext(Dispatchers.IO) { captureAndSave(tag, classic) }
+                val result = withContext(Dispatchers.IO) { capture(tag, classic, progress) }
                 val latest = stateFlow.value
                 if (!latest.visible) return@launch
                 val missing = result.missing
+                // A partial Classic capture is shown but never saved: it looks
+                // valid and would restore zeroes later.
+                pendingCapture = if (missing == null) result.capture else null
                 stateFlow.value = latest.copy(
                     content = result.content,
                     dump = if (missing == null) {
                         DumpState(
-                            stage = DumpStage.SAVED,
-                            savedName = result.saved?.dump?.name,
-                            savedKeyName = result.saved?.keyFile?.name,
+                            stage = DumpStage.DONE,
+                            rows = result.rows,
+                            rowSize = result.rowSize,
+                            suggestedName = result.suggestedName,
                         )
                     } else {
                         DumpState(
@@ -541,6 +572,8 @@ class TagInspectViewModel(application: Application) : AndroidViewModel(applicati
                             error = DumpError.INCOMPLETE,
                             sectorsMissing = missing.sectorsMissing,
                             blocksMissing = missing.blocksMissing,
+                            rows = result.rows,
+                            rowSize = result.rowSize,
                         )
                     },
                     report = ReportState(),
@@ -558,36 +591,71 @@ class TagInspectViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     /**
-     * Reads the whole tag with the factory keys. The capture is analyzed even
-     * when it is incomplete, so the inspector can show what was readable; the
-     * `.bin` is written only when nothing is missing, because a partial dump
-     * looks valid and would restore zeroes later.
+     * Writes the memory that is already on screen. The name comes from the save
+     * dialog; an invalid one is rejected by the caller, which keeps the dialog
+     * open and shows the error there.
      */
-    private fun captureAndSave(tag: Tag, classic: Boolean): CaptureResult {
+    fun saveDump(rawName: String) {
+        val current = stateFlow.value
+        if (current.dump.stage != DumpStage.DONE) return
+        val name = MfuDumpFiles.fileName(rawName) ?: return
+        val capture = pendingCapture ?: return
         val context = getApplication<Application>()
-        val progress = RestoreProgress { done, total ->
-            val current = stateFlow.value
-            if (current.dump.stage == DumpStage.READING) {
-                stateFlow.value = current.copy(
-                    dump = current.dump.copy(progressDone = done, progressTotal = total),
-                )
+        viewModelScope.launch {
+            val saved = try {
+                withContext(Dispatchers.IO) {
+                    when (capture) {
+                        is PendingCapture.Classic ->
+                            NfcDumpSaver.save(context, name, classic = capture.capture)
+
+                        is PendingCapture.Ultralight ->
+                            NfcDumpSaver.save(context, name, ultralight = capture.capture)
+                    }
+                }
+            } catch (t: CancellationException) {
+                throw t
+            } catch (_: Throwable) {
+                null
             }
+            val latest = stateFlow.value
+            if (!latest.visible) return@launch
+            stateFlow.value = latest.copy(
+                dump = if (saved == null) {
+                    // The memory stays on screen so the user can retry the save.
+                    latest.dump.copy(error = DumpError.READ)
+                } else {
+                    latest.dump.copy(
+                        stage = DumpStage.SAVED,
+                        savedName = saved.dump.name,
+                        savedKeyName = saved.keyFile?.name,
+                        error = null,
+                    )
+                },
+            )
         }
+    }
+
+    /**
+     * Reads the whole tag with the factory keys and keeps the capture for a
+     * later save. Nothing is written here: the screen shows the memory first.
+     */
+    private fun capture(
+        tag: Tag,
+        classic: Boolean,
+        progress: RestoreProgress,
+    ): CaptureResult {
         if (classic) {
             val transport = AndroidClassicTransport(tag)
             try {
                 val capture = MfcReader(transport).read(progress = progress)
-                val content = TagContentAnalyzer.of(capture)
-                val missing = incomplete(capture)
-                if (missing != null) {
-                    return CaptureResult(content = content, missing = missing)
-                }
-                val saved = NfcDumpSaver.save(
-                    context = context,
-                    name = "hf-mf-${capture.uidHex}-dump",
-                    classic = capture,
+                return CaptureResult(
+                    content = TagContentAnalyzer.of(capture),
+                    rows = classicRows(capture),
+                    rowSize = MfcGeometry.BLOCK_SIZE,
+                    suggestedName = suggestedName("hf-mf-${capture.uidHex}-dump"),
+                    capture = PendingCapture.Classic(capture),
+                    missing = incomplete(capture),
                 )
-                return CaptureResult(content = content, saved = saved)
             } finally {
                 transport.close()
             }
@@ -595,19 +663,29 @@ class TagInspectViewModel(application: Application) : AndroidViewModel(applicati
         val transport = AndroidUltralightTransport(tag)
         try {
             val capture = MfuReader(transport).read(progress = progress)
-            val saved = NfcDumpSaver.save(
-                context = context,
-                name = capture.defaultName,
-                ultralight = capture,
-            )
             return CaptureResult(
                 content = TagContentAnalyzer.of(capture),
-                saved = saved,
+                rows = capture.pages.mapIndexed { index, page -> MemoryRow(index, page) },
+                rowSize = 4,
+                suggestedName = suggestedName(capture.defaultName),
+                capture = PendingCapture.Ultralight(capture),
             )
         } finally {
             transport.close()
         }
     }
+
+    /** Hex rows of the blocks the Classic read actually returned. */
+    private fun classicRows(capture: MfcCapture): List<MemoryRow> {
+        val bytes = capture.toBin()
+        val size = MfcGeometry.BLOCK_SIZE
+        return capture.readableBlocks.sorted().map { block ->
+            MemoryRow(block, bytes.copyOfRange(block * size, block * size + size))
+        }
+    }
+
+    /** Same rule the full read uses, so the dialog and the saver agree. */
+    private fun suggestedName(base: String): String = MfuDumpFiles.fileName(base) ?: base
 
     /** Counts of an incomplete Classic capture, null when every block was read. */
     private fun incomplete(capture: MfcCapture): Missing? {
@@ -623,9 +701,19 @@ class TagInspectViewModel(application: Application) : AndroidViewModel(applicati
 
     private class CaptureResult(
         val content: TagContent,
-        val saved: SavedDump? = null,
+        val rows: List<MemoryRow>,
+        val rowSize: Int,
+        val suggestedName: String,
+        val capture: PendingCapture,
         val missing: Missing? = null,
     )
+
+    /** Capture kept in memory between the read and the explicit save. */
+    private sealed interface PendingCapture {
+        class Classic(val capture: MfcCapture) : PendingCapture
+
+        class Ultralight(val capture: MfuCapture) : PendingCapture
+    }
 
     private class Missing(val sectorsMissing: Int, val blocksMissing: Int)
 
@@ -696,87 +784,34 @@ class TagInspectViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    private fun inspect(tag: Tag): Inspection {
-        val snapshot = AndroidTagProbe.snapshot(tag)
-        var details = snapshot.details
-        var identity = TagIdentifier.identify(snapshot, details)
-
-        if (snapshot.hasTech(NfcTech.ISO_DEP)) {
-            val isoDepDetails = probeIsoDep(tag, snapshot)
-            if (isoDepDetails != null) {
-                details = isoDepDetails
-                identity = TagIdentifier.identify(snapshot, details)
-            }
-        }
-
-        return Inspection(identity, details)
-    }
-
     /**
-     * ISO-DEP is shared by DESFire, Calypso, EMV and NDEF Type 4 cards. The
-     * card is opened once and the probes run in the order most likely to
-     * answer: Calypso first on ISO 14443-B, DESFire first everywhere else.
-     * A MIFARE Plus level 3 only answers its native GET_VERSION, so it is the
-     * last attempt, after the ISO-DEP field has been released.
+     * Runs the probe registry: discovery snapshot first, then one probe per
+     * technology. The registry stops at the first probe that names the card and
+     * keeps the content and the command log of the whole chain.
      */
-    private fun probeIsoDep(tag: Tag, snapshot: TagSnapshot): TagDetails? {
-        val onIsoB = snapshot.hasTech(NfcTech.NFC_B) && !snapshot.hasTech(NfcTech.NFC_A)
+    private fun inspect(tag: Tag): Inspection {
+        val log = CommandLog()
+        val snapshot = AndroidTagProbe.snapshot(tag)
         val abort: (Throwable) -> Boolean = { error -> error is TagLostException }
-        var desfire: TagDetails? = null
-        var other: TagDetails? = null
-
-        try {
-            val transport = AndroidIsoDepTransport(tag)
-            try {
-                if (onIsoB) {
-                    other = calypso(transport, onIsoB, abort)
-                    if (other == null) desfire = desfire(transport, abort)
-                } else {
-                    desfire = desfire(transport, abort)
-                    if (desfire == null) other = calypso(transport, onIsoB, abort)
-                }
-                if (desfire == null && other == null) {
-                    other = runCatching { IsoDepAppProbe.probe(transport) }.getOrNull()
-                }
-            } finally {
-                transport.close()
-            }
-        } catch (lost: TagLostException) {
-            throw lost
-        } catch (_: Throwable) {
-            // ISO-DEP refused every probe: keep the generic identification.
-        }
-
-        if (desfire != null) return desfire
-        if (other != null) return other
-        return runCatching { AndroidTagProbe.probePlus(tag) }.getOrNull()
-    }
-
-    private fun desfire(
-        transport: AndroidIsoDepTransport,
-        abort: (Throwable) -> Boolean,
-    ): TagDetails? = try {
-        DesfireInspector.read(DesfireClient(transport), abort)
-    } catch (lost: TagLostException) {
-        throw lost
-    } catch (_: Throwable) {
-        null
-    }
-
-    private fun calypso(
-        transport: AndroidIsoDepTransport,
-        iso14443B: Boolean,
-        abort: (Throwable) -> Boolean,
-    ): TagDetails? = try {
-        CalypsoProbe.read(CalypsoClient(transport, iso14443B), abort)
-    } catch (lost: TagLostException) {
-        throw lost
-    } catch (_: Throwable) {
-        null
+        val context = ProbeContext(
+            snapshot = snapshot,
+            session = AndroidTagSession(tag, log),
+            log = log,
+            abort = abort,
+        )
+        val result = HfProbeRegistry.run(context)
+        return Inspection(
+            identity = result.identity,
+            details = result.details,
+            content = result.content,
+            log = result.log,
+        )
     }
 
     private class Inspection(
         val identity: TagIdentity,
         val details: TagDetails?,
+        val content: TagContent?,
+        val log: List<CommandLog.Entry>,
     )
 }

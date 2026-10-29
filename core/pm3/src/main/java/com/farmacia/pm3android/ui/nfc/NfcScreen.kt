@@ -24,6 +24,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Nfc
 import androidx.compose.material.icons.filled.SaveAlt
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -65,6 +66,7 @@ fun NfcScreen(
     viewModel: Pm3ViewModel,
     restoreViewModel: NfcRestoreViewModel,
     onIdentify: () -> Unit,
+    onOpenApduConsole: () -> Unit,
 ) {
     val files by viewModel.files.collectAsState()
     val context = LocalContext.current
@@ -119,6 +121,14 @@ fun NfcScreen(
                 supporting = stringResource(R.string.nfc_identify_supporting),
                 enabled = nfcEnabled,
                 onClick = onIdentify,
+            )
+            NfcActionCard(
+                icon = Icons.Filled.Send,
+                title = stringResource(R.string.apdu_title),
+                description = stringResource(R.string.nfc_apdu_desc),
+                supporting = stringResource(R.string.nfc_apdu_supporting),
+                enabled = nfcEnabled,
+                onClick = onOpenApduConsole,
             )
             NfcActionCard(
                 icon = Icons.Filled.SaveAlt,
