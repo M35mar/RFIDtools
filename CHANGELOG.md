@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.9.0 — 2026-10-29
+
+### Added
+- **Identifica tag** now reaches every practical tag family, not only the
+  MIFARE basics: MIFARE Plus levels 1–3, DESFire EV1/EV2/EV3, Calypso/BNEVT,
+  ISO 15693, FeliCa and generic ISO-DEP applications (EMV payment cards, NDEF
+  Type 4, CIPURSE, PIV).
+- MIFARE Plus identification with the native three-frame GET_VERSION, the
+  hardware/software versions, the storage size and the security level inferred
+  from the SAK, with a clear note when level 2 or 3 still needs AES keys.
+- DESFire keyless metadata: PICC free memory, key settings and key count, every
+  application with its DF name, key settings, file ids, ISO file ids and the
+  settings of each file (type, size, record geometry, access rights, value
+  limits). Locked levels are marked instead of hiding the application.
+- DESFire authenticated read: enter a 16-byte AES key and a key number, present
+  the tag again and the app runs the EV1 AES handshake, derives the session key
+  and reads standard, backup, record and value files in plain or MACed
+  communication mode. The key stays in memory only for the read; enciphered
+  files are marked as not read.
+- MIFARE Plus SL3 authenticated sector read: enter the sector AES key and the
+  sector (key A or B), present the tag again and the app runs the native
+  `0x70`/`0x72` handshake, derives Kenc/Kmac, MACs the `0x30` read and decrypts
+  the blocks. The key number is derived from the sector (`0x4000 + sector × 2`),
+  the key stays in memory and the blocks appear in the card and in the report.
+- Calypso/BNEVT support: curated AID and RID table (including `A000000291` and
+  the Setra `A000000404` family), SELECT with CLA `0x94`/`0x00` fallback, FCI
+  parsing (DF name, serial, seven startup bytes) and the keyless ICC
+  manufacturing record (serial, country, manufacturer, date, check byte).
+- Calypso keyless ticketing environment (SFI `0x07`, with the `0x2000`/`0x2001`
+  file fallback): environment version, 24-bit network identifier and raw record.
+  The secure session itself is not implemented: it requires a Calypso SAM and
+  the licensed Calypso specification, so the app states this in the card.
+- Calypso free files: events log (SFI `0x08`), contracts (`0x09`), counters
+  (`0x19`), special events (`0x1D`) and contract list (`0x1E`) are read one
+  record at a time and stop at the first record the card refuses. Counters are
+  decoded as 24-bit big-endian values; the records appear in the card and in the
+  text report.
+- ISO 15693 details (display-order UID, DSFID, AFI, first block) and FeliCa
+  details (IDm, PMm, manufacturer, system code).
+- New cards in the inspector and new sections in the text report for Plus,
+  Calypso, ISO 15693, FeliCa and ISO-DEP applications, with Italian and English
+  strings and new notes for the keyed and ISO 14443-B cases.
+
+### Changed
+- DESFire application ids are decoded in the card byte order (least significant
+  byte first), so the ids shown match `hf mfdes` and the NXP documentation.
+- Version `0.9.0` (`versionCode` 10).
+
 ## 0.8.0 — 2026-10-28
 
 ### Added

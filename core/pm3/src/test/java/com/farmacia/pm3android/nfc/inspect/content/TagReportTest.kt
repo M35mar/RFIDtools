@@ -2,8 +2,14 @@
 
 package com.farmacia.pm3android.nfc.inspect.content
 
+import com.farmacia.pm3android.nfc.inspect.CalypsoDetails
+import com.farmacia.pm3android.nfc.inspect.CalypsoStartup
+import com.farmacia.pm3android.nfc.inspect.DesfireApplication
+import com.farmacia.pm3android.nfc.inspect.DesfireDetails
+import com.farmacia.pm3android.nfc.inspect.DesfirePicc
 import com.farmacia.pm3android.nfc.inspect.DesfireVersion
 import com.farmacia.pm3android.nfc.inspect.NfcTech
+import com.farmacia.pm3android.nfc.inspect.PlusDetails
 import com.farmacia.pm3android.nfc.inspect.TagConfidence
 import com.farmacia.pm3android.nfc.inspect.TagFamily
 import com.farmacia.pm3android.nfc.inspect.TagIdentity
@@ -147,13 +153,7 @@ class TagReportTest {
     }
 
     @Test
-    fun `get version and desfire blocks are included`() {
-        val version = VersionInfo.parse(
-            byteArrayOf(
-                0x00,
-                0x04, 0x01, 0x01, 0x12, 0x34, 0x18, 0x03,
-            ),
-        )
+    fun `desfire blocks are included`() {
         val desfire = DesfireVersion(
             hardwareVendor = 0x04,
             hardwareType = 0x01,
@@ -166,16 +166,25 @@ class TagReportTest {
             softwareMinor = 0x34,
         )
         val report = TagReport.build(
-            identity = identity(family = TagFamily.DESFIRE, notes = emptyList(), version = version),
+            identity = identity(family = TagFamily.DESFIRE, notes = emptyList()),
             content = null,
-            desfire = desfire,
-            applications = listOf(0x000000, 0x123456),
+            details = DesfireDetails(
+                version = desfire,
+                picc = DesfirePicc(freeMemory = 1024, keySettings = 0x0F, keyCount = 4),
+                applications = listOf(
+                    DesfireApplication(id = 0x000000),
+                    DesfireApplication(id = 0x123456, locked = true),
+                ),
+            ),
         )
-        assertTrue(report.contains("GET_VERSION"))
-        assertTrue(report.contains("Product: MIFARE DESFire"))
         assertTrue(report.contains("DESFire"))
+        assertTrue(report.contains("Product: MIFARE DESFire"))
         assertTrue(report.contains("Generation: EV1"))
-        assertTrue(report.contains("Applications: 0x000000 · 0x123456"))
+        assertTrue(report.contains("Free memory: 1024 bytes"))
+        assertTrue(report.contains("PICC key settings: 0x0F, 4 key(s)"))
+        assertTrue(report.contains("Applications: 2"))
+        assertTrue(report.contains("Application 0x123456"))
+        assertTrue(report.contains("Authentication required for some reads"))
         assertTrue(report.contains("No dump file"))
     }
 
@@ -185,10 +194,52 @@ class TagReportTest {
         val report = TagReport.build(
             identity = identity(family = TagFamily.DESFIRE, notes = emptyList()),
             content = null,
-            desfire = desfire,
-            applications = null,
+            details = DesfireDetails(version = desfire, applications = null),
         )
         assertTrue(report.contains("Applications: not read"))
+    }
+
+    @Test
+    fun `plus details carry the security level`() {
+        val version = VersionInfo.parse(
+            byteArrayOf(0x04, 0x02, 0x01, 0x01, 0x00, 0x16, 0x03),
+        )!!
+        val report = TagReport.build(
+            identity = identity(family = TagFamily.MIFARE_PLUS, notes = emptyList()),
+            content = null,
+            details = PlusDetails(version = version, securityLevel = 3, storageBytes = 2048),
+        )
+        assertTrue(report.contains("MIFARE Plus"))
+        assertTrue(report.contains("Security level: 3"))
+        assertTrue(report.contains("Product: MIFARE Plus EV1 2 KB"))
+    }
+
+    @Test
+    fun `calypso details carry df name, startup and icc`() {
+        val startup = CalypsoStartup(0x00, 0x02, 0x10, 0x01, 0x02, 0x03, 0x04)
+        val report = TagReport.build(
+            identity = identity(
+                family = TagFamily.CALYPSO,
+                label = "Navigo",
+                notes = listOf(TagNote.CALYPSO_KEYS, TagNote.ISO_B_WEAK),
+                techs = listOf(NfcTech.NFC_B, NfcTech.ISO_DEP),
+            ),
+            content = null,
+            details = CalypsoDetails(
+                dfName = byteArrayOf(0xA0.toByte(), 0x00, 0x00, 0x04, 0x04),
+                label = "Navigo",
+                serial = byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8),
+                startup = startup,
+                cla = 0x94,
+                iso14443B = true,
+            ),
+        )
+        assertTrue(report.contains("Calypso"))
+        assertTrue(report.contains("DF name: A000000404"))
+        assertTrue(report.contains("Application: Navigo"))
+        assertTrue(report.contains("ISO 14443-B: yes"))
+        assertTrue(report.contains("Calypso keeps its ticket files behind keys."))
+        assertTrue(report.contains("Some phone NFC controllers are unreliable on ISO 14443-B."))
     }
 
     @Test

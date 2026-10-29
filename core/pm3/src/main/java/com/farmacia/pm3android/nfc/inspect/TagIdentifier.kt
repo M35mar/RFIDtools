@@ -6,15 +6,44 @@
 
 package com.farmacia.pm3android.nfc.inspect
 
+import com.farmacia.pm3android.nfc.toHex
+
 object TagIdentifier {
 
-    fun identify(snapshot: TagSnapshot): TagIdentity {
+    fun identify(snapshot: TagSnapshot): TagIdentity = identify(snapshot, snapshot.details)
+
+    /**
+     * Identification from the discovery data plus whatever the technology probe
+     * managed to read. Details win over the tech list: a Calypso DF name is
+     * stronger evidence than "the card speaks ISO-DEP".
+     */
+    fun identify(snapshot: TagSnapshot, details: TagDetails?): TagIdentity {
         val version = snapshot.version?.let { VersionInfo.parse(it) }
         val notes = mutableListOf<TagNote>()
         if (snapshot.uid.size == 7) notes += TagNote.UID_7_BYTE
         if (snapshot.uid.size == 10) notes += TagNote.UID_10_BYTE
 
         return when {
+            details is CalypsoDetails -> calypso(snapshot, details, notes)
+            details is DesfireDetails -> desfire(snapshot, details, notes)
+            details is PlusDetails -> plus(snapshot, details, notes)
+            details is ApplicationDetails -> application(snapshot, details, notes)
+            details is Iso15693Details -> simple(
+                snapshot,
+                TagFamily.ISO_15693,
+                "ISO 15693 (NfcV)",
+                TagConfidence.HIGH,
+                notes,
+            )
+
+            details is FelicaDetails -> simple(
+                snapshot,
+                TagFamily.FELICA,
+                "FeliCa (NfcF)",
+                TagConfidence.HIGH,
+                notes,
+            )
+
             version != null -> fromVersion(snapshot, version, notes)
             snapshot.hasTech(NfcTech.MIFARE_CLASSIC) -> classic(snapshot, notes)
             snapshot.hasTech(NfcTech.ISO_DEP) -> isoDep(snapshot, notes)
@@ -36,9 +65,9 @@ object TagIdentifier {
 
             snapshot.hasTech(NfcTech.NFC_B) -> simple(
                 snapshot,
-                TagFamily.UNKNOWN,
+                TagFamily.ISO_14443_B,
                 "ISO 14443-3B (NfcB)",
-                TagConfidence.LOW,
+                TagConfidence.MEDIUM,
                 notes,
             )
 
@@ -76,6 +105,98 @@ object TagIdentifier {
             notes = (identity.notes - TagNote.VERSION_UNAVAILABLE + TagNote.DESFIRE_NO_DUMP)
                 .distinct(),
         )
+
+    private fun calypso(
+        snapshot: TagSnapshot,
+        details: CalypsoDetails,
+        notes: MutableList<TagNote>,
+    ): TagIdentity {
+        notes += TagNote.CALYPSO_KEYS
+        if (details.iso14443B) notes += TagNote.ISO_B_WEAK
+        val label = details.label
+            ?: "Calypso · ${details.dfName.toHex()}"
+        return TagIdentity(
+            family = TagFamily.CALYPSO,
+            label = label,
+            confidence = TagConfidence.HIGH,
+            uid = snapshot.uid,
+            vendor = details.label?.let { "Calypso Networks Association" } ?: "Calypso",
+            atqa = snapshot.atqa,
+            sak = snapshot.sak,
+            memoryBytes = null,
+            techs = snapshot.techs,
+            version = null,
+            notes = notes.toList(),
+        )
+    }
+
+    private fun desfire(
+        snapshot: TagSnapshot,
+        details: DesfireDetails,
+        notes: MutableList<TagNote>,
+    ): TagIdentity {
+        notes += TagNote.DESFIRE_NO_DUMP
+        if (details.picc?.locked == true) notes += TagNote.DESFIRE_LOCKED
+        return TagIdentity(
+            family = TagFamily.DESFIRE,
+            label = details.version.label,
+            confidence = TagConfidence.HIGH,
+            uid = snapshot.uid,
+            vendor = details.version.vendorName,
+            atqa = snapshot.atqa,
+            sak = snapshot.sak,
+            memoryBytes = details.version.storageBytes,
+            techs = snapshot.techs,
+            version = null,
+            notes = notes.distinct(),
+        )
+    }
+
+    private fun plus(
+        snapshot: TagSnapshot,
+        details: PlusDetails,
+        notes: MutableList<TagNote>,
+    ): TagIdentity {
+        val level = details.securityLevel
+        if (level != null && level >= 2) notes += TagNote.PLUS_NEEDS_KEYS
+        if (level == 2) notes += TagNote.PLUS_SL2_UNSUPPORTED
+        return TagIdentity(
+            family = TagFamily.MIFARE_PLUS,
+            label = details.version.productName,
+            confidence = TagConfidence.HIGH,
+            uid = snapshot.uid,
+            vendor = details.version.vendorName,
+            atqa = snapshot.atqa,
+            sak = snapshot.sak,
+            memoryBytes = details.storageBytes ?: details.version.storageBytes,
+            techs = snapshot.techs,
+            version = details.version,
+            notes = notes.distinct(),
+        )
+    }
+
+    private fun application(
+        snapshot: TagSnapshot,
+        details: ApplicationDetails,
+        notes: MutableList<TagNote>,
+    ): TagIdentity = TagIdentity(
+        family = when (details.kind) {
+            ApplicationKind.EMV -> TagFamily.EMV
+            ApplicationKind.CIPURSE -> TagFamily.CIPURSE
+            ApplicationKind.PIV -> TagFamily.PIV
+            else -> TagFamily.ISO_DEP
+        },
+        label = details.label ?: "ISO-DEP · ${details.aidHex}",
+        confidence = TagConfidence.HIGH,
+        uid = snapshot.uid,
+        vendor = details.provider,
+        atqa = snapshot.atqa,
+        sak = snapshot.sak,
+        memoryBytes = null,
+        techs = snapshot.techs,
+        version = null,
+        notes = notes.toList(),
+    )
 
     private fun fromVersion(
         snapshot: TagSnapshot,
@@ -149,11 +270,16 @@ object TagIdentifier {
     private fun nfcAOnly(snapshot: TagSnapshot, notes: MutableList<TagNote>): TagIdentity {
         val sak = snapshot.sak?.and(0xFF)
         val classic = sak != null && isClassicSak(sak)
+        val plus = sak == 0x88 || sak == 0x98 || sak == 0xB8
         if (classic) notes += TagNote.CLASSIC_WITHOUT_TECH
         notes += TagNote.VERSION_UNAVAILABLE
         return TagIdentity(
-            family = if (classic) TagFamily.MIFARE_CLASSIC else TagFamily.UNKNOWN,
-            label = if (classic && sak != null) labelForSak(sak) else "ISO 14443-3A (NfcA)",
+            family = when {
+                plus -> TagFamily.MIFARE_PLUS
+                classic -> TagFamily.MIFARE_CLASSIC
+                else -> TagFamily.UNKNOWN
+            },
+            label = if (classic) labelForSak(sak) else "ISO 14443-3A (NfcA)",
             confidence = if (classic) TagConfidence.MEDIUM else TagConfidence.LOW,
             uid = snapshot.uid,
             vendor = vendorOfUid(snapshot.uid, TagFamily.MIFARE_CLASSIC),

@@ -12,6 +12,7 @@ import android.nfc.tech.IsoDep
 import android.nfc.tech.MifareClassic
 import android.nfc.tech.NfcA
 import com.farmacia.pm3android.nfc.inspect.IsoDepTransport
+import com.farmacia.pm3android.nfc.inspect.RawTagTransport
 import java.io.IOException
 
 class AndroidClassicTransport(tag: Tag) : ClassicTransport {
@@ -84,6 +85,36 @@ class AndroidIsoDepTransport(tag: Tag) : IsoDepTransport {
 
     private companion object {
         const val ISO_TIMEOUT_MS = 5000
+    }
+}
+
+/**
+ * Raw NfcA carrier for the MIFARE Plus SL3 client. The phone's NFC controller
+ * adds and checks the ISO 14443-3A CRC, so the client only sees the payload.
+ */
+class AndroidNfcATransport(tag: Tag) : RawTagTransport {
+
+    private val tech: NfcA = NfcA.get(tag)
+        ?: throw TagUnusableException("il tag non supporta NfcA")
+
+    init {
+        try {
+            tech.connect()
+        } catch (lost: TagLostException) {
+            throw lost
+        } catch (t: Exception) {
+            throw TagUnusableException("connessione al tag non riuscita", t)
+        }
+    }
+
+    override fun transceive(data: ByteArray): ByteArray {
+        val response = tech.transceive(data)
+            ?: throw IOException("risposta NFC vuota")
+        return response
+    }
+
+    fun close() {
+        runCatching { tech.close() }
     }
 }
 

@@ -15,9 +15,14 @@ enum class TagFamily {
     MIFARE_ULTRALIGHT,
     NTAG,
     DESFIRE,
+    CALYPSO,
     ISO_DEP,
+    ISO_14443_B,
     ISO_15693,
     FELICA,
+    EMV,
+    CIPURSE,
+    PIV,
     UNKNOWN,
 }
 
@@ -55,6 +60,12 @@ class TagSnapshot(
     val version: ByteArray? = null,
     /** NDEF capacity reported by Android, when the tag exposes Ndef. */
     val ndefCapacity: Int? = null,
+    /** ISO 14443-3B ATQB bytes, when the tag exposes NfcB. */
+    val atqb: ByteArray? = null,
+    /** ISO 14443-4 ATS historical bytes, when the transport exposed them. */
+    val historicalBytes: ByteArray? = null,
+    /** Technology specific facts collected by the probe, when any. */
+    val details: TagDetails? = null,
 ) {
     val uidHex: String get() = uid.toHex()
 
@@ -83,8 +94,20 @@ enum class TagNote {
     /** Plus at level 2 or 3 needs AES keys before any read. */
     PLUS_NEEDS_KEYS,
 
+    /** Plus level 2 keeps Crypto1 data behind an AES gate: not readable here. */
+    PLUS_SL2_UNSUPPORTED,
+
     /** The UID vendor byte is NXP, but clones report it too. */
     VENDOR_MAYBE_CLONE,
+
+    /** Calypso keeps its ticket files behind keys. */
+    CALYPSO_KEYS,
+
+    /** Some phone NFC controllers are unreliable on ISO 14443-B. */
+    ISO_B_WEAK,
+
+    /** The free DESFire directory commands answered "authentication required". */
+    DESFIRE_LOCKED,
 }
 
 /** Result of [TagIdentifier.identify], ready to be shown by the inspector UI. */

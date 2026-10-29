@@ -43,14 +43,36 @@ from **Info → Links → Check for updates**. The first install is a manual sid
 | --- | --- |
 | **Device** | USB status, vendor/product IDs, serial and interface diagnostics with copy/share. Sub-tab **PM3 tools**: searchable LF, HF, MIFARE Classic (one-tap autopwn) and Ultralight Ev1 commands, parameter dialogs, recent commands. |
 | **Console** | Free-form command input with history, follow mode, font size, copy/share of the output. Commands run through the in-process client, not a shell. |
-| **NFC** | Identify a tag with the phone's reader: family, UID, memory, MAD directory, NDEF, sectors with access bits and counters. Read and write Ultralight/NTAG and MIFARE Classic dumps, restored with the keys from `hf-mf-<UID>-key.bin`, and save a text report of what was read. No Proxmark3 required. |
+| **NFC** | Identify a tag with the phone's reader: Classic, Plus, Ultralight/NTAG, DESFire, Calypso/BNEVT, ISO 15693 and FeliCa, plus EMV/NDEF ISO-DEP applications. Shows UID, memory, DESFire applications/files, Calypso ICC/environment/free files, MAD/NDEF, sectors with access bits and counters. Optional key-based reads: DESFire files with an AES key, MIFARE Plus SL3 sectors. Read and write Ultralight/NTAG and MIFARE Classic dumps, restored with the keys from `hf-mf-<UID>-key.bin`, and save a text report. No Proxmark3 required. |
 | **Data** | Dumps, traces, logs and tag reports; filters, import/export via the Storage Access Framework, share. Built-in hex editor for `.bin` blocks and pages, with decoded access bits and value blocks. |
 | **Info** | Version, build and client commit, theme, settings backup/restore, client-resource reset, in-app updates, licence and links. |
 
 **Scripts:** import `.lua`, `.cmd` and `.py` files, run them with arguments and keep them
 across resource resets. Lua and Cmd run in the native client; Python runs in an embedded
-CPython runtime (experimental — scripts needing SWIG objects or extra pip packages may
+CPython runtime (experimental - scripts needing SWIG objects or extra pip packages may
 fail). Only import scripts you trust.
+
+### Tag inspector
+
+The **NFC** section works without a Proxmark3 and identifies the tag from the phone's
+reader. Everything below is read-only.
+
+- **Keyless**: family, UID, ATQA/SAK and technologies; GET_VERSION on NXP cards;
+  MIFARE Classic sectors with access bits, MAD and NDEF; Ultralight/NTAG capability
+  container and counters; DESFire PICC parameters, applications, DF names and file
+  settings; Calypso FCI, ICC manufacturing record, environment and the standard free
+  files (events, contracts, counters, special events, contract list); ISO 15693 and
+  FeliCa details; EMV/NDEF ISO-DEP applications.
+- **DESFire authenticated read**: enter a 16-byte AES key and key number, present the
+  tag again and the app runs the EV1 AES handshake and reads standard, backup, record
+  and value files in plain or MACed mode. Enciphered files are reported as not read.
+- **MIFARE Plus SL3**: enter the AES key and sector (A/B) and the app reads the sector
+  blocks after the native `0x70`/`0x72` handshake.
+- **Keys** are kept in memory only for the read, never written to a file or report.
+
+Calypso secure sessions are **not** implemented: they require a Calypso SAM and the
+licensed Calypso specification, so only the free data is shown. The app states this in
+the Calypso card.
 
 ## Quick start
 

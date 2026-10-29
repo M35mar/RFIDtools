@@ -36,11 +36,13 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -58,16 +60,36 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.farmacia.pm3android.R
+import com.farmacia.pm3android.nfc.DesfireReadError
+import com.farmacia.pm3android.nfc.DesfireReadStage
+import com.farmacia.pm3android.nfc.DesfireReadState
 import com.farmacia.pm3android.nfc.DumpError
 import com.farmacia.pm3android.nfc.DumpStage
 import com.farmacia.pm3android.nfc.DumpState
 import com.farmacia.pm3android.nfc.InspectError
 import com.farmacia.pm3android.nfc.NfcSession
+import com.farmacia.pm3android.nfc.PlusReadError
+import com.farmacia.pm3android.nfc.PlusReadStage
+import com.farmacia.pm3android.nfc.PlusReadState
 import com.farmacia.pm3android.nfc.ReportStage
 import com.farmacia.pm3android.nfc.ReportState
+import com.farmacia.pm3android.nfc.toHex
+import com.farmacia.pm3android.nfc.toHexSpaced
 import com.farmacia.pm3android.nfc.TagInspectState
 import com.farmacia.pm3android.nfc.TagInspectViewModel
-import com.farmacia.pm3android.nfc.inspect.DesfireVersion
+import com.farmacia.pm3android.nfc.inspect.ApplicationDetails
+import com.farmacia.pm3android.nfc.inspect.ApplicationKind
+import com.farmacia.pm3android.nfc.inspect.CalypsoDetails
+import com.farmacia.pm3android.nfc.inspect.CalypsoFileKind
+import com.farmacia.pm3android.nfc.inspect.CalypsoFileParser
+import com.farmacia.pm3android.nfc.inspect.DesfireApplication
+import com.farmacia.pm3android.nfc.inspect.DesfireDetails
+import com.farmacia.pm3android.nfc.inspect.DesfireFile
+import com.farmacia.pm3android.nfc.inspect.DesfireFileType
+import com.farmacia.pm3android.nfc.inspect.FelicaDetails
+import com.farmacia.pm3android.nfc.inspect.Iso15693Details
+import com.farmacia.pm3android.nfc.inspect.PlusDetails
+import com.farmacia.pm3android.nfc.inspect.PlusGeometry
 import com.farmacia.pm3android.nfc.inspect.TagConfidence
 import com.farmacia.pm3android.nfc.inspect.TagIdentity
 import com.farmacia.pm3android.nfc.inspect.TagNote
@@ -189,8 +211,15 @@ private fun ResultContent(
     IdentityDetails(identity)
     if (identity.notes.isNotEmpty()) NotesCard(identity.notes)
 
-    val desfire = state.desfire
-    if (desfire != null) DesfireCard(desfire, state.applications)
+    when (val details = state.details) {
+        is DesfireDetails -> DesfireCard(details, state.desfireRead, viewModel)
+        is PlusDetails -> PlusCard(details, state.plusRead, viewModel)
+        is CalypsoDetails -> CalypsoCard(details)
+        is Iso15693Details -> Iso15693Card(details)
+        is FelicaDetails -> FelicaCard(details)
+        is ApplicationDetails -> ApplicationCard(details)
+        null -> Unit
+    }
 
     val content = state.content
     if (content != null) {
@@ -343,7 +372,13 @@ private fun NotesCard(notes: List<TagNote>) {
 }
 
 @Composable
-private fun DesfireCard(version: DesfireVersion, applications: List<Int>?) {
+private fun DesfireCard(
+    details: DesfireDetails,
+    read: DesfireReadState,
+    viewModel: TagInspectViewModel,
+) {
+    var showDialog by remember { mutableStateOf(false) }
+    val version = details.version
     val generation = if (version.generation.isEmpty()) {
         stringResource(R.string.inspect_unavailable_value)
     } else {
@@ -355,11 +390,6 @@ private fun DesfireCard(version: DesfireVersion, applications: List<Int>?) {
     } else {
         stringResource(R.string.inspect_memory_unknown)
     }
-    val applicationsText = when {
-        applications == null -> stringResource(R.string.inspect_unavailable_value)
-        applications.isEmpty() -> stringResource(R.string.inspect_applications_none)
-        else -> applications.joinToString(" · ") { "0x%06X".format(it) }
-    }
 
     SectionCard(title = stringResource(R.string.inspect_desfire_title)) {
         InfoRow(stringResource(R.string.inspect_desfire_generation), generation)
@@ -368,8 +398,701 @@ private fun DesfireCard(version: DesfireVersion, applications: List<Int>?) {
             "${version.softwareMajor}.${version.softwareMinor}",
         )
         InfoRow(stringResource(R.string.inspect_memory), storage)
+        details.picc?.freeMemory?.let { free ->
+            InfoRow(
+                stringResource(R.string.inspect_desfire_free),
+                stringResource(R.string.inspect_memory_bytes, free),
+            )
+        }
+        details.picc?.keySettings?.let { settings ->
+            val keys = details.picc.keyCount?.toString()
+                ?: stringResource(R.string.inspect_unavailable_value)
+            InfoRow(
+                stringResource(R.string.inspect_desfire_picc_keys),
+                "0x%02X · %s".format(settings, stringResource(R.string.inspect_keys_count, keys)),
+            )
+        }
+        val applications = details.applications
+        val applicationsText = when {
+            applications == null -> stringResource(R.string.inspect_unavailable_value)
+            applications.isEmpty() -> stringResource(R.string.inspect_applications_none)
+            else -> applications.size.toString()
+        }
         InfoRow(stringResource(R.string.inspect_applications), applicationsText)
+        applications.orEmpty().forEach { application ->
+            DesfireApplicationRow(application)
+        }
+        DesfireReadControls(
+            read = read,
+            onStart = { showDialog = true },
+            viewModel = viewModel,
+        )
     }
+
+    if (showDialog) {
+        DesfireKeyDialog(
+            onDismiss = { showDialog = false },
+            onConfirm = { keyHex, keyNo ->
+                val started = viewModel.startDesfireRead(keyHex, keyNo)
+                if (started) showDialog = false
+                started
+            },
+        )
+    }
+}
+
+@Composable
+private fun DesfireReadControls(
+    read: DesfireReadState,
+    onStart: () -> Unit,
+    viewModel: TagInspectViewModel,
+) {
+    when (read.stage) {
+        DesfireReadStage.NONE -> {
+            Button(onClick = onStart, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.inspect_desfire_read_button))
+            }
+        }
+
+        DesfireReadStage.WAITING -> {
+            Text(
+                text = stringResource(R.string.inspect_desfire_waiting),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedButton(
+                onClick = viewModel::cancelDesfireRead,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.inspect_dump_cancel))
+            }
+        }
+
+        DesfireReadStage.READING -> {
+            Text(
+                text = stringResource(R.string.inspect_desfire_reading),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        }
+
+        DesfireReadStage.DONE -> {
+            Text(
+                text = stringResource(R.string.inspect_desfire_done, read.filesRead),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            OutlinedButton(onClick = onStart, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.inspect_desfire_read_again))
+            }
+        }
+
+        DesfireReadStage.FAILED -> {
+            Text(
+                text = desfireReadErrorText(read.error),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+            OutlinedButton(
+                onClick = viewModel::retryDesfireRead,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.inspect_retry))
+            }
+            OutlinedButton(onClick = onStart, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.inspect_desfire_read_button))
+            }
+        }
+    }
+}
+
+@Composable
+private fun desfireReadErrorText(error: DesfireReadError?): String = stringResource(
+    when (error) {
+        DesfireReadError.TAG_LOST -> R.string.inspect_desfire_error_lost
+        DesfireReadError.AUTH -> R.string.inspect_desfire_no_files
+        DesfireReadError.READ, null -> R.string.inspect_desfire_error_read
+    },
+)
+
+@Composable
+private fun DesfireKeyDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (String, Int) -> Boolean,
+) {
+    var keyHex by remember { mutableStateOf("") }
+    var keyNo by remember { mutableStateOf("0") }
+    var invalid by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.inspect_desfire_read_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = keyHex,
+                    onValueChange = {
+                        keyHex = it.trim()
+                        invalid = false
+                    },
+                    label = { Text(stringResource(R.string.inspect_desfire_key)) },
+                    placeholder = { Text(stringResource(R.string.inspect_desfire_key_hint)) },
+                    singleLine = true,
+                    isError = invalid,
+                )
+                OutlinedTextField(
+                    value = keyNo,
+                    onValueChange = {
+                        keyNo = it.filter { char -> char.isDigit() }.take(2)
+                        invalid = false
+                    },
+                    label = { Text(stringResource(R.string.inspect_desfire_key_no)) },
+                    singleLine = true,
+                    isError = invalid,
+                )
+                Text(
+                    text = stringResource(R.string.inspect_desfire_key_help),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (invalid) {
+                    Text(
+                        text = stringResource(R.string.inspect_desfire_key_invalid),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val started = onConfirm(keyHex, keyNo.toIntOrNull() ?: -1)
+                    if (!started) invalid = true
+                },
+            ) {
+                Text(stringResource(R.string.inspect_desfire_read_start))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.inspect_dump_cancel))
+            }
+        },
+    )
+}
+
+@Composable
+private fun DesfireApplicationRow(application: DesfireApplication) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(
+            text = stringResource(R.string.inspect_desfire_application, application.idHex),
+            style = MaterialTheme.typography.labelMedium,
+        )
+        application.dfName?.let { name ->
+            Text(
+                text = stringResource(R.string.inspect_desfire_df_name, name.toHex()),
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        application.keySettings?.let { settings ->
+            val keys = application.keyCount?.toString()
+                ?: stringResource(R.string.inspect_unavailable_value)
+            Text(
+                text = stringResource(
+                    R.string.inspect_desfire_application_keys,
+                    "0x%02X".format(settings),
+                    keys,
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        val files = application.files
+        val filesText = when {
+            files == null -> stringResource(R.string.inspect_unavailable_value)
+            files.isEmpty() -> stringResource(R.string.inspect_files_none)
+            else -> files.size.toString()
+        }
+        Text(
+            text = stringResource(R.string.inspect_desfire_files, filesText),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        files.orEmpty().forEach { file -> DesfireFileRow(file) }
+        if (application.locked) {
+            Text(
+                text = stringResource(R.string.inspect_desfire_locked),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.tertiary,
+            )
+        }
+    }
+}
+
+@Composable
+private fun DesfireFileRow(file: DesfireFile) {
+    val geometry = when {
+        file.sizeBytes != null -> stringResource(
+            R.string.inspect_desfire_file_size,
+            file.sizeBytes,
+        )
+
+        file.recordSize != null && file.recordCount != null -> stringResource(
+            R.string.inspect_desfire_file_records,
+            file.recordCount,
+            file.recordSize,
+        )
+
+        else -> ""
+    }
+    val access = file.accessRights?.let { " · 0x%04X".format(it) }.orEmpty()
+    Text(
+        text = stringResource(
+            R.string.inspect_desfire_file,
+            file.id,
+            fileTypeText(file.type),
+        ) + geometry + access,
+        style = MaterialTheme.typography.labelSmall,
+        fontFamily = FontFamily.Monospace,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    if (file.communication == 3 && file.data == null) {
+        Text(
+            text = stringResource(R.string.inspect_desfire_enciphered),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.tertiary,
+        )
+    }
+    file.data?.let { data ->
+        val clipped = if (data.size > 256) data.copyOf(256).toHex() + " …" else data.toHex()
+        Text(
+            text = clipped,
+            style = MaterialTheme.typography.labelSmall,
+            fontFamily = FontFamily.Monospace,
+        )
+    }
+}
+
+@Composable
+private fun fileTypeText(type: DesfireFileType): String = stringResource(
+    when (type) {
+        DesfireFileType.STANDARD_DATA -> R.string.inspect_desfire_type_standard
+        DesfireFileType.BACKUP_DATA -> R.string.inspect_desfire_type_backup
+        DesfireFileType.VALUE -> R.string.inspect_desfire_type_value
+        DesfireFileType.LINEAR_RECORD -> R.string.inspect_desfire_type_linear
+        DesfireFileType.CYCLIC_RECORD -> R.string.inspect_desfire_type_cyclic
+        DesfireFileType.UNKNOWN -> R.string.inspect_desfire_type_unknown
+    },
+)
+
+@Composable
+private fun PlusCard(
+    details: PlusDetails,
+    read: PlusReadState,
+    viewModel: TagInspectViewModel,
+) {
+    var showDialog by remember { mutableStateOf(false) }
+    SectionCard(title = stringResource(R.string.inspect_plus_title)) {
+        InfoRow(
+            stringResource(R.string.inspect_plus_product),
+            details.version.productName,
+        )
+        InfoRow(
+            stringResource(R.string.inspect_plus_version),
+            details.version.versionText,
+        )
+        details.software?.let {
+            InfoRow(stringResource(R.string.inspect_desfire_software), it.versionText)
+        }
+        details.securityLevel?.let {
+            InfoRow(stringResource(R.string.inspect_plus_level), it.toString())
+        }
+        details.storageBytes?.let {
+            InfoRow(
+                stringResource(R.string.inspect_memory),
+                stringResource(R.string.inspect_memory_bytes, it),
+            )
+        }
+        details.sectorRead?.let { sector ->
+            InfoRow(stringResource(R.string.inspect_plus_sector), sector.sector.toString())
+            InfoRow(
+                stringResource(R.string.inspect_plus_key_type),
+                if (sector.keyB) "B" else "A",
+            )
+            sector.blocks.forEach { block ->
+                Text(
+                    text = stringResource(R.string.inspect_plus_block, block.number) +
+                        "  " + block.data.toHexSpaced(),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        PlusReadControls(
+            read = read,
+            onStart = { showDialog = true },
+            viewModel = viewModel,
+            enabled = details.securityLevel == null || details.securityLevel >= 3,
+        )
+    }
+
+    if (showDialog) {
+        PlusKeyDialog(
+            maxSector = PlusGeometry.sectorCount(details.storageBytes) - 1,
+            onDismiss = { showDialog = false },
+            onConfirm = { keyHex, sector, keyB ->
+                val started = viewModel.startPlusRead(keyHex, sector, keyB)
+                if (started) showDialog = false
+                started
+            },
+        )
+    }
+}
+
+@Composable
+private fun PlusReadControls(
+    read: PlusReadState,
+    onStart: () -> Unit,
+    viewModel: TagInspectViewModel,
+    enabled: Boolean,
+) {
+    if (!enabled) return
+    when (read.stage) {
+        PlusReadStage.NONE -> {
+            Button(onClick = onStart, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.inspect_plus_read_button))
+            }
+        }
+
+        PlusReadStage.WAITING -> {
+            Text(
+                text = stringResource(R.string.inspect_plus_waiting),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedButton(
+                onClick = viewModel::cancelPlusRead,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.inspect_dump_cancel))
+            }
+        }
+
+        PlusReadStage.READING -> {
+            Text(
+                text = stringResource(R.string.inspect_plus_reading),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        }
+
+        PlusReadStage.DONE -> {
+            Text(
+                text = stringResource(R.string.inspect_plus_done, read.sector),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            OutlinedButton(onClick = onStart, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.inspect_plus_read_again))
+            }
+        }
+
+        PlusReadStage.FAILED -> {
+            Text(
+                text = plusReadErrorText(read.error),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+            OutlinedButton(
+                onClick = viewModel::retryPlusRead,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.inspect_retry))
+            }
+            OutlinedButton(onClick = onStart, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.inspect_plus_read_button))
+            }
+        }
+    }
+}
+
+@Composable
+private fun plusReadErrorText(error: PlusReadError?): String = stringResource(
+    when (error) {
+        PlusReadError.TAG_LOST -> R.string.inspect_plus_error_lost
+        PlusReadError.AUTH -> R.string.inspect_plus_error_auth
+        PlusReadError.READ, null -> R.string.inspect_plus_error_read
+    },
+)
+
+@Composable
+private fun PlusKeyDialog(
+    maxSector: Int,
+    onDismiss: () -> Unit,
+    onConfirm: (String, Int, Boolean) -> Boolean,
+) {
+    var keyHex by remember { mutableStateOf("") }
+    var sectorText by remember { mutableStateOf("0") }
+    var keyB by remember { mutableStateOf(false) }
+    var invalid by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.inspect_plus_read_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = keyHex,
+                    onValueChange = {
+                        keyHex = it.trim()
+                        invalid = false
+                    },
+                    label = { Text(stringResource(R.string.inspect_desfire_key)) },
+                    placeholder = { Text(stringResource(R.string.inspect_desfire_key_hint)) },
+                    singleLine = true,
+                    isError = invalid,
+                )
+                OutlinedTextField(
+                    value = sectorText,
+                    onValueChange = {
+                        sectorText = it.filter { char -> char.isDigit() }.take(2)
+                        invalid = false
+                    },
+                    label = { Text(stringResource(R.string.inspect_plus_sector)) },
+                    singleLine = true,
+                    isError = invalid,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { keyB = false }) {
+                        Text(if (keyB) "A" else "✓ A")
+                    }
+                    OutlinedButton(onClick = { keyB = true }) {
+                        Text(if (keyB) "✓ B" else "B")
+                    }
+                }
+                Text(
+                    text = stringResource(R.string.inspect_plus_key_help),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (invalid) {
+                    Text(
+                        text = stringResource(R.string.inspect_plus_key_invalid, maxSector),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val started = onConfirm(
+                        keyHex,
+                        sectorText.toIntOrNull() ?: -1,
+                        keyB,
+                    )
+                    if (!started) invalid = true
+                },
+            ) {
+                Text(stringResource(R.string.inspect_desfire_read_start))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.inspect_dump_cancel))
+            }
+        },
+    )
+}
+
+@Composable
+private fun CalypsoCard(details: CalypsoDetails) {
+    SectionCard(title = stringResource(R.string.inspect_calypso_title)) {
+        InfoRow(stringResource(R.string.inspect_calypso_df_name), details.dfName.toHex())
+        details.label?.let {
+            InfoRow(stringResource(R.string.inspect_calypso_application), it)
+        }
+        details.serial?.let {
+            InfoRow(stringResource(R.string.inspect_calypso_serial), it.toHex())
+        }
+        InfoRow(
+            stringResource(R.string.inspect_calypso_iso_b),
+            yesNo(details.iso14443B),
+        )
+        details.cla?.let {
+            InfoRow(stringResource(R.string.inspect_calypso_cla), "0x%02X".format(it))
+        }
+        details.startup?.let { startup ->
+            InfoRow(
+                stringResource(R.string.inspect_calypso_platform),
+                "0x%02X".format(startup.platform),
+            )
+            InfoRow(
+                stringResource(R.string.inspect_calypso_application_type),
+                "0x%02X / 0x%02X".format(startup.applicationType, startup.applicationSubtype),
+            )
+            InfoRow(
+                stringResource(R.string.inspect_calypso_software),
+                "%d.%d.%d".format(
+                    startup.softwareIssuer,
+                    startup.softwareVersion,
+                    startup.softwareRevision,
+                ),
+            )
+        }
+        details.icc?.let { icc ->
+            icc.serial?.let {
+                InfoRow(stringResource(R.string.inspect_calypso_icc_serial), it.toHex())
+            }
+            icc.countryCode?.let {
+                InfoRow(stringResource(R.string.inspect_calypso_country), it.toString())
+            }
+            icc.manufacturer?.let {
+                InfoRow(stringResource(R.string.inspect_calypso_manufacturer), "0x%02X".format(it))
+            }
+            icc.initializationDate?.let {
+                InfoRow(stringResource(R.string.inspect_calypso_initialized), it.toString())
+            }
+            icc.check?.let {
+                val state = when (icc.checkValid) {
+                    true -> stringResource(R.string.inspect_calypso_check_ok)
+                    false -> stringResource(R.string.inspect_calypso_check_bad)
+                    null -> stringResource(R.string.inspect_unknown)
+                }
+                InfoRow(stringResource(R.string.inspect_calypso_check), "0x%02X · %s".format(it, state))
+            }
+        }
+        details.environment?.let { environment ->
+            InfoRow(
+                stringResource(R.string.inspect_calypso_environment_version),
+                environment.version?.toString()
+                    ?: stringResource(R.string.inspect_unavailable_value),
+            )
+            InfoRow(
+                stringResource(R.string.inspect_calypso_environment_network),
+                environment.networkId?.let { "0x%06X".format(it) }
+                    ?: stringResource(R.string.inspect_unavailable_value),
+            )
+            Text(
+                text = environment.raw.toHexSpaced(),
+                style = MaterialTheme.typography.labelSmall,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (details.locked) {
+            Text(
+                text = stringResource(R.string.inspect_calypso_locked),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.tertiary,
+            )
+        }
+        details.files.forEach { file ->
+            Text(
+                text = calypsoFileTitle(file.kind),
+                style = MaterialTheme.typography.labelMedium,
+            )
+            if (file.kind == CalypsoFileKind.COUNTERS) {
+                CalypsoFileParser.counterValues(file.records.first())
+                    .forEachIndexed { index, value ->
+                        InfoRow(
+                            stringResource(R.string.inspect_calypso_counter, index + 1),
+                            value.toString(),
+                        )
+                    }
+            } else {
+                file.records.forEachIndexed { index, record ->
+                    InfoRow(
+                        stringResource(R.string.inspect_calypso_record, index + 1),
+                        record.toHexSpaced(),
+                    )
+                }
+            }
+        }
+        Text(
+            text = stringResource(R.string.inspect_calypso_session_note),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun calypsoFileTitle(kind: CalypsoFileKind): String = stringResource(
+    when (kind) {
+        CalypsoFileKind.EVENTS_LOG -> R.string.inspect_calypso_file_events
+        CalypsoFileKind.CONTRACTS -> R.string.inspect_calypso_file_contracts
+        CalypsoFileKind.COUNTERS -> R.string.inspect_calypso_file_counters
+        CalypsoFileKind.SPECIAL_EVENTS -> R.string.inspect_calypso_file_special
+        CalypsoFileKind.CONTRACT_LIST -> R.string.inspect_calypso_file_contract_list
+    },
+)
+
+@Composable
+private fun Iso15693Card(details: Iso15693Details) {
+    SectionCard(title = stringResource(R.string.inspect_iso15693_title)) {
+        InfoRow(stringResource(R.string.inspect_iso15693_uid), details.uid.toHex())
+        details.dsfid?.let {
+            InfoRow(stringResource(R.string.inspect_iso15693_dsfid), "0x%02X".format(it))
+        }
+        details.afi?.let {
+            InfoRow(stringResource(R.string.inspect_iso15693_afi), "0x%02X".format(it))
+        }
+        details.blockSize?.let {
+            InfoRow(stringResource(R.string.inspect_iso15693_block_size), "$it")
+        }
+        details.firstBlock?.let {
+            InfoRow(stringResource(R.string.inspect_iso15693_block0), it.toHexSpaced())
+        }
+    }
+}
+
+@Composable
+private fun FelicaCard(details: FelicaDetails) {
+    SectionCard(title = stringResource(R.string.inspect_felica_title)) {
+        InfoRow(stringResource(R.string.inspect_felica_idm), details.idm.toHex())
+        details.pmm?.let {
+            InfoRow(stringResource(R.string.inspect_felica_pmm), it.toHex())
+        }
+        details.manufacturer?.let {
+            InfoRow(stringResource(R.string.inspect_felica_manufacturer), "0x%04X".format(it))
+        }
+        details.systemCode?.let {
+            InfoRow(stringResource(R.string.inspect_felica_system), "0x%04X".format(it))
+        }
+    }
+}
+
+@Composable
+private fun ApplicationCard(details: ApplicationDetails) {
+    SectionCard(title = stringResource(R.string.inspect_application_title)) {
+        InfoRow(stringResource(R.string.inspect_application_aid), details.aidHex)
+        details.label?.let {
+            InfoRow(stringResource(R.string.inspect_calypso_application), it)
+        }
+        InfoRow(stringResource(R.string.inspect_application_kind), applicationKindText(details.kind))
+        details.provider?.let {
+            InfoRow(stringResource(R.string.inspect_vendor), it)
+        }
+    }
+}
+
+@Composable
+private fun applicationKindText(kind: ApplicationKind): String = when (kind) {
+    ApplicationKind.EMV -> "EMV"
+    ApplicationKind.CIPURSE -> "CIPURSE"
+    ApplicationKind.PIV -> "PIV"
+    ApplicationKind.NDEF -> "NDEF"
+    ApplicationKind.ACCESS -> stringResource(R.string.inspect_kind_access)
+    ApplicationKind.OTHER -> stringResource(R.string.inspect_kind_other)
 }
 
 @Composable
@@ -1025,7 +1748,11 @@ private fun noteText(note: TagNote): String = stringResource(
         TagNote.VERSION_UNAVAILABLE -> R.string.inspect_note_version
         TagNote.DESFIRE_NO_DUMP -> R.string.inspect_note_desfire
         TagNote.PLUS_NEEDS_KEYS -> R.string.inspect_note_plus
+        TagNote.PLUS_SL2_UNSUPPORTED -> R.string.inspect_note_plus_sl2
         TagNote.VENDOR_MAYBE_CLONE -> R.string.inspect_note_clone
+        TagNote.CALYPSO_KEYS -> R.string.inspect_note_calypso
+        TagNote.ISO_B_WEAK -> R.string.inspect_note_iso_b
+        TagNote.DESFIRE_LOCKED -> R.string.inspect_note_desfire_locked
     },
 )
 

@@ -157,6 +157,59 @@ class TagIdentifierTest {
     }
 
     @Test
+    fun `calypso details win over the generic iso dep tech`() {
+        val identity = TagIdentifier.identify(
+            TagSnapshot(
+                uid = fourByteUid,
+                techs = listOf(NfcTech.NFC_B, NfcTech.ISO_DEP),
+                sak = 0x00,
+            ),
+            CalypsoDetails(
+                dfName = byteArrayOf(0xA0.toByte(), 0x00, 0x00, 0x04, 0x04),
+                label = "Navigo",
+                serial = byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8),
+                cla = 0x94,
+                iso14443B = true,
+            ),
+        )
+
+        assertEquals(TagFamily.CALYPSO, identity.family)
+        assertEquals("Navigo", identity.label)
+        assertEquals(TagConfidence.HIGH, identity.confidence)
+        assertTrue(identity.notes.contains(TagNote.CALYPSO_KEYS))
+        assertTrue(identity.notes.contains(TagNote.ISO_B_WEAK))
+        assertFalse(identity.dumpable)
+    }
+
+    @Test
+    fun `plus level 2 carries both key notes`() {
+        val version = VersionInfo.parse(
+            byteArrayOf(0x04, 0x02, 0x01, 0x01, 0x00, 0x16, 0x03),
+        )!!
+        val identity = TagIdentifier.identify(
+            TagSnapshot(uid = fourByteUid, techs = listOf(NfcTech.NFC_A)),
+            PlusDetails(version = version, securityLevel = 2, storageBytes = 2048),
+        )
+
+        assertEquals(TagFamily.MIFARE_PLUS, identity.family)
+        assertEquals(2048, identity.memoryBytes)
+        assertTrue(identity.notes.contains(TagNote.PLUS_NEEDS_KEYS))
+        assertTrue(identity.notes.contains(TagNote.PLUS_SL2_UNSUPPORTED))
+    }
+
+    @Test
+    fun `payment application is named from the aid`() {
+        val identity = TagIdentifier.identify(
+            TagSnapshot(uid = fourByteUid, techs = listOf(NfcTech.ISO_DEP)),
+            AidCatalog.application(byteArrayOf(0xA0.toByte(), 0x00, 0x00, 0x00, 0x03, 0x10, 0x10)),
+        )
+
+        assertEquals(TagFamily.EMV, identity.family)
+        assertEquals("Visa", identity.label)
+        assertEquals("Visa", identity.vendor)
+    }
+
+    @Test
     fun `unknown tag stays unknown`() {
         val identity = TagIdentifier.identify(TagSnapshot(uid = fourByteUid))
 

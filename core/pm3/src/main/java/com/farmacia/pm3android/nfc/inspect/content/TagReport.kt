@@ -7,10 +7,24 @@
 package com.farmacia.pm3android.nfc.inspect.content
 
 import com.farmacia.pm3android.nfc.MfuDumpFiles
-import com.farmacia.pm3android.nfc.inspect.DesfireVersion
+import com.farmacia.pm3android.nfc.inspect.ApplicationDetails
+import com.farmacia.pm3android.nfc.inspect.CalypsoDetails
+import com.farmacia.pm3android.nfc.inspect.CalypsoFileKind
+import com.farmacia.pm3android.nfc.inspect.CalypsoFileParser
+import com.farmacia.pm3android.nfc.inspect.DesfireApplication
+import com.farmacia.pm3android.nfc.inspect.DesfireDetails
+import com.farmacia.pm3android.nfc.inspect.DesfireFile
+import com.farmacia.pm3android.nfc.inspect.DesfireFileType
+import com.farmacia.pm3android.nfc.inspect.FelicaDetails
+import com.farmacia.pm3android.nfc.inspect.Iso15693Details
+import com.farmacia.pm3android.nfc.inspect.PlusDetails
+import com.farmacia.pm3android.nfc.inspect.TagDetails
 import com.farmacia.pm3android.nfc.inspect.TagFamily
 import com.farmacia.pm3android.nfc.inspect.TagIdentity
 import com.farmacia.pm3android.nfc.inspect.TagNote
+import com.farmacia.pm3android.nfc.inspect.VersionInfo
+import com.farmacia.pm3android.nfc.toHex
+import com.farmacia.pm3android.nfc.toHexSpaced
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
@@ -47,8 +61,7 @@ object TagReport {
     fun build(
         identity: TagIdentity,
         content: TagContent?,
-        desfire: DesfireVersion? = null,
-        applications: List<Int>? = null,
+        details: TagDetails? = null,
         dumpName: String? = null,
         generatedAt: LocalDateTime = LocalDateTime.now(),
     ): String = buildString {
@@ -90,30 +103,15 @@ object TagReport {
             appendLine()
         }
 
-        if (desfire != null) {
-            appendLine("DESFire")
-            appendLine("  Vendor: ${desfire.vendorName}")
-            appendLine(
-                "  Hardware: 0x%02X/0x%02X/0x%02X".format(
-                    desfire.hardwareVendor,
-                    desfire.hardwareType,
-                    desfire.hardwareSubtype,
-                ),
-            )
-            appendLine("  Software: ${desfire.softwareMajor}.${desfire.softwareMinor}")
-            desfire.storageBytes?.let { appendLine("  Storage: $it bytes") }
-            if (desfire.generation.isNotEmpty()) {
-                appendLine("  Generation: ${desfire.generation}")
+        if (details != null) {
+            when (details) {
+                is DesfireDetails -> appendDesfire(this, details)
+                is PlusDetails -> appendPlus(this, details)
+                is CalypsoDetails -> appendCalypso(this, details)
+                is Iso15693Details -> appendIso15693(this, details)
+                is FelicaDetails -> appendFelica(this, details)
+                is ApplicationDetails -> appendApplication(this, details)
             }
-            appendLine(
-                "  Applications: " +
-                    when {
-                        applications == null -> "not read"
-                        applications.isEmpty() -> "none"
-                        else -> applications.joinToString(" · ") { "0x%06X".format(it) }
-                    },
-            )
-            appendLine()
         }
 
         val classic = content?.classic
@@ -137,6 +135,222 @@ object TagReport {
         val cleaned = FORBIDDEN.replace(raw.trim(), "_").trimEnd(' ', '.')
         val base = if (cleaned.isBlank() || cleaned.startsWith(".")) "tag" else cleaned
         return base.take(MAX_NAME)
+    }
+
+    private fun appendDesfire(out: StringBuilder, details: DesfireDetails) {
+        val version = details.version
+        out.appendLine("DESFire")
+        out.appendLine("  Product: ${version.label}")
+        out.appendLine("  Vendor: ${version.vendorName}")
+        out.appendLine(
+            "  Hardware: 0x%02X/0x%02X/0x%02X".format(
+                version.hardwareVendor,
+                version.hardwareType,
+                version.hardwareSubtype,
+            ),
+        )
+        out.appendLine("  Software: ${version.softwareMajor}.${version.softwareMinor}")
+        version.storageBytes?.let { out.appendLine("  Storage: $it bytes") }
+        if (version.generation.isNotEmpty()) {
+            out.appendLine("  Generation: ${version.generation}")
+        }
+        details.picc?.let { picc ->
+            picc.freeMemory?.let { out.appendLine("  Free memory: $it bytes") }
+            picc.keySettings?.let {
+                val keys = picc.keyCount?.let { count -> ", $count key(s)" }.orEmpty()
+                out.appendLine("  PICC key settings: 0x%02X%s".format(it, keys))
+            }
+            picc.keyVersion?.let { out.appendLine("  PICC master key version: 0x%02X".format(it)) }
+            if (picc.locked) out.appendLine("  PICC directory: authentication required")
+        }
+        out.appendLine(
+            "  Applications: " +
+                when {
+                    details.applications == null -> "not read"
+                    details.applications.isEmpty() -> "none"
+                    else -> details.applications.size.toString()
+                },
+        )
+        details.applications.orEmpty().forEach { application ->
+            appendDesfireApplication(out, application)
+        }
+        out.appendLine()
+    }
+
+    private fun appendDesfireApplication(out: StringBuilder, application: DesfireApplication) {
+        out.appendLine("  Application ${application.idHex}")
+        application.dfName?.let { name ->
+            val ascii = name.joinToString("") { byte ->
+                val value = byte.toInt() and 0xFF
+                if (value in 0x20..0x7E) value.toChar().toString() else "."
+            }
+            out.appendLine("    DF name: $ascii (${name.toHex()})")
+        }
+        application.keySettings?.let {
+            val keys = application.keyCount?.let { count -> ", $count key(s)" }.orEmpty()
+            out.appendLine("    Key settings: 0x%02X%s".format(it, keys))
+        }
+        val files = application.files
+        if (files == null) {
+            out.appendLine("    Files: not read")
+        } else if (files.isEmpty()) {
+            out.appendLine("    Files: none")
+        } else {
+            out.appendLine("    Files: ${files.size}")
+            files.forEach { file -> appendDesfireFile(out, file) }
+        }
+        if (application.locked) {
+            out.appendLine("    Authentication required for some reads")
+        }
+    }
+
+    private fun appendDesfireFile(out: StringBuilder, file: DesfireFile) {
+        val type = when (file.type) {
+            DesfireFileType.STANDARD_DATA -> "standard data"
+            DesfireFileType.BACKUP_DATA -> "backup data"
+            DesfireFileType.VALUE -> "value"
+            DesfireFileType.LINEAR_RECORD -> "linear record"
+            DesfireFileType.CYCLIC_RECORD -> "cyclic record"
+            DesfireFileType.UNKNOWN -> "unknown"
+        }
+        val geometry = when {
+            file.sizeBytes != null -> ", ${file.sizeBytes} bytes"
+            file.recordSize != null && file.recordCount != null ->
+                ", ${file.recordCount} x ${file.recordSize} bytes"
+
+            else -> ""
+        }
+        val rights = file.accessRights?.let { ", access 0x%04X".format(it) }.orEmpty()
+        val limits = if (file.lowerLimit != null && file.upperLimit != null) {
+            ", range ${file.lowerLimit}..${file.upperLimit}"
+        } else {
+            ""
+        }
+        out.appendLine("      File 0x%02X: %s%s%s%s".format(file.id, type, geometry, rights, limits))
+        file.data?.let { out.appendLine("        Data: ${it.toHex()}") }
+    }
+
+    private fun appendPlus(out: StringBuilder, details: PlusDetails) {
+        out.appendLine("MIFARE Plus")
+        appendVersion(out, details.version)
+        details.software?.let { software ->
+            out.appendLine("  Software version: ${software.versionText}")
+        }
+        details.securityLevel?.let { out.appendLine("  Security level: $it") }
+        details.storageBytes?.let { out.appendLine("  Storage: $it bytes") }
+        details.sectorRead?.let { read ->
+            out.appendLine(
+                "  Sector read: ${read.sector} (key ${if (read.keyB) "B" else "A"})",
+            )
+            read.blocks.forEach { block ->
+                out.appendLine("    Block ${block.number}: ${block.data.toHexSpaced()}")
+            }
+        }
+        out.appendLine()
+    }
+
+    private fun appendVersion(out: StringBuilder, version: VersionInfo) {
+        out.appendLine("  Vendor: ${version.vendorName}")
+        out.appendLine("  Product: ${version.productName}")
+        out.appendLine("  Version: ${version.versionText}")
+        out.appendLine("  Product type: 0x%02X".format(version.productType))
+        out.appendLine("  Storage code: 0x%02X".format(version.storageCode))
+        out.appendLine("  Protocol: 0x%02X".format(version.protocol))
+    }
+
+    private fun appendCalypso(out: StringBuilder, details: CalypsoDetails) {
+        out.appendLine("Calypso")
+        out.appendLine("  DF name: ${details.dfName.toHex()}")
+        details.label?.let { out.appendLine("  Application: $it") }
+        out.appendLine("  CLA: 0x%02X".format(details.cla ?: 0))
+        out.appendLine("  ISO 14443-B: ${yesNo(details.iso14443B)}")
+        details.serial?.let { out.appendLine("  Serial: ${it.toHex()}") }
+        details.startup?.let { startup ->
+            out.appendLine(
+                "  Startup: session 0x%02X, platform 0x%02X, app 0x%02X/0x%02X".format(
+                    startup.sessionModifications,
+                    startup.platform,
+                    startup.applicationType,
+                    startup.applicationSubtype,
+                ),
+            )
+            out.appendLine(
+                "  Software: issuer 0x%02X, version 0x%02X, revision 0x%02X".format(
+                    startup.softwareIssuer,
+                    startup.softwareVersion,
+                    startup.softwareRevision,
+                ),
+            )
+        }
+        details.icc?.let { icc ->
+            out.appendLine("  ICC record: ${icc.raw.toHex()}")
+            icc.serial?.let { out.appendLine("    Serial: ${it.toHex()}") }
+            icc.countryCode?.let { out.appendLine("    Country: $it") }
+            icc.manufacturer?.let { out.appendLine("    Manufacturer: 0x%02X".format(it)) }
+            icc.initializationDate?.let { out.appendLine("    Initialized: $it") }
+            icc.check?.let { check ->
+                val state = when (icc.checkValid) {
+                    true -> "ok"
+                    false -> "wrong"
+                    null -> "unknown"
+                }
+                out.appendLine("    Check byte: 0x%02X ($state)".format(check))
+            }
+        }
+        details.environment?.let { environment ->
+            out.appendLine(
+                "  Environment: version ${environment.version ?: "?"}, " +
+                    "network " + (environment.networkId?.let { "0x%06X".format(it) } ?: "unknown"),
+            )
+            out.appendLine("    Raw: ${environment.raw.toHex()}")
+        }
+        details.files.forEach { file ->
+            out.appendLine(
+                "  File ${file.kind.name} (SFI 0x%02X, ${file.records.size} record(s))"
+                    .format(file.sfi),
+            )
+            if (file.kind == CalypsoFileKind.COUNTERS) {
+                CalypsoFileParser.counterValues(file.records.first())
+                    .forEachIndexed { index, value ->
+                        out.appendLine("    Counter ${index + 1}: $value")
+                    }
+            } else {
+                file.records.forEachIndexed { index, record ->
+                    out.appendLine("    Record ${index + 1}: ${record.toHex()}")
+                }
+            }
+        }
+        if (details.locked) out.appendLine("  Ticket files need keys")
+        out.appendLine()
+    }
+
+    private fun appendIso15693(out: StringBuilder, details: Iso15693Details) {
+        out.appendLine("ISO 15693")
+        out.appendLine("  UID: ${details.uid.toHex()}")
+        details.dsfid?.let { out.appendLine("  DSFID: 0x%02X".format(it)) }
+        details.afi?.let { out.appendLine("  AFI: 0x%02X".format(it)) }
+        details.blocks?.let { out.appendLine("  Blocks: $it") }
+        details.blockSize?.let { out.appendLine("  Block size: $it bytes") }
+        details.firstBlock?.let { out.appendLine("  Block 0: ${it.toHexSpaced()}") }
+        out.appendLine()
+    }
+
+    private fun appendFelica(out: StringBuilder, details: FelicaDetails) {
+        out.appendLine("FeliCa")
+        out.appendLine("  IDm: ${details.idm.toHex()}")
+        details.pmm?.let { out.appendLine("  PMm: ${it.toHex()}") }
+        details.manufacturer?.let { out.appendLine("  Manufacturer: 0x%04X".format(it)) }
+        details.systemCode?.let { out.appendLine("  System code: 0x%04X".format(it)) }
+        out.appendLine()
+    }
+
+    private fun appendApplication(out: StringBuilder, details: ApplicationDetails) {
+        out.appendLine("ISO-DEP application")
+        out.appendLine("  AID: ${details.aidHex}")
+        details.label?.let { out.appendLine("  Label: $it") }
+        out.appendLine("  Kind: ${details.kind.name}")
+        details.provider?.let { out.appendLine("  Provider: $it") }
+        out.appendLine()
     }
 
     private fun appendClassic(out: StringBuilder, content: ClassicContent) {
@@ -268,8 +482,16 @@ object TagReport {
             "DESFire is a keyed filesystem, not a linear memory."
         TagNote.PLUS_NEEDS_KEYS ->
             "Plus at level 2 or 3 needs AES keys before any read."
+        TagNote.PLUS_SL2_UNSUPPORTED ->
+            "Plus level 2 keeps its data behind an AES gate: not readable here."
         TagNote.VENDOR_MAYBE_CLONE ->
             "The UID vendor byte says NXP; clones report it too."
+        TagNote.CALYPSO_KEYS ->
+            "Calypso keeps its ticket files behind keys."
+        TagNote.ISO_B_WEAK ->
+            "Some phone NFC controllers are unreliable on ISO 14443-B."
+        TagNote.DESFIRE_LOCKED ->
+            "The free DESFire directory commands answered authentication required."
     }
 
     private fun shortTech(tech: String): String = tech.substringAfterLast('.')

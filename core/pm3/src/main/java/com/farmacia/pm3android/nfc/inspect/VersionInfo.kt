@@ -32,8 +32,36 @@ class VersionInfo(
 
     val versionText: String get() = "$major.$minor"
 
-    /** Storage declared by the tag, in bytes. */
-    val storageBytes: Int? get() = STORAGE_BYTES[storageCode]
+    /**
+     * Storage declared by the tag, in bytes. DESFire and Ultralight/NTAG use a
+     * lookup table; MIFARE Plus codes the exponent directly, so it needs its
+     * own formula (see [plusStorageBytes]).
+     */
+    val storageBytes: Int?
+        get() = if (productType == TYPE_PLUS) plusStorageBytes else STORAGE_BYTES[storageCode]
+
+    /**
+     * MIFARE Plus storage: the seven most significant bits are the base-2
+     * exponent of the size, the least significant bit is set when the size is
+     * between 2^n and 2^(n+1). 0x16 is 2 KB, 0x18 is 4 KB, 0x1A is 8 KB.
+     */
+    val plusStorageBytes: Int? get() = when {
+        productType != TYPE_PLUS -> null
+        storageCode and 0xFF == 0 -> null
+        else -> 1 shl (storageCode shr 1)
+    }
+
+    /** True when the Plus code describes a range instead of an exact size. */
+    val plusStorageIsRange: Boolean
+        get() = productType == TYPE_PLUS && storageCode and 0x01 != 0
+
+    /** Hardware generation of a MIFARE Plus card, empty when unknown. */
+    val plusGeneration: String
+        get() = when (productSubtype) {
+            0x01 -> "EV1"
+            0x02 -> "EV2"
+            else -> ""
+        }
 
     /** Total pages of an Ultralight/NTAG memory map, when the size is known. */
     val pageCount: Int? get() = PAGE_COUNTS[storageCode]
@@ -60,7 +88,12 @@ class VersionInfo(
                 else -> "NTAG"
             }
 
-            TYPE_PLUS -> "MIFARE Plus $versionText"
+            TYPE_PLUS -> buildString {
+                append("MIFARE Plus")
+                if (plusGeneration.isNotEmpty()) append(' ').append(plusGeneration)
+                plusStorageBytes?.let { append(' ').append(sizeLabel(it)) }
+            }
+
             TYPE_DESFIRE -> "MIFARE DESFire $versionText"
             else -> "Tag NXP"
         }
@@ -136,6 +169,12 @@ class VersionInfo(
             0x34 -> "Mikron"
             0x53 -> "Feiju"
             else -> "0x%02X".format(vendorId)
+        }
+
+        /** Human size of a memory, rounded to the marketing label. */
+        fun sizeLabel(bytes: Int): String = when {
+            bytes >= 1024 && bytes % 1024 == 0 -> "${bytes / 1024} KB"
+            else -> "$bytes B"
         }
     }
 }

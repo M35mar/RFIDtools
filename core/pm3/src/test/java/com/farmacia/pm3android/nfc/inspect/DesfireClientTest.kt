@@ -43,7 +43,7 @@ class DesfireClientTest {
     @Test
     fun `application ids are split in three byte groups`() {
         val transport = FakeTransport(
-            frame(intArrayOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x01), 0x9100),
+            frame(intArrayOf(0x00, 0x00, 0x00, 0x01, 0x00, 0x00), 0x9100),
         )
 
         assertEquals(listOf(0, 1), DesfireClient(transport).getApplicationIds())
@@ -54,7 +54,7 @@ class DesfireClientTest {
     fun `application ids can span several frames`() {
         val transport = FakeTransport(
             frame(intArrayOf(0x00, 0x00, 0x00), 0x91AF),
-            frame(intArrayOf(0x00, 0x00, 0x01), 0x9100),
+            frame(intArrayOf(0x01, 0x00, 0x00), 0x9100),
         )
 
         assertEquals(listOf(0, 1), DesfireClient(transport).getApplicationIds())
