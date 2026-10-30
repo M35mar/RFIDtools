@@ -8,6 +8,7 @@ package com.farmacia.pm3android.nfc.inspect.content
 
 import com.farmacia.pm3android.nfc.MfcCapture
 import com.farmacia.pm3android.nfc.MfcGeometry
+import com.farmacia.pm3android.nfc.MfcValueBlock
 import com.farmacia.pm3android.nfc.MfuCapture
 import com.farmacia.pm3android.nfc.toHex
 
@@ -161,7 +162,7 @@ object TagContentAnalyzer {
                 access = trailer?.let { AccessBits.parse(it) },
                 accessConsistent = trailer?.let { AccessBits.isConsistent(it) } ?: false,
                 firstDataHex = firstData?.toHex(),
-                valueBlock = firstData?.let { isValueBlock(it) } ?: false,
+                valueBlock = firstData?.let { MfcValueBlock.isConsistent(it) } ?: false,
             )
         }
 
@@ -274,18 +275,4 @@ object TagContentAnalyzer {
 
     private fun isReadable(readable: Set<Int>, first: Int, count: Int): Boolean =
         (first until first + count).all { it in readable }
-
-    /** MIFARE value block: value, its complement, the value again, address. */
-    private fun isValueBlock(block: ByteArray): Boolean {
-        if (block.size < 16) return false
-        for (index in 0 until 4) {
-            val value = block[index].toInt() and 0xFF
-            if ((block[4 + index].toInt() and 0xFF) != (value xor 0xFF)) return false
-            if ((block[8 + index].toInt() and 0xFF) != value) return false
-        }
-        val address = block[12].toInt() and 0xFF
-        return (block[13].toInt() and 0xFF) == (address xor 0xFF) &&
-            (block[14].toInt() and 0xFF) == address &&
-            (block[15].toInt() and 0xFF) == (address xor 0xFF)
-    }
 }

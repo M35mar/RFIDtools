@@ -21,7 +21,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Nfc
@@ -127,6 +129,8 @@ fun TagInspectScreen(
     viewModel: TagInspectViewModel,
     onClose: () -> Unit,
     onOpenDumpFlow: () -> Unit,
+    onOpenCounterTool: () -> Unit,
+    onOpenValueTool: () -> Unit,
 ) {
     val activity = LocalActivity.current
     val session = remember(activity) { activity?.let { NfcSession(it) } }
@@ -188,6 +192,8 @@ fun TagInspectScreen(
                         viewModel = viewModel,
                         onClose = onClose,
                         onOpenDumpFlow = onOpenDumpFlow,
+                        onOpenCounterTool = onOpenCounterTool,
+                        onOpenValueTool = onOpenValueTool,
                     )
 
                     state.busy -> ReadingCard()
@@ -216,11 +222,25 @@ private fun ResultContent(
     viewModel: TagInspectViewModel,
     onClose: () -> Unit,
     onOpenDumpFlow: () -> Unit,
+    onOpenCounterTool: () -> Unit,
+    onOpenValueTool: () -> Unit,
 ) {
     val identity = state.identity ?: return
     IdentityHero(identity)
     IdentityDetails(identity)
     if (identity.notes.isNotEmpty()) NotesCard(identity.notes)
+
+    // The write tools come before the long memory dump: on a classic tag the
+    // user should not have to scroll past 64 blocks to find them.
+    val ev1 = identity.family == TagFamily.MIFARE_ULTRALIGHT &&
+        identity.version?.storageCode in EV1_STORAGE
+    if (identity.family == TagFamily.MIFARE_CLASSIC || ev1) {
+        WriteToolsCard(
+            ev1 = ev1,
+            onOpenCounterTool = onOpenCounterTool,
+            onOpenValueTool = onOpenValueTool,
+        )
+    }
 
     when (val details = state.details) {
         is DesfireDetails -> DesfireCard(details, state.desfireRead, viewModel)
@@ -283,6 +303,56 @@ private fun ResultContent(
     }
     OutlinedButton(onClick = onClose, modifier = Modifier.fillMaxWidth()) {
         Text(stringResource(R.string.inspect_close))
+    }
+}
+
+/** MF0UL11 and MF0UL21 storage codes from GET_VERSION. */
+private val EV1_STORAGE = setOf(0x0B, 0x0E)
+
+@Composable
+private fun WriteToolsCard(
+    ev1: Boolean,
+    onOpenCounterTool: () -> Unit,
+    onOpenValueTool: () -> Unit,
+) {
+    SectionCard(title = stringResource(R.string.inspect_write_title)) {
+        Text(
+            text = stringResource(
+                if (ev1) R.string.inspect_write_counter_desc else R.string.inspect_write_value_desc,
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (ev1) {
+            Button(onClick = onOpenCounterTool, modifier = Modifier.fillMaxWidth()) {
+                Icon(
+                    imageVector = Icons.Filled.AddCircle,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Text(
+                    text = stringResource(R.string.inspect_write_counter),
+                    modifier = Modifier.padding(start = 8.dp),
+                )
+            }
+        } else {
+            Button(onClick = onOpenValueTool, modifier = Modifier.fillMaxWidth()) {
+                Icon(
+                    imageVector = Icons.Filled.CreditCard,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Text(
+                    text = stringResource(R.string.inspect_write_value),
+                    modifier = Modifier.padding(start = 8.dp),
+                )
+            }
+        }
+        Text(
+            text = stringResource(R.string.inspect_write_note),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

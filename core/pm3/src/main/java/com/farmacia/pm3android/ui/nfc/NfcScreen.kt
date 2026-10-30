@@ -24,6 +24,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Nfc
 import androidx.compose.material.icons.filled.SaveAlt
 import androidx.compose.material3.AlertDialog
@@ -67,6 +69,8 @@ fun NfcScreen(
     restoreViewModel: NfcRestoreViewModel,
     onIdentify: () -> Unit,
     onOpenApduConsole: () -> Unit,
+    onOpenCounterTool: () -> Unit,
+    onOpenValueTool: () -> Unit,
 ) {
     val files by viewModel.files.collectAsState()
     val context = LocalContext.current
@@ -145,6 +149,29 @@ fun NfcScreen(
                     enabled = nfcEnabled,
                     modifier = Modifier.weight(1f),
                     onClick = onOpenApduConsole,
+                )
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(IntrinsicSize.Max),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                NfcTile(
+                    icon = Icons.Filled.AddCircle,
+                    title = stringResource(R.string.nfc_counter_title),
+                    description = stringResource(R.string.nfc_counter_desc),
+                    enabled = nfcEnabled,
+                    modifier = Modifier.weight(1f),
+                    onClick = onOpenCounterTool,
+                )
+                NfcTile(
+                    icon = Icons.Filled.CreditCard,
+                    title = stringResource(R.string.nfc_value_title),
+                    description = stringResource(R.string.nfc_value_desc),
+                    enabled = nfcEnabled,
+                    modifier = Modifier.weight(1f),
+                    onClick = onOpenValueTool,
                 )
             }
         }

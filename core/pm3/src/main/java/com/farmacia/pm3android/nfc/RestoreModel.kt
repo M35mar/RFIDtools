@@ -120,6 +120,21 @@ interface ClassicTransport {
 
     fun writeBlock(block: Int, data: ByteArray)
 
+    /** Stages `value` added to the block in the card's transfer buffer. */
+    fun increment(block: Int, value: Int) {
+        throw IOException("INCREMENT non supportato da questo trasporto")
+    }
+
+    /** Stages `value` removed from the block in the card's transfer buffer. */
+    fun decrement(block: Int, value: Int) {
+        throw IOException("DECREMENT non supportato da questo trasporto")
+    }
+
+    /** Commits the staged value into the block. */
+    fun transfer(block: Int) {
+        throw IOException("TRANSFER non supportato da questo trasporto")
+    }
+
     fun close()
 }
 

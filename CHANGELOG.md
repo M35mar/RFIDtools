@@ -1,5 +1,37 @@
 # Changelog
 
+## 1.0.2 – 2026-10-30
+
+### Added
+- NFC **Set counter**: choose a MIFARE Ultralight EV1 counter (1–3) and an
+  absolute target, then present the tag once. The tool authenticates with the
+  optional password, reads the current value and tearing flag, computes the
+  delta, sends INCREMENT_CNT and verifies the read-back. A target below the
+  current value is refused, because EV1 counters cannot be reset from the phone.
+- NFC **Credit and rides**: scan a MIFARE Classic with a key file, choose a
+  standard value block and increment or decrement it. The first tap scans, the
+  second applies INCREMENT/DECREMENT + TRANSFER and verifies the new value. The
+  access bits are enforced (`000` either key, `001` decrement only, `110` Key B)
+  and the tool never rewrites the block with a raw WRITE.
+- Both tools are reachable from the NFC home and from the tag read result, where
+  the compatible card family gets a **Write to tag** card even when the keyless
+  read was incomplete.
+
+### Changed
+- The NFC home now has five tiles: **Read tag**, **Restore tag**, **APDU console**,
+  **Set counter** and **Credit and rides**.
+- Restore notes now point to the explicit counter tool instead of saying that
+  EV1 counters are never touched.
+
+### Tests
+- Added JVM tests for the EV1 counter command sequence (delta, password,
+  tearing, read-back, NTAG refusal) and for Classic value blocks (layout, ACL
+  matrix, 4K access groups, changed value, transfer verification).
+
+### Release
+- Version `1.0.2` (`versionCode` 13), built against the pinned Proxmark3
+  submodule.
+
 ## 1.0.1 – 2026-10-30
 
 ### Changed

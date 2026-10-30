@@ -64,6 +64,8 @@ import com.farmacia.pm3android.ui.files.DumpEditorScreen
 import com.farmacia.pm3android.ui.files.DumpEditorViewModel
 import com.farmacia.pm3android.ui.files.FilesScreen
 import com.farmacia.pm3android.ui.nfc.ApduConsoleScreen
+import com.farmacia.pm3android.ui.nfc.MfcValueScreen
+import com.farmacia.pm3android.ui.nfc.MfuCounterScreen
 import com.farmacia.pm3android.ui.nfc.NfcRestoreScreen
 import com.farmacia.pm3android.ui.nfc.NfcScreen
 import com.farmacia.pm3android.ui.nfc.TagInspectScreen
@@ -71,6 +73,8 @@ import com.farmacia.pm3android.ui.settings.SettingsScreen
 import com.farmacia.pm3android.ui.theme.Pm3Theme
 import com.farmacia.pm3android.ui.update.UpdatePromptDialog
 import com.farmacia.pm3android.nfc.ApduConsoleViewModel
+import com.farmacia.pm3android.nfc.MfcValueViewModel
+import com.farmacia.pm3android.nfc.MfuCounterViewModel
 import com.farmacia.pm3android.nfc.NfcRestoreViewModel
 import com.farmacia.pm3android.nfc.TagInspectViewModel
 import com.farmacia.pm3android.update.UpdateState
@@ -84,30 +88,36 @@ private data class Tab(
         DumpEditorViewModel,
         TagInspectViewModel,
         ApduConsoleViewModel,
+        MfuCounterViewModel,
+        MfcValueViewModel,
     ) -> Unit,
 )
 
 private val TABS = listOf(
-    Tab(R.string.nav_device, Icons.Filled.Usb) { viewModel, _, _, _, _ -> DeviceScreen(viewModel) },
-    Tab(R.string.nav_console, Icons.AutoMirrored.Filled.List) { viewModel, _, _, _, _ ->
+    Tab(R.string.nav_device, Icons.Filled.Usb) { viewModel, _, _, _, _, _, _ ->
+        DeviceScreen(viewModel)
+    },
+    Tab(R.string.nav_console, Icons.AutoMirrored.Filled.List) { viewModel, _, _, _, _, _, _ ->
         ConsoleScreen(viewModel = viewModel)
     },
-    Tab(R.string.nav_nfc, Icons.Filled.Nfc) { viewModel, restore, _, inspect, apdu ->
+    Tab(R.string.nav_nfc, Icons.Filled.Nfc) { viewModel, restore, _, inspect, apdu, counter, value ->
         NfcScreen(
             viewModel = viewModel,
             restoreViewModel = restore,
             onIdentify = inspect::start,
             onOpenApduConsole = apdu::start,
+            onOpenCounterTool = counter::start,
+            onOpenValueTool = value::start,
         )
     },
-    Tab(R.string.nav_files, Icons.Filled.Share) { viewModel, restore, editor, _, _ ->
+    Tab(R.string.nav_files, Icons.Filled.Share) { viewModel, restore, editor, _, _, _, _ ->
         FilesScreen(
             viewModel,
             onRestore = restore::open,
             onEditDump = editor::open,
         )
     },
-    Tab(R.string.nav_settings, Icons.Filled.Info) { viewModel, _, _, _, _ ->
+    Tab(R.string.nav_settings, Icons.Filled.Info) { viewModel, _, _, _, _, _, _ ->
         SettingsScreen(viewModel)
     },
 )
@@ -123,6 +133,8 @@ fun Pm3App(
     val editorViewModel: DumpEditorViewModel = viewModel()
     val inspectViewModel: TagInspectViewModel = viewModel()
     val apduViewModel: ApduConsoleViewModel = viewModel()
+    val counterViewModel: MfuCounterViewModel = viewModel()
+    val valueViewModel: MfcValueViewModel = viewModel()
     val settings by viewModel.settings.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
     val device by viewModel.device.collectAsState()
@@ -132,6 +144,8 @@ fun Pm3App(
     val editorState by editorViewModel.state.collectAsState()
     val inspectState by inspectViewModel.state.collectAsState()
     val apduState by apduViewModel.state.collectAsState()
+    val counterState by counterViewModel.state.collectAsState()
+    val valueState by valueViewModel.state.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var selected by rememberSaveable { mutableIntStateOf(0) }
 
@@ -248,6 +262,8 @@ fun Pm3App(
                             editorViewModel,
                             inspectViewModel,
                             apduViewModel,
+                            counterViewModel,
+                            valueViewModel,
                         )
                     }
                 }
@@ -297,6 +313,27 @@ fun Pm3App(
                             inspectViewModel.close()
                             restoreViewModel.startDump()
                         },
+                        onOpenCounterTool = counterViewModel::start,
+                        onOpenValueTool = valueViewModel::start,
+                    )
+                }
+
+                // The two write tools sit above the inspector so the user can
+                // open them from a tag that was just read and go back to it
+                // afterwards.
+                if (counterState.visible) {
+                    MfuCounterScreen(
+                        state = counterState,
+                        viewModel = counterViewModel,
+                        onClose = counterViewModel::close,
+                    )
+                }
+
+                if (valueState.visible) {
+                    MfcValueScreen(
+                        state = valueState,
+                        viewModel = valueViewModel,
+                        onClose = valueViewModel::close,
                     )
                 }
 

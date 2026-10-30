@@ -56,15 +56,52 @@ object MfcAccess {
     /**
      * Access condition of one block in its sector, encoded as
      * `C1 << 2 | C2 << 1 | C3` like `mf_get_accesscondition`.
+     *
+     * A 4K large sector has sixteen blocks but still four access groups: the
+     * PM3 decoder describes block 0, 5, 10 and the trailer with groups 0..3.
+     * [blocksInSector] selects that layout; the default is the 4-block sector.
      */
-    fun condition(access: ByteArray, blockInSector: Int): Int {
-        val index = blockInSector.coerceIn(0, 3)
+    fun condition(access: ByteArray, blockInSector: Int, blocksInSector: Int = 4): Int {
+        val index = if (blocksInSector > 4) {
+            (blockInSector / 5).coerceIn(0, 3)
+        } else {
+            blockInSector.coerceIn(0, 3)
+        }
         val b7 = access[1].toInt() and 0xFF
         val b8 = access[2].toInt() and 0xFF
         val c1 = (b7 ushr (4 + index)) and 1
         val c2 = (b8 ushr index) and 1
         val c3 = (b8 ushr (4 + index)) and 1
         return (c1 shl 2) or (c2 shl 1) or c3
+    }
+
+    /**
+     * Key needed for INCREMENT of a data block. Only `000` (either key) and
+     * `110` (Key B) allow it; `001` is decrement-only.
+     */
+    fun incrementKeyRequirement(
+        access: ByteArray,
+        blockInSector: Int,
+        blocksInSector: Int = 4,
+    ): MfcKeyRequirement = when (condition(access, blockInSector, blocksInSector)) {
+        0x00 -> MfcKeyRequirement.ANY
+        0x06 -> MfcKeyRequirement.B
+        else -> MfcKeyRequirement.NONE
+    }
+
+    /**
+     * Key needed for DECREMENT of a data block: `000` and `001` accept either
+     * key, `110` requires Key B. TRANSFER follows the same table as the
+     * operation, so the same requirement is used for both commands.
+     */
+    fun decrementKeyRequirement(
+        access: ByteArray,
+        blockInSector: Int,
+        blocksInSector: Int = 4,
+    ): MfcKeyRequirement = when (condition(access, blockInSector, blocksInSector)) {
+        0x00, 0x01 -> MfcKeyRequirement.ANY
+        0x06 -> MfcKeyRequirement.B
+        else -> MfcKeyRequirement.NONE
     }
 
     /** C1, C2, C3 for one block of the sector. */

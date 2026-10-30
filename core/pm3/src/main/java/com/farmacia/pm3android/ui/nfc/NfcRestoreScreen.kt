@@ -499,7 +499,7 @@ private fun KeyFilePicker(
     onClear: () -> Unit,
     onImport: (Uri) -> Unit,
 ) {
-    NfcFilePicker(
+    NfcKeyFilePicker(
         title = stringResource(R.string.nfc_dump_keys_title),
         selected = state.selectedKeyFile,
         files = state.keyFiles,
@@ -511,96 +511,6 @@ private fun KeyFilePicker(
         onClear = onClear,
         onImport = onImport,
     )
-}
-
-@Composable
-private fun NfcFilePicker(
-    title: String,
-    selected: String?,
-    files: List<String>,
-    noneLabel: String,
-    emptyLabel: String,
-    help: String,
-    error: String?,
-    onSelect: (String) -> Unit,
-    onClear: () -> Unit,
-    onImport: (Uri) -> Unit,
-) {
-    var expanded by remember { mutableStateOf(false) }
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let(onImport)
-    }
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleSmall,
-        )
-        Box(modifier = Modifier.fillMaxWidth()) {
-            OutlinedButton(
-                onClick = { expanded = true },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(
-                    text = selected ?: noneLabel,
-                    modifier = Modifier.weight(1f),
-                )
-                Icon(
-                    imageVector = Icons.Filled.ArrowDropDown,
-                    contentDescription = null,
-                )
-            }
-            DropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false },
-            ) {
-                if (files.isEmpty()) {
-                    DropdownMenuItem(
-                        text = { Text(emptyLabel) },
-                        onClick = { expanded = false },
-                        enabled = false,
-                    )
-                } else {
-                    files.forEach { name ->
-                        DropdownMenuItem(
-                            text = { Text(name) },
-                            onClick = {
-                                expanded = false
-                                onSelect(name)
-                            },
-                        )
-                    }
-                }
-            }
-        }
-        OutlinedButton(
-            onClick = {
-                // "*/*" because many providers do not report a MIME type for
-                // .bin files; NfcFileStore refuses anything that is not
-                // .bin/.txt right after the pick.
-                launcher.launch(arrayOf("*/*"))
-            },
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(stringResource(R.string.nfc_file_import))
-        }
-        if (selected != null) {
-            TextButton(onClick = onClear) {
-                Text(stringResource(R.string.nfc_file_clear))
-            }
-        }
-        Text(
-            text = error ?: help,
-            style = MaterialTheme.typography.bodySmall,
-            color = if (error != null) {
-                MaterialTheme.colorScheme.error
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            },
-        )
-    }
 }
 
 @Composable

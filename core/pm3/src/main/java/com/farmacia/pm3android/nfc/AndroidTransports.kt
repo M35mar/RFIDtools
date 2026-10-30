@@ -56,6 +56,18 @@ class AndroidClassicTransport(tag: Tag) : ClassicTransport {
         tech.writeBlock(block, data)
     }
 
+    override fun increment(block: Int, value: Int) {
+        tech.increment(block, value)
+    }
+
+    override fun decrement(block: Int, value: Int) {
+        tech.decrement(block, value)
+    }
+
+    override fun transfer(block: Int) {
+        tech.transfer(block)
+    }
+
     override fun close() {
         runCatching { tech.close() }
     }
