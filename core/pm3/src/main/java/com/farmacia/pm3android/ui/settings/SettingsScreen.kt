@@ -229,7 +229,7 @@ fun SettingsScreen(viewModel: Pm3ViewModel) {
             )
             InfoRow(
                 stringResource(R.string.settings_build),
-                "${BuildConfig.BUILD_TYPE} / ${BuildConfig.APPLICATION_ID}",
+                "${BuildConfig.BUILD_TYPE.replaceFirstChar { it.uppercase() }} / M35MAR RFIDtools",
             )
             InfoRow(
                 stringResource(R.string.settings_client_commit),
@@ -288,6 +288,7 @@ fun SettingsScreen(viewModel: Pm3ViewModel) {
                     "\$HOME/.proxmark3/lualibs\n" +
                     "\$HOME/.proxmark3/luascripts\n" +
                     "\$HOME/.proxmark3/cmdscripts\n" +
+                    "\$HOME/.proxmark3/pyscripts\n" +
                     "\$HOME/.proxmark3/resources\n" +
                     "\$HOME/.proxmark3/logs\n" +
                     "\$HOME/.proxmark3/traces\n" +

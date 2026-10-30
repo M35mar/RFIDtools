@@ -31,8 +31,8 @@ object NfcAPageProbe : HfProbe {
     /** Infineon manufacturer code in the first UID byte. */
     private const val VENDOR_INFINEON = 0x05
 
-    /** ATQA of a double-size UID Type A card. */
-    private const val ATQA_DOUBLE_UID = 0x0044
+    /** ATQA of a double-size UID Type A card, in both byte orders. */
+    private val ATQA_DOUBLE_UID = setOf(0x0044, 0x4400)
 
     /** Blocks of the two my-d move variants, from the Infineon datasheet. */
     private const val LEAN_BLOCKS = 16
@@ -59,7 +59,7 @@ object NfcAPageProbe : HfProbe {
         context.session.withNfcA { transport ->
             val memory = PageMemoryReader.read(transport, abort = context.abort)
             if (memory.blockCount == 0) return@withNfcA null
-            val myD = isMyD(context.snapshot)
+            val myD = isMyD(context.snapshot, memory)
             ProbeOutcome(
                 details = PageMemoryDetails(
                     pages = memory.pages,
@@ -76,13 +76,17 @@ object NfcAPageProbe : HfProbe {
     /**
      * An Infineon my-d move is a double-size UID card with a clean SAK 0x00 and
      * the Infineon manufacturer code. NTAG and Ultralight share ATQA and SAK but
-     * answer GET_VERSION, so they never reach this probe.
+     * answer GET_VERSION, so they never reach this probe. Some controllers hand
+     * the ATQA back in either byte order, so both forms are accepted; when the
+     * ATQA is unusual the memory size is the fallback, since only a my-d move
+     * answers with 16 or 36+ blocks and no GET_VERSION.
      */
-    private fun isMyD(snapshot: TagSnapshot): Boolean {
+    private fun isMyD(snapshot: TagSnapshot, memory: PageMemory): Boolean {
         val vendor = snapshot.uid.firstOrNull()?.toInt()?.and(0xFF) ?: return false
-        return vendor == VENDOR_INFINEON &&
-            snapshot.atqa == ATQA_DOUBLE_UID &&
-            snapshot.sak == 0x00
+        if (vendor != VENDOR_INFINEON || snapshot.sak != 0x00) return false
+        if (snapshot.atqa in ATQA_DOUBLE_UID) return true
+        return snapshot.uid.size == 7 &&
+            (memory.blockCount == LEAN_BLOCKS || memory.blockCount >= MOVE_MIN_BLOCKS)
     }
 
     private fun identity(

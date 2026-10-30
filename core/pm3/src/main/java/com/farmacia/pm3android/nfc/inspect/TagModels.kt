@@ -197,7 +197,8 @@ class TagIdentity(
     val dumpable: Boolean
         get() = techs.contains(NfcTech.MIFARE_CLASSIC) ||
             family == TagFamily.MIFARE_ULTRALIGHT ||
-            family == TagFamily.NTAG
+            family == TagFamily.NTAG ||
+            family == TagFamily.MY_D
 
     /** Same identity with extra notes, de-duplicated and order preserved. */
     fun withNotes(extra: List<TagNote>): TagIdentity = TagIdentity(

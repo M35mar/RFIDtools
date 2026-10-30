@@ -194,6 +194,41 @@ class HfProbeTest {
     }
 
     @Test
+    fun `atqa helper reads the little endian byte order`() {
+        assertEquals(0x0044, Atqa.value(byteArrayOf(0x44, 0x00)))
+        assertEquals(0x0004, Atqa.value(byteArrayOf(0x04, 0x00)))
+        assertNull(Atqa.value(byteArrayOf(0x44)))
+    }
+
+    @Test
+    fun `my-d is recognised when the controller reports atqa 0x4400`() {
+        val result = HfProbeRegistry.run(
+            ProbeContext(
+                snapshot = myDSnapshot(atqa = 0x4400),
+                session = FakeSession(nfcA = FakePageTag(blocks = 16)),
+                log = CommandLog(),
+            ),
+        )
+
+        assertEquals(TagFamily.MY_D, result.identity.family)
+        assertEquals("Infineon my-d move lean (SLE66R01L)", result.identity.label)
+    }
+
+    @Test
+    fun `my-d is recognised from the memory when the atqa is missing`() {
+        val result = HfProbeRegistry.run(
+            ProbeContext(
+                snapshot = myDSnapshot(atqa = null),
+                session = FakeSession(nfcA = FakePageTag(blocks = 16)),
+                log = CommandLog(),
+            ),
+        )
+
+        assertEquals(TagFamily.MY_D, result.identity.family)
+        assertTrue(result.identity.dumpable)
+    }
+
+    @Test
     fun `classic clone that refuses the page command keeps its identity`() {
         val snapshot = TagSnapshot(
             uid = byteArrayOf(0x04, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66),
@@ -215,10 +250,10 @@ class HfProbeTest {
         assertNull(result.details)
     }
 
-    private fun myDSnapshot() = TagSnapshot(
+    private fun myDSnapshot(atqa: Int? = 0x0044) = TagSnapshot(
         uid = byteArrayOf(0x05, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66),
         techs = listOf(NfcTech.NFC_A),
-        atqa = 0x0044,
+        atqa = atqa,
         sak = 0x00,
     )
 

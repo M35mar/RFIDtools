@@ -5,6 +5,7 @@
 package com.farmacia.pm3android.nfc
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
@@ -142,13 +143,15 @@ class DumpParsersTest {
     }
 
     @Test
-    fun `ultralight dump with an unknown size is rejected`() {
-        try {
-            DumpLoader.load(file("tiny.bin", ByteArray(64)))
-            fail("a 16 page ultralight dump is not supported")
-        } catch (e: DumpFormatException) {
-            assertTrue(e.message!!.contains("non supportata"))
-        }
+    fun `a 16 page page-dump is opened instead of being rejected`() {
+        // my-d move lean written by the phone: 56-byte header plus 16 pages.
+        val pages = MutableList(16) { index -> ByteArray(4) { (index * 4 + it).toByte() } }
+        val image = DumpLoader.load(file("hf-myd-05112233-dump.bin", PageDumpWriter.toBin(pages)))
+        assertTrue(image is DumpImage.Ultralight)
+        val dump = (image as DumpImage.Ultralight).dump
+        assertEquals(16, dump.pages.size)
+        assertArrayEquals(pages[0], dump.pages[0])
+        assertFalse(dump.layout.supported)
     }
 
     @Test

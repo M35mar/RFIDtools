@@ -10,9 +10,12 @@ import android.nfc.NfcAdapter
 import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -20,11 +23,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Nfc
 import androidx.compose.material.icons.filled.SaveAlt
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -57,7 +58,6 @@ import com.farmacia.pm3android.data.FileCategory
 import com.farmacia.pm3android.data.Pm3File
 import com.farmacia.pm3android.nfc.NfcRestoreViewModel
 import com.farmacia.pm3android.nfc.NfcSession
-import com.farmacia.pm3android.ui.components.SectionCard
 import com.farmacia.pm3android.ui.components.StatusPill
 import com.farmacia.pm3android.ui.console.Pm3ViewModel
 
@@ -92,7 +92,6 @@ fun NfcScreen(
     }
 
     val available = session?.available ?: (NfcAdapter.getDefaultAdapter(context) != null)
-    val dumps = files.filter { it.category == FileCategory.DUMP }
 
     Column(
         modifier = Modifier
@@ -114,52 +113,38 @@ fun NfcScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 4.dp),
             )
-            NfcActionCard(
-                icon = Icons.Filled.Search,
-                title = stringResource(R.string.nfc_identify_title),
-                description = stringResource(R.string.nfc_identify_desc),
-                supporting = stringResource(R.string.nfc_identify_supporting),
-                enabled = nfcEnabled,
-                onClick = onIdentify,
-            )
-            NfcActionCard(
-                icon = Icons.Filled.Send,
-                title = stringResource(R.string.apdu_title),
-                description = stringResource(R.string.nfc_apdu_desc),
-                supporting = stringResource(R.string.nfc_apdu_supporting),
-                enabled = nfcEnabled,
-                onClick = onOpenApduConsole,
-            )
-            NfcActionCard(
-                icon = Icons.Filled.SaveAlt,
-                title = stringResource(R.string.nfc_read_title),
-                description = stringResource(R.string.nfc_read_desc),
-                enabled = nfcEnabled,
-                onClick = { restoreViewModel.startDump() },
-            )
-            NfcActionCard(
-                icon = Icons.Filled.Nfc,
-                title = stringResource(R.string.nfc_write_title),
-                description = stringResource(R.string.nfc_write_desc),
-                supporting = stringResource(R.string.nfc_dumps_available, dumps.size),
-                enabled = nfcEnabled,
-                onClick = {
-                    viewModel.refreshFiles()
-                    pickingDump = true
-                },
-            )
-            SectionCard(title = stringResource(R.string.nfc_howto_title)) {
-                NfcHint(
-                    number = "1",
-                    text = stringResource(R.string.nfc_howto_read),
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(IntrinsicSize.Max),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                NfcTile(
+                    icon = Icons.Filled.Nfc,
+                    title = stringResource(R.string.nfc_read_title),
+                    description = stringResource(R.string.nfc_read_desc),
+                    enabled = nfcEnabled,
+                    modifier = Modifier.weight(1f),
+                    onClick = onIdentify,
                 )
-                NfcHint(
-                    number = "2",
-                    text = stringResource(R.string.nfc_howto_write),
+                NfcTile(
+                    icon = Icons.Filled.SaveAlt,
+                    title = stringResource(R.string.nfc_write_title),
+                    description = stringResource(R.string.nfc_write_desc),
+                    enabled = nfcEnabled,
+                    modifier = Modifier.weight(1f),
+                    onClick = {
+                        viewModel.refreshFiles()
+                        pickingDump = true
+                    },
                 )
-                NfcHint(
-                    number = "3",
-                    text = stringResource(R.string.nfc_howto_classic),
+                NfcTile(
+                    icon = Icons.AutoMirrored.Filled.Send,
+                    title = stringResource(R.string.apdu_title),
+                    description = stringResource(R.string.nfc_apdu_desc),
+                    enabled = nfcEnabled,
+                    modifier = Modifier.weight(1f),
+                    onClick = onOpenApduConsole,
                 )
             }
         }
@@ -255,28 +240,27 @@ private fun NfcHeroCard(
 }
 
 @Composable
-private fun NfcActionCard(
+private fun NfcTile(
     icon: ImageVector,
     title: String,
     description: String,
-    supporting: String? = null,
     enabled: Boolean,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     Card(
         onClick = onClick,
         enabled = enabled,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxHeight(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
+                .padding(horizontal = 12.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Surface(
                 shape = CircleShape,
@@ -287,60 +271,24 @@ private fun NfcActionCard(
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier
-                        .padding(12.dp)
-                        .size(26.dp),
+                        .padding(10.dp)
+                        .size(24.dp),
                 )
             }
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                Text(title, style = MaterialTheme.typography.titleMedium)
-                Text(
-                    text = description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                if (supporting != null) {
-                    Text(
-                        text = supporting,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
-            }
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
-
-@Composable
-private fun NfcHint(number: String, text: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.Top,
-    ) {
-        Surface(
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.secondaryContainer,
-        ) {
             Text(
-                text = number,
-                modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
             )
         }
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 

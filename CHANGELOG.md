@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.0.1 – 2026-10-30
+
+### Changed
+- The NFC home now has three equal tiles — **Read tag**, **Restore tag** and
+  **APDU console** — and the "How it works" card is gone.
+- **Read tag** is one action: it identifies the tag and reads its memory in the
+  same field, then offers **Save dump** without presenting the tag again. The
+  full read with a key file or a password stays reachable as **Open full read**
+  from an incomplete or failed read.
+- A short restore note under the dump states the caveat per family: Ultralight
+  EV1 counters are not restored, MIFARE Classic needs the sector keys, my-d move
+  lean page 03 (OTP/CC) cannot be rewritten.
+- Info: the build row now reads `Release / M35MAR RFIDtools` and the client
+  folders list includes `$HOME/.proxmark3/pyscripts`.
+
+### Fixed
+- ATQA was assembled as `raw[0] << 8 | raw[1]`, so Android's `44 00` became
+  `0x4400` and the Infineon my-d move lean was labelled "NFC Forum Type 2 (page
+  memory)". The value is now little-endian (`0x0044`), both byte orders are
+  accepted and the memory size is used as a fallback.
+- my-d move lean can now save a dump: a 56-byte `hf mfu` header plus the raw
+  pages, with PACK and password left as read. The file opens in the Data viewer;
+  the phone refuses to restore it with a clear message, since page 03 is OTP.
+
 ## 1.0.0 – 2026-10-30
 
 ### Added

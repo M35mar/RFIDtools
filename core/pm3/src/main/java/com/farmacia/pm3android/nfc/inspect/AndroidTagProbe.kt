@@ -46,7 +46,7 @@ object AndroidTagProbe {
         return TagSnapshot(
             uid = tag.id ?: ByteArray(0),
             techs = techs,
-            atqa = nfcA?.atqa?.let(::atqaOf),
+            atqa = nfcA?.atqa?.let(Atqa::value),
             sak = sak,
             version = version,
             ndefCapacity = capacity?.takeIf { it > 0 },
@@ -194,8 +194,4 @@ object AndroidTagProbe {
         return ((raw[0].toInt() and 0xFF) shl 8) or (raw[1].toInt() and 0xFF)
     }
 
-    private fun atqaOf(raw: ByteArray): Int? {
-        if (raw.size < 2) return null
-        return ((raw[0].toInt() and 0xFF) shl 8) or (raw[1].toInt() and 0xFF)
-    }
 }

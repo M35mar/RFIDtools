@@ -296,14 +296,9 @@
     <string name="nfc_status_off">Disattivato</string>
     <string name="nfc_status_unavailable">Non disponibile</string>
     <string name="nfc_read_title">Leggi tag</string>
-    <string name="nfc_read_desc">Crea un dump .bin dal tag avvicinato al telefono.</string>
-    <string name="nfc_write_title">Scrivi tag</string>
-    <string name="nfc_write_desc">Ripristina un dump salvato su un tag compatibile.</string>
-    <string name="nfc_dumps_available">%1$d dump disponibili</string>
-    <string name="nfc_howto_title">Come funziona</string>
-    <string name="nfc_howto_read">Tocca Leggi tag, poi avvicina il tag al retro del telefono: la lettura parte da sola.</string>
-    <string name="nfc_howto_write">Tocca Scrivi tag, scegli un dump, poi avvicina il tag: la scrittura parte da sola.</string>
-    <string name="nfc_howto_classic">Per MIFARE Classic serve un file chiavi (.bin o .txt) con le chiavi dei settori.</string>
+    <string name="nfc_read_desc">Identifica e legge la memoria.</string>
+    <string name="nfc_write_title">Ripristina tag</string>
+    <string name="nfc_write_desc">Scrivi un dump salvato.</string>
     <string name="nfc_restore_action">Scrivi su NFC</string>
     <string name="nfc_pick_dump">Ripristina</string>
     <string name="nfc_dump_action">Dump</string>
@@ -419,10 +414,7 @@
     <string name="nfc_precheck_block_b">settore %1$d blocco %2$d (serve la Key B)</string>
     <string name="nfc_error_password">Il tag ha rifiutato la password. Inseriscila nelle opzioni e riprova.</string>
     <string name="nfc_error_tag_lost">Tag allontanato dal telefono. Avvicinalo di nuovo e riprova.</string>
-
-    <string name="nfc_identify_title">Identifica tag</string>
-    <string name="nfc_identify_desc">Tipo, UID, memoria e contenuto del tag, anche senza chiavi.</string>
-    <string name="nfc_identify_supporting">Classic · Plus · Ultralight · NTAG · DESFire · Calypso · ISO 15693 · FeliCa · EMV</string>
+    <string name="nfc_error_restore_unsupported">Dump da %1$d pagine: il ripristino dal telefono copre solo Ultralight/NTAG (MF0UL11, MF0UL21, NTAG21x). Usa il Proxmark3 per questo tag.</string>
 
     <string name="inspect_title">Identifica tag</string>
     <string name="inspect_waiting_title">Avvicina il tag</string>
@@ -569,7 +561,6 @@
     <string name="inspect_unavailable_value">—</string>
     <string name="inspect_dump_title">Dump della memoria</string>
     <string name="inspect_dump_hint">La memoria viene mostrata qui sotto. Il dump si salva solo se lo chiedi.</string>
-    <string name="inspect_dump_read">Leggi memoria</string>
     <string name="inspect_dump_waiting">Avvicina di nuovo il tag: parte la lettura della memoria.</string>
     <string name="inspect_dump_cancel">Annulla</string>
     <string name="inspect_dump_progress">Lettura %1$d/%2$d</string>
@@ -591,6 +582,10 @@
     <string name="inspect_dump_incomplete">Lettura incompleta: %1$d settori e %2$d blocchi non leggibili. Il dump non è stato salvato.</string>
     <string name="inspect_dump_open_full">Apri lettura completa</string>
     <string name="inspect_dump_unavailable">Questo tag non espone una memoria lineare da salvare.</string>
+    <string name="inspect_dump_note_ultralight">Ultralight EV1: i contatori non vengono ripristinati, il ripristino copia solo le pagine.</string>
+    <string name="inspect_dump_note_ntag">NTAG: il ripristino riscrive le pagine dati; UID e configurazione restano invariati.</string>
+    <string name="inspect_dump_note_classic">MIFARE Classic: servono le chiavi dei settori; senza chiavi la lettura resta incompleta.</string>
+    <string name="inspect_dump_note_myd">my-d move lean: la pagina 03 (OTP/CC) non è riscrivibile; il ripristino è possibile solo con Proxmark3.</string>
     <string name="inspect_dump_error_lost">Tag allontanato: il dump non è stato salvato. Riprova.</string>
     <string name="inspect_dump_error_keys">Nessuna chiave di fabbrica ha aperto il tag: il dump non è stato salvato. Usa la lettura completa per scegliere un file di chiavi.</string>
     <string name="inspect_dump_error_password">Il tag richiede una password: il dump non è stato salvato. Usa la lettura completa per inserirla.</string>
@@ -689,6 +684,5 @@
     <string name="apdu_error_tag_lost">Tag perso: avvicinalo di nuovo.</string>
     <string name="apdu_error_parse">APDU non valido: servono almeno 4 byte esadecimali.</string>
     <string name="apdu_error_transceive">Invio non riuscito.</string>
-    <string name="nfc_apdu_desc">Invia comandi APDU a un tag ISO-DEP e leggi la risposta con il codice di stato.</string>
-    <string name="nfc_apdu_supporting">ISO-DEP · eMRTD · Calypso · SmartMX · applet personalizzati</string>
+    <string name="nfc_apdu_desc">Comandi ISO-DEP sul tag.</string>
 </resources>

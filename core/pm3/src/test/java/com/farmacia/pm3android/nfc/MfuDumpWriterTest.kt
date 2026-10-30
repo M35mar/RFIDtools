@@ -196,6 +196,36 @@ class MfuDumpWriterTest {
         assertEquals("hf-mf-04A1B29F-dump-1-key.bin", MfuDumpFiles.keyFileFor(dump).name)
     }
 
+    @Test
+    fun `page dump sets the highest page and leaves the last page untouched`() {
+        val pages = pageList(16).also {
+            it[15] = byteArrayOf(0x11, 0x22, 0x33, 0x44)
+        }
+
+        val bin = PageDumpWriter.toBin(pages)
+
+        assertEquals(MFU_DUMP_HEADER_BYTES + 16 * 4, bin.size)
+        assertEquals(15, bin[11].toInt() and 0xFF)
+        assertArrayEquals(pages[0], bin.copyOfRange(MFU_DUMP_HEADER_BYTES, MFU_DUMP_HEADER_BYTES + 4))
+        val last = MFU_DUMP_HEADER_BYTES + 15 * 4
+        // No PACK/password patch: unlike hf mfu the my-d page is saved as read.
+        assertArrayEquals(pages[15], bin.copyOfRange(last, last + 4))
+    }
+
+    @Test
+    fun `page dump round-trips through the loader`() {
+        val dir = File(System.getProperty("java.io.tmpdir"), "pm3-myd-${System.nanoTime()}")
+        dir.mkdirs()
+        val pages = pageList(16)
+        val file = File(dir, "hf-myd-04A1B29E6B8033-dump.bin")
+        file.writeBytes(PageDumpWriter.toBin(pages))
+
+        val dump = (DumpLoader.load(file) as DumpImage.Ultralight).dump
+
+        assertEquals(16, dump.pages.size)
+        pages.forEachIndexed { index, page -> assertArrayEquals(page, dump.page(index)) }
+    }
+
     // -----------------------------------------------------------------------
 
     private fun versionBytes(size: Int): ByteArray =

@@ -42,22 +42,12 @@ object DumpLoader {
             return DumpImage.Classic(MfcDumpParser.fromText(file.name, bytes))
         }
 
-        mfuFromBin(file.name, bytes)?.let { return ultralight(it) }
+        mfuFromBin(file.name, bytes)?.let { return DumpImage.Ultralight(it) }
         MfcDumpParser.fromBinary(file.name, bytes, file)?.let { return DumpImage.Classic(it) }
-        mfuLegacyFromBin(file.name, bytes)?.let { return ultralight(it) }
-        mfuPlainFromBin(file.name, bytes)?.let { return ultralight(it) }
+        mfuLegacyFromBin(file.name, bytes)?.let { return DumpImage.Ultralight(it) }
+        mfuPlainFromBin(file.name, bytes)?.let { return DumpImage.Ultralight(it) }
 
         throw DumpFormatException("formato non riconosciuto (${bytes.size} byte)")
-    }
-
-    private fun ultralight(dump: MfuDump): DumpImage.Ultralight {
-        if (!dump.layout.supported) {
-            throw DumpFormatException(
-                "dump da ${dump.pages.size} pagine: variante non supportata " +
-                    "(MF0UL11, MF0UL21, NTAG21x)",
-            )
-        }
-        return DumpImage.Ultralight(dump)
     }
 
     private fun mfuFromBin(name: String, bytes: ByteArray): MfuDump? {

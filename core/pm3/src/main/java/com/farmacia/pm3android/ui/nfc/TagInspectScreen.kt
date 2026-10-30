@@ -101,6 +101,7 @@ import com.farmacia.pm3android.nfc.inspect.PageMemoryDetails
 import com.farmacia.pm3android.nfc.inspect.PlusDetails
 import com.farmacia.pm3android.nfc.inspect.PlusGeometry
 import com.farmacia.pm3android.nfc.inspect.TagConfidence
+import com.farmacia.pm3android.nfc.inspect.TagFamily
 import com.farmacia.pm3android.nfc.inspect.TagIdentity
 import com.farmacia.pm3android.nfc.inspect.TagNote
 import com.farmacia.pm3android.nfc.inspect.content.CapabilityContainer
@@ -258,6 +259,7 @@ private fun ResultContent(
 
     if (identity.dumpable) {
         DumpCard(state.dump, viewModel, onOpenDumpFlow)
+        DumpRestoreNote(identity)
     } else {
         Text(
             text = stringResource(R.string.inspect_dump_unavailable),
@@ -1555,6 +1557,23 @@ private fun yesNo(value: Boolean): String = stringResource(
     if (value) R.string.inspect_yes else R.string.inspect_no,
 )
 
+/** Short restore caveat for the tag family, empty when there is nothing to say. */
+@Composable
+private fun DumpRestoreNote(identity: TagIdentity) {
+    val note = when (identity.family) {
+        TagFamily.MIFARE_ULTRALIGHT -> R.string.inspect_dump_note_ultralight
+        TagFamily.NTAG -> R.string.inspect_dump_note_ntag
+        TagFamily.MIFARE_CLASSIC -> R.string.inspect_dump_note_classic
+        TagFamily.MY_D -> R.string.inspect_dump_note_myd
+        else -> null
+    } ?: return
+    Text(
+        text = stringResource(note),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
 @Composable
 private fun DumpCard(
     dump: DumpState,
@@ -1570,17 +1589,6 @@ private fun DumpCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Button(onClick = viewModel::startDump, modifier = Modifier.fillMaxWidth()) {
-                    Icon(
-                        imageVector = Icons.Filled.Nfc,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Text(
-                        text = stringResource(R.string.inspect_dump_read),
-                        modifier = Modifier.padding(start = 8.dp),
-                    )
-                }
             }
 
             DumpStage.WAITING -> {

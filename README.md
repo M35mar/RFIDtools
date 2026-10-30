@@ -43,7 +43,7 @@ from **Info → Links → Check for updates**. The first install is a manual sid
 | --- | --- |
 | **Device** | USB status, vendor/product IDs, serial and interface diagnostics with copy/share. Sub-tab **PM3 tools**: searchable LF, HF, MIFARE Classic (one-tap autopwn) and Ultralight Ev1 commands, parameter dialogs, recent commands. |
 | **Console** | Free-form command input with history, follow mode, font size, copy/share of the output. Commands run through the in-process client, not a shell. |
-| **NFC** | Identify a tag with the phone's reader across the HF families Android exposes: Classic, Plus, Ultralight/NTAG, DESFire, Calypso/BNEVT, ISO 15693 (ICODE, ST25, SLE66R/my-d, EM), FeliCa/ISO 18092, eMRTD passports and national eIDs, SmartMX and generic ISO-DEP applets. Shows UID, ATQA/SAK, ATS/ATQB, memory, DESFire applications/files, Calypso ICC/environment/free files, MAD/NDEF (Type 2/3/4/5), sectors with access bits and counters. Optional key-based reads: DESFire files with an AES key, MIFARE Plus SL3 sectors. **APDU console** for ISO-DEP cards. Read and write Ultralight/NTAG and MIFARE Classic dumps, restored with the keys from `hf-mf-<UID>-key.bin`, and save a text report. No Proxmark3 required. |
+| **NFC** | Three actions: **Read tag**, **Restore tag** and **APDU console**. Read tag identifies the tag with the phone's reader across the HF families Android exposes — Classic, Plus, Ultralight/NTAG, my-d move lean, DESFire, Calypso/BNEVT, ISO 15693 (ICODE, ST25, EM), FeliCa/ISO 18092, eMRTD passports and national eIDs, SmartMX and generic ISO-DEP applets — and reads its memory in the same field. Shows UID, ATQA/SAK, ATS/ATQB, memory, DESFire applications/files, Calypso ICC/environment/free files, MAD/NDEF (Type 2/3/4/5), sectors with access bits and counters, then offers **Save dump**. Optional key-based reads: DESFire files with an AES key, MIFARE Plus SL3 sectors. Restore tag writes Ultralight/NTAG and MIFARE Classic dumps (the latter with the keys from `hf-mf-<UID>-key.bin`); my-d move lean dumps are saved for the Proxmark3, since page 03 is OTP. Saves a text report. No Proxmark3 required. |
 | **Data** | Dumps, traces, logs and tag reports; filters, import/export via the Storage Access Framework, share. Built-in hex editor for `.bin` blocks and pages, with decoded access bits and value blocks. |
 | **Info** | Version, build and client commit, theme, settings backup/restore, client-resource reset, in-app updates, licence and links. |
 
@@ -57,6 +57,12 @@ fail). Only import scripts you trust.
 The **NFC** section works without a Proxmark3 and identifies the tag from the phone's
 reader. Everything below is read-only.
 
+- **Read tag**: one action that identifies the tag and reads its memory while the tag
+  stays on the phone, then offers **Save dump** with an editable name. A partial or
+  failed read links to the full read, which accepts a key file or a password.
+- **Restore notes**: the dump card states the caveat per family — Ultralight EV1
+  counters are not restored, MIFARE Classic needs the sector keys, my-d move lean
+  page 03 (OTP/CC) cannot be rewritten and is restored only with a Proxmark3.
 - **Keyless**: family, UID, ATQA/SAK, ATS/ATQB and technologies; GET_VERSION on NXP cards;
   MIFARE Classic sectors with access bits, MAD and NDEF; Ultralight/NTAG capability
   container and counters; page memory read with the `0x30` command on Type 2 chips that

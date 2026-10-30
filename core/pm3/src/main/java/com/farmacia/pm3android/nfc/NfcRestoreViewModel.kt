@@ -120,6 +120,18 @@ class NfcRestoreViewModel(application: Application) : AndroidViewModel(applicati
         viewModelScope.launch {
             try {
                 val loaded = withContext(Dispatchers.IO) { DumpLoader.load(file) }
+                if (loaded is DumpImage.Ultralight && !loaded.dump.layout.supported) {
+                    // The file opens in the viewer, but this phone cannot write
+                    // an unknown page map: say so before asking for the tag.
+                    stateFlow.value = stateFlow.value.copy(
+                        stage = RestoreStage.ERROR,
+                        error = getApplication<Application>().getString(
+                            R.string.nfc_error_restore_unsupported,
+                            loaded.dump.pages.size,
+                        ),
+                    )
+                    return@launch
+                }
                 image = loaded
                 stateFlow.value = preview(loaded)
                 refreshFileLists()

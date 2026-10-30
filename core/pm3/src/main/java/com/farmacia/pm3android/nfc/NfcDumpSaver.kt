@@ -26,9 +26,12 @@ object NfcDumpSaver {
         name: String,
         classic: MfcCapture? = null,
         ultralight: MfuCapture? = null,
+        pages: List<ByteArray>? = null,
         saveKeys: Boolean = true,
     ): SavedDump {
-        require(classic != null || ultralight != null) { "no capture to save" }
+        require(listOfNotNull(classic, ultralight, pages).size == 1) {
+            "exactly one capture to save"
+        }
         val dir = Pm3Resources.home(context)
         dir.mkdirs()
         if (classic != null) {
@@ -45,7 +48,11 @@ object NfcDumpSaver {
             return SavedDump(dump, keyFile)
         }
         val dump = MfuDumpFiles.unique(dir, name)
-        dump.writeBytes(MfuDumpWriter.toBin(ultralight!!))
+        if (ultralight != null) {
+            dump.writeBytes(MfuDumpWriter.toBin(ultralight))
+        } else {
+            dump.writeBytes(PageDumpWriter.toBin(pages!!))
+        }
         return SavedDump(dump, null)
     }
 }

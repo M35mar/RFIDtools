@@ -296,14 +296,9 @@
     <string name="nfc_status_off">Off</string>
     <string name="nfc_status_unavailable">Not available</string>
     <string name="nfc_read_title">Read tag</string>
-    <string name="nfc_read_desc">Creates a .bin dump from a tag held against the phone.</string>
-    <string name="nfc_write_title">Write tag</string>
-    <string name="nfc_write_desc">Restores a saved dump onto a compatible tag.</string>
-    <string name="nfc_dumps_available">%1$d dumps available</string>
-    <string name="nfc_howto_title">How it works</string>
-    <string name="nfc_howto_read">Tap Read tag, then hold the tag against the back of the phone: reading starts automatically.</string>
-    <string name="nfc_howto_write">Tap Write tag, pick a dump, then hold the tag: writing starts automatically.</string>
-    <string name="nfc_howto_classic">A MIFARE Classic needs a key file (.bin or .txt) with the sector keys.</string>
+    <string name="nfc_read_desc">Identify and read the memory.</string>
+    <string name="nfc_write_title">Restore tag</string>
+    <string name="nfc_write_desc">Write a saved dump.</string>
     <string name="nfc_restore_action">Write to NFC</string>
     <string name="nfc_pick_dump">Restore</string>
     <string name="nfc_dump_action">Dump</string>
@@ -419,10 +414,7 @@
     <string name="nfc_precheck_block_b">sector %1$d block %2$d (Key B needed)</string>
     <string name="nfc_error_password">The tag rejected the password. Enter it in the options and retry.</string>
     <string name="nfc_error_tag_lost">Tag moved away from the phone. Present it again and retry.</string>
-
-    <string name="nfc_identify_title">Identify tag</string>
-    <string name="nfc_identify_desc">Type, UID, memory and contents of the tag, even without keys.</string>
-    <string name="nfc_identify_supporting">Classic · Plus · Ultralight · NTAG · DESFire · Calypso · ISO 15693 · FeliCa · EMV</string>
+    <string name="nfc_error_restore_unsupported">Dump with %1$d pages: restoring from the phone only covers Ultralight/NTAG (MF0UL11, MF0UL21, NTAG21x). Use a Proxmark3 for this tag.</string>
 
     <string name="inspect_title">Identify tag</string>
     <string name="inspect_waiting_title">Hold the tag still</string>
@@ -569,7 +561,6 @@
     <string name="inspect_unavailable_value">—</string>
     <string name="inspect_dump_title">Memory dump</string>
     <string name="inspect_dump_hint">The memory is shown below. The dump is saved only when you ask for it.</string>
-    <string name="inspect_dump_read">Read memory</string>
     <string name="inspect_dump_waiting">Present the tag again: the memory read starts now.</string>
     <string name="inspect_dump_cancel">Cancel</string>
     <string name="inspect_dump_progress">Reading %1$d/%2$d</string>
@@ -591,6 +582,10 @@
     <string name="inspect_dump_incomplete">Incomplete read: %1$d sectors and %2$d blocks unreadable. The dump was not saved.</string>
     <string name="inspect_dump_open_full">Open full read</string>
     <string name="inspect_dump_unavailable">This tag has no linear memory to save.</string>
+    <string name="inspect_dump_note_ultralight">Ultralight EV1: counters are not restored, the restore only copies the pages.</string>
+    <string name="inspect_dump_note_ntag">NTAG: the restore rewrites the data pages; UID and configuration stay unchanged.</string>
+    <string name="inspect_dump_note_classic">MIFARE Classic: sector keys are required; without them the read stays incomplete.</string>
+    <string name="inspect_dump_note_myd">my-d move lean: page 03 (OTP/CC) cannot be rewritten; restoring is only possible with a Proxmark3.</string>
     <string name="inspect_dump_error_lost">Tag moved away: the dump was not saved. Retry.</string>
     <string name="inspect_dump_error_keys">No factory key opened the tag: the dump was not saved. Use the full read to pick a key file.</string>
     <string name="inspect_dump_error_password">The tag needs a password: the dump was not saved. Use the full read to enter it.</string>
@@ -689,6 +684,5 @@
     <string name="apdu_error_tag_lost">Tag lost: present it again.</string>
     <string name="apdu_error_parse">Invalid APDU: at least 4 hexadecimal bytes are required.</string>
     <string name="apdu_error_transceive">Sending failed.</string>
-    <string name="nfc_apdu_desc">Send APDU commands to an ISO-DEP tag and read the answer with its status word.</string>
-    <string name="nfc_apdu_supporting">ISO-DEP · eMRTD · Calypso · SmartMX · custom applets</string>
+    <string name="nfc_apdu_desc">ISO-DEP commands on the tag.</string>
 </resources>
