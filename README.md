@@ -43,7 +43,7 @@ from **Info → Links → Check for updates**. The first install is a manual sid
 | --- | --- |
 | **Device** | USB status, vendor/product IDs, serial and interface diagnostics with copy/share. Sub-tab **PM3 tools**: searchable LF, HF, MIFARE Classic (one-tap autopwn) and Ultralight Ev1 commands, parameter dialogs, recent commands. |
 | **Console** | Free-form command input with history, follow mode, font size, copy/share of the output. Commands run through the in-process client, not a shell. |
-| **NFC** | Five actions: **Read tag**, **Restore tag**, **APDU console**, **Set counter** and **Credit and rides**. Read tag identifies the tag with the phone's reader across the HF families Android exposes — Classic, Plus, Ultralight/NTAG, my-d move lean, DESFire, Calypso/BNEVT, ISO 15693 (ICODE, ST25, EM), FeliCa/ISO 18092, eMRTD passports and national eIDs, SmartMX and generic ISO-DEP applets — and reads its memory in the same field. Shows UID, ATQA/SAK, ATS/ATQB, memory, DESFire applications/files, Calypso ICC/environment/free files, MAD/NDEF (Type 2/3/4/5), sectors with access bits and counters, then offers **Save dump**. Optional key-based reads: DESFire files with an AES key, MIFARE Plus SL3 sectors. Restore tag writes Ultralight/NTAG and MIFARE Classic dumps (the latter with the keys from `hf-mf-<UID>-key.bin`); my-d move lean dumps are saved for the Proxmark3, since page 03 is OTP. Set counter brings an Ultralight EV1 counter to a chosen value; Credit and rides increments or decrements a standard MIFARE Classic value block with a key file. Saves a text report. No Proxmark3 required. |
+| **NFC** | Five actions: **Read tag**, **Restore tag**, **APDU console**, **Set counter** and **Credit**. Read tag identifies the tag with the phone's reader across the HF families Android exposes — Classic, Plus, Ultralight/NTAG, my-d move lean, DESFire, Calypso/BNEVT, ISO 15693 (ICODE, ST25, EM), FeliCa/ISO 18092, eMRTD passports and national eIDs, SmartMX and generic ISO-DEP applets — and reads its memory in the same field. Shows UID, ATQA/SAK, ATS/ATQB, memory, DESFire applications/files, Calypso ICC/environment/free files, MAD/NDEF (Type 2/3/4/5), sectors with access bits and counters, then offers **Save dump**. Optional key-based reads: DESFire files with an AES key, MIFARE Plus SL3 sectors. Restore tag writes Ultralight/NTAG and MIFARE Classic dumps (the latter with the keys from `hf-mf-<UID>-key.bin`); my-d move lean dumps are saved for the Proxmark3, since page 03 is OTP. Set counter brings an Ultralight EV1 counter to a chosen value; Credit increments or decrements a standard MIFARE Classic value block with a key file, including RicaricaMi/En1545 counters. Saves a text report. No Proxmark3 required. |
 | **Data** | Dumps, traces, logs and tag reports; filters, import/export via the Storage Access Framework, share. Built-in hex editor for `.bin` blocks and pages, with decoded access bits and value blocks. |
 | **Info** | Version, build and client commit, theme, settings backup/restore, client-resource reset, in-app updates, licence and links. |
 
@@ -75,18 +75,22 @@ reader. Most tools read only; the two write tools are described below.
   system codes; eMRTD/eID application, EF.CardAccess and PACE/BAC status; SmartMX and
   generic ISO-DEP ATS with the applications found by the AID scan; EMV/NDEF ISO-DEP
   applications. NDEF messages are decoded for Type 2, Type 3, Type 4 and Type 5 tags.
-- **Set counter**: choose counter 1–3 and an absolute target (0–16,777,215), present the
+- **Set counter**: choose counter 0–2 and an absolute target (0–16,777,215), present the
   tag once. The phone uses GET_VERSION, optional PWD_AUTH, READ_CNT, READ_TEARING and
   INCREMENT_CNT, computes the delta from the current value and reads the counter back.
   EV1 counters are one-way: the tool refuses a target below the current value and never
   resets a counter; resetting still needs the Proxmark3.
-- **Credit and rides**: read a MIFARE Classic with a key file (or the factory key when
+- **Credit**: read a MIFARE Classic with a key file (or the factory key when
   none is selected), choose a standard value block and increment or decrement it. The
   first presentation scans the card, the second applies INCREMENT/DECREMENT + TRANSFER
   and verifies the result. The tool lists only standard value blocks; credit stored in
   normal data blocks is left alone. Access conditions are enforced: `000` works with
   either key, `001` is decrement-only and `110` requires Key B. A block whose keys or
-  ACL do not allow the operation is shown read-only or omitted.
+  ACL do not allow the operation is shown read-only or with a warning. The address field
+  is accepted even when it is relative/slot-based instead of the absolute block number,
+  which covers RicaricaMi/En1545 counters (sectors 2–5, blocks 0/1; sector 5 blocks 1/2).
+  RicaricaMi also keeps an En1545 hash: the value block changes, but the tool does not
+  recompute that hash, so a gate may reject the card.
 - **APDU console**: pick an ISO-DEP card, type a command in hexadecimal and read the
   response with the ISO 7816 status word; `61xx` and `6Cxx` are handled automatically.
   It is the manual path for applets the automatic probes do not name.

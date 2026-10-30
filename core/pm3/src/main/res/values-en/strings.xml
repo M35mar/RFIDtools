@@ -689,14 +689,14 @@
     <!-- NFC write tools: EV1 counters and Classic value blocks -->
     <string name="nfc_counter_title">Set counter</string>
     <string name="nfc_counter_desc">Bring an EV1 counter to the chosen value.</string>
-    <string name="nfc_value_title">Credit and rides</string>
-    <string name="nfc_value_desc">Increment or decrement a Classic value block.</string>
+    <string name="nfc_value_title">Credit</string>
+    <string name="nfc_value_desc">Increment or decrement credit in a Classic value block.</string>
 
     <string name="inspect_write_title">Write to tag</string>
     <string name="inspect_write_counter_desc">This tag has Ultralight EV1 counters. You can bring one to the value you choose.</string>
-    <string name="inspect_write_value_desc">This is a MIFARE Classic. You can increment or decrement a value block with the keys read from the tag or from a file.</string>
+    <string name="inspect_write_value_desc">This is a MIFARE Classic. You can increment or decrement credit in a value block with the keys read from the tag or from a file.</string>
     <string name="inspect_write_counter">Set counter</string>
-    <string name="inspect_write_value">Credit and rides</string>
+    <string name="inspect_write_value">Credit</string>
     <string name="inspect_write_note">The tool opens above this screen. After writing, go back and scan the tag again to refresh the values.</string>
 
     <string name="counter_title">EV1 counter</string>
@@ -709,7 +709,8 @@
     <string name="counter_target_help">From 0 to 16,777,215.</string>
     <string name="counter_password">Password (optional)</string>
     <string name="counter_password_hint">e.g. FFFFFFFF</string>
-    <string name="counter_password_help">Eight hex digits. Leave empty when the counter is not protected.</string>
+    <string name="counter_password_help">Eight hex digits. Leave empty when the counter is not protected; if it is, use the FFFFFFFF button.</string>
+    <string name="counter_use_default_password">Use FFFFFFFF</string>
     <string name="counter_start">Present the tag and set</string>
     <string name="counter_waiting_title">Present the tag to the phone</string>
     <string name="counter_waiting_body">Hold the tag still: setting counter %1$d to %2$s.</string>
@@ -733,11 +734,17 @@
     <string name="counter_error_unsupported">This tag is not a MIFARE Ultralight EV1.</string>
     <string name="counter_error_not_supported">This counter is not supported by the tag.</string>
     <string name="counter_error_verify">The tag did not confirm the new counter value.</string>
-    <string name="counter_error_lost">Tag removed: try again.</string>
+    <string name="counter_error_lost">NFC communication interrupted: hold the tag still and try again.</string>
+    <string name="counter_error_io">NFC communication lost or command rejected during %1$s: hold the tag still and try again.</string>
+    <string name="counter_step_version">the version read</string>
+    <string name="counter_step_auth">authentication</string>
+    <string name="counter_step_read">the counter read</string>
+    <string name="counter_step_increment">the increment</string>
+    <string name="counter_step_verify">verification</string>
     <string name="counter_error_write">Write failed: %1$s</string>
 
-    <string name="value_title">Credit and rides</string>
-    <string name="value_desc">Read the tag with a key file, choose a value block and increment or decrement credit or rides. The tag is presented twice: first to read, then to write.</string>
+    <string name="value_title">Credit</string>
+    <string name="value_desc">Read the tag with a key file, choose a value block and increment or decrement credit. The tag is presented twice: first to read, then to write.</string>
     <string name="value_only_standard">Only standard MIFARE value blocks are listed. Credit stored in normal data blocks cannot be changed by this tool.</string>
     <string name="value_keys_help">Choose the tag key file (for example hf-mf-UID-key.bin). Without a file only FFFFFFFFFFFF is tried.</string>
     <string name="value_scan_start">Read tag</string>
@@ -751,6 +758,11 @@
     <string name="value_row_sectors_value">%1$d of %2$d</string>
     <string name="value_row_blocks">Value blocks</string>
     <string name="value_empty">No standard value block found. The credit may be in a normal data block or the key file may not open every sector.</string>
+    <string name="value_empty_ricarica">RicaricaMi detected. No standard value block found: check the sector trailer/ACL or the ticket format.</string>
+    <string name="value_ricarica_title">RicaricaMi</string>
+    <string name="value_ricarica_hint">RicaricaMi counters are in sectors 2–5, blocks 0/1 (sector 5: blocks 1/2). Choose the one with the current ticket value. The tool does not recompute the En1545 hash: the value changes, but the gate may reject the card.</string>
+    <string name="value_address_nonstandard">Address 0x%1$02X in block %2$d: non-standard, but the value is recognized.</string>
+    <string name="value_acl_unknown">Trailer or access bits unreadable: operations unavailable.</string>
     <string name="value_scan_again">Read again</string>
     <string name="value_change_keys">Change key file</string>
     <string name="value_success_title">Operation complete</string>
@@ -771,8 +783,8 @@
     <string name="value_acl_missing_a">Key A required</string>
     <string name="value_decrement">Decrement</string>
     <string name="value_increment">Increment</string>
-    <string name="value_dialog_add_title">Add credit or rides</string>
-    <string name="value_dialog_remove_title">Remove credit or rides</string>
+    <string name="value_dialog_add_title">Add credit</string>
+    <string name="value_dialog_remove_title">Remove credit</string>
     <string name="value_dialog_current">Current value: %1$d</string>
     <string name="value_dialog_amount">Amount</string>
     <string name="value_dialog_after">New value: %1$d</string>
@@ -784,7 +796,7 @@
     <string name="value_error_amount">Enter an amount greater than zero.</string>
     <string name="value_error_permission">The access bits do not allow this operation with the available keys.</string>
     <string name="value_error_range">The new value is invalid: credit cannot go below zero.</string>
-    <string name="value_error_lost">Tag removed: read the tag again and retry.</string>
+    <string name="value_error_lost">NFC communication interrupted: read the tag again and retry.</string>
     <string name="value_error_keys">No readable sector: the correct keys are required.</string>
     <string name="value_error_scan">Read failed: %1$s</string>
     <string name="value_error_uid">The presented tag is different from the one read: read it again and retry.</string>

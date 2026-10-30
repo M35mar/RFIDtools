@@ -196,14 +196,65 @@ class MfcValueToolTest {
     }
 
     @Test
-    fun `wrong address is not a value block of that block number`() {
+    fun `non-standard address is still a value block`() {
         val (capture, _) = card(value = 100, address = 5)
 
-        assertTrue(MfcValueTool.scan(capture).isEmpty())
+        val info = MfcValueTool.scan(capture).single()
+        assertEquals(5, info.address)
+        assertFalse(info.addressMatches)
+        assertTrue(info.canIncrement)
+        assertTrue(info.canDecrement)
     }
 
     @Test
-    fun `unreadable trailer hides the block`() {
+    fun `RicaricaMi style counter with relative address and key B is operable`() {
+        val (capture, data) = card(
+            value = 1,
+            block = 8,
+            address = 0,
+            access = accessFor(0x06),
+            hasKeyA = true,
+            hasKeyB = true,
+        )
+        val info = MfcValueTool.scan(capture).single()
+
+        assertEquals(2, info.sector)
+        assertEquals(8, info.block)
+        assertEquals(1, info.value)
+        assertEquals(0, info.address)
+        assertFalse(info.addressMatches)
+        assertTrue(info.canIncrement)
+        assertEquals(MfcKeyType.B, info.incrementKey)
+
+        val transport = FakeValueClassic(data)
+        val change = MfcValueTool.apply(
+            transport,
+            capture,
+            info,
+            MfcValueOperation.INCREMENT,
+            1,
+        )
+
+        assertEquals(2, change.value)
+        assertFalse(transport.lastKeyA)
+    }
+
+    @Test
+    fun `RicaricaMi AID is detected from blocks 1 and 2`() {
+        val (capture, _) = card(value = 1, ricaricaMi = true)
+
+        assertTrue(MfcValueTool.isRicaricaMi(capture))
+    }
+
+    @Test
+    fun `generic card is not RicaricaMi`() {
+        val (capture, _) = card(value = 1)
+
+        assertFalse(MfcValueTool.isRicaricaMi(capture))
+    }
+
+    @Test
+    fun `unreadable trailer lists the block with operations disabled`() {
         val (capture, _) = card(value = 100)
         val limited = MfcCapture(
             size = capture.size,
@@ -213,7 +264,11 @@ class MfcValueToolTest {
             readableSectors = capture.readableSectors,
         )
 
-        assertTrue(MfcValueTool.scan(limited).isEmpty())
+        val info = MfcValueTool.scan(limited).single()
+        assertFalse(info.trailerReadable)
+        assertFalse(info.aclValid)
+        assertFalse(info.canIncrement)
+        assertFalse(info.canDecrement)
     }
 }
 
@@ -222,10 +277,12 @@ private val KEY_B = byteArrayOf(0xB0.toByte(), 0xB1.toByte(), 0xB2.toByte(), 0xB
 
 private fun card(
     value: Int,
+    block: Int = 4,
     access: ByteArray = accessFor(0x00),
     address: Int = 4,
     hasKeyA: Boolean = true,
     hasKeyB: Boolean = true,
+    ricaricaMi: Boolean = false,
 ): Pair<MfcCapture, ByteArray> {
     val data = ByteArray(MfcSize.CLASSIC_1K.bytes)
     // Four-byte UID plus BCC, so MfcCapture.uid is stable.
@@ -235,6 +292,16 @@ private fun card(
     data[3] = 0xC3.toByte()
     data[4] = (data[0].toInt() xor data[1].toInt() xor data[2].toInt() xor data[3].toInt()).toByte()
 
+    if (ricaricaMi) {
+        // Metrodroid's early check: 0x0221 repeated in blocks 1 and 2.
+        val pattern = ByteArray(MfcGeometry.BLOCK_SIZE) {
+            if (it % 2 == 0) 0x02 else 0x21
+        }
+        pattern.copyInto(data, MfcGeometry.BLOCK_SIZE)
+        pattern.copyInto(data, 2 * MfcGeometry.BLOCK_SIZE)
+    }
+
+    val valueSector = block / 4
     for (sector in 0 until MfcSize.CLASSIC_1K.sectors) {
         val first = MfcGeometry.firstBlockOfSector(sector)
         val count = MfcGeometry.blocksInSector(sector)
@@ -242,11 +309,11 @@ private fun card(
         val base = trailer * MfcGeometry.BLOCK_SIZE
         if (hasKeyA) KEY_A.copyInto(data, base)
         if (hasKeyB) KEY_B.copyInto(data, base + 10)
-        val acl = if (sector == 1) access else accessFor(0x00)
+        val acl = if (sector == valueSector) access else accessFor(0x00)
         acl.copyInto(data, base + 6)
     }
 
-    MfcValueBlock.encode(value, address).copyInto(data, 4 * MfcGeometry.BLOCK_SIZE)
+    MfcValueBlock.encode(value, address).copyInto(data, block * MfcGeometry.BLOCK_SIZE)
     val keyA = List(MfcSize.CLASSIC_1K.sectors) {
         if (hasKeyA) KEY_A.copyOf() else ByteArray(6)
     }

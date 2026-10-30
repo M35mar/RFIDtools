@@ -326,13 +326,25 @@ private fun ValueList(
         InfoRow(stringResource(R.string.value_row_blocks), state.valueBlocks.size.toString())
     }
 
+    if (state.ricaricaMi) {
+        SectionCard(title = stringResource(R.string.value_ricarica_title)) {
+            Text(
+                text = stringResource(R.string.value_ricarica_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+
     state.success?.let { SuccessCard(it) }
     state.error?.let { ValueError(it) }
 
     if (state.valueBlocks.isEmpty()) {
         SectionCard {
             Text(
-                text = stringResource(R.string.value_empty),
+                text = stringResource(
+                    if (state.ricaricaMi) R.string.value_empty_ricarica else R.string.value_empty,
+                ),
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
@@ -438,7 +450,24 @@ private fun ValueBlockCard(
                     )
                 }
             }
-            if (!info.canIncrement && !info.canDecrement) {
+            if (!info.addressMatches) {
+                Text(
+                    text = stringResource(
+                        R.string.value_address_nonstandard,
+                        info.address,
+                        info.block,
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.tertiary,
+                )
+            }
+            if (!info.trailerReadable || !info.aclValid) {
+                Text(
+                    text = stringResource(R.string.value_acl_unknown),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            } else if (!info.canIncrement && !info.canDecrement) {
                 Text(
                     text = stringResource(R.string.value_acl_read_only),
                     style = MaterialTheme.typography.bodySmall,

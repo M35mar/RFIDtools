@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.0.3 – 2026-10-30
+
+### Fixed
+- EV1 counter writes now send the six-byte `INCREMENT_CNT` frame used by
+  the reference Android app and the Proxmark3. The previous five-byte frame
+  was rejected with `TagLostException`, so the UI reported “tag allontanato”
+  even with the tag in place.
+- `READ_TEARING` is best-effort: tags or clones that do not answer it no
+  longer block the increment, and the result carries the tearing-unknown
+  warning instead.
+- Counter labels are **0, 1, 2** everywhere, matching the protocol index.
+- Classic value-block detection now matches the Proxmark3 `mfc_value`
+  check: the address field only has to be internally consistent, not equal
+  to the absolute block number. This exposes RicaricaMi/En1545 counters and
+  other transit cards that use a relative or slot address.
+- Blocks whose trailer was not read, or whose access bits are invalid, are
+  listed with the operations disabled instead of being silently hidden.
+- Added a RicaricaMi hint (counters in sectors 2–5, blocks 0/1, sector 5
+  blocks 1/2) and a warning that the En1545 hash is not recomputed.
+- Clearer NFC errors: the failure now names the phase (version, counter
+  read, increment, verification) instead of always blaming tag movement.
+
+### Changed
+- **Credit and rides** is now called **Credit** in the NFC home, the tag
+  inspector, the tool, the dialogs and the documentation.
+- Added a **Use FFFFFFFF** shortcut for protected EV1 counters.
+
+### Release
+- Version `1.0.3` (`versionCode` 14), built against the pinned Proxmark3
+  submodule.
+
 ## 1.0.2 – 2026-10-30
 
 ### Added

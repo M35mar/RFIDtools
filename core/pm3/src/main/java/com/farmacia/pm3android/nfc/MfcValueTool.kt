@@ -21,8 +21,11 @@ object MfcValueTool {
 
     /**
      * Every readable, standard value block of [capture], in card order.
-     * Sectors whose trailer was not read are skipped: without the ACL there is
-     * no safe way to decide whether a write is allowed.
+     *
+     * The address field is not required to equal the block number: transit
+     * cards such as RicaricaMi store a slot/relative address there. Blocks whose
+     * trailer was not read are still listed, but their ACL is unknown and the UI
+     * disables the operations.
      */
     fun scan(capture: MfcCapture): List<MfcValueBlockInfo> {
         val bytes = capture.toBin()
@@ -33,11 +36,15 @@ object MfcValueTool {
             val first = MfcGeometry.firstBlockOfSector(sector)
             val count = MfcGeometry.blocksInSector(sector)
             val trailer = first + count - 1
-            if (trailer !in capture.readableBlocks) continue
+            val trailerReadable = trailer in capture.readableBlocks
 
-            val trailerBase = trailer * MfcGeometry.BLOCK_SIZE
-            val access = bytes.copyOfRange(trailerBase + 6, trailerBase + 9)
-            if (!MfcAccess.isValid(access)) continue
+            val access = if (trailerReadable) {
+                val trailerBase = trailer * MfcGeometry.BLOCK_SIZE
+                bytes.copyOfRange(trailerBase + 6, trailerBase + 9)
+            } else {
+                null
+            }
+            val aclValid = access != null && MfcAccess.isValid(access)
 
             val hasKeyA = keys?.keyAFor(sector)?.any { it != 0.toByte() } == true
             val hasKeyB = keys?.keyBFor(sector)?.any { it != 0.toByte() } == true
@@ -48,20 +55,54 @@ object MfcValueTool {
                 if (block !in capture.readableBlocks) continue
                 val base = block * MfcGeometry.BLOCK_SIZE
                 val payload = bytes.copyOfRange(base, base + MfcGeometry.BLOCK_SIZE)
-                if (!MfcValueBlock.isValid(payload, block)) continue
+                if (!MfcValueBlock.isConsistent(payload)) continue
                 val offset = block - first
+                val address = MfcValueBlock.address(payload)
                 blocks += MfcValueBlockInfo(
                     sector = sector,
                     block = block,
                     value = MfcValueBlock.value(payload),
-                    increment = MfcAccess.incrementKeyRequirement(access, offset, count),
-                    decrement = MfcAccess.decrementKeyRequirement(access, offset, count),
+                    address = address,
+                    addressMatches = address == (block and 0xFF),
+                    trailerReadable = trailerReadable,
+                    aclValid = aclValid,
+                    increment = if (aclValid) {
+                        MfcAccess.incrementKeyRequirement(access, offset, count)
+                    } else {
+                        MfcKeyRequirement.NONE
+                    },
+                    decrement = if (aclValid) {
+                        MfcAccess.decrementKeyRequirement(access, offset, count)
+                    } else {
+                        MfcKeyRequirement.NONE
+                    },
                     hasKeyA = hasKeyA,
                     hasKeyB = hasKeyB,
                 )
             }
         }
         return blocks
+    }
+
+    /**
+     * RicaricaMi (Milan) is an En1545 card whose ride counters are value blocks
+     * in sectors 2..5. The AID 0x0221 is repeated in the MAD-like blocks 0.1 and
+     * 0.2; this is the same early check Metrodroid uses.
+     */
+    fun isRicaricaMi(capture: MfcCapture): Boolean {
+        val bytes = capture.toBin()
+        for (block in 1..2) {
+            val base = block * MfcGeometry.BLOCK_SIZE
+            val start = if (block == 1) 1 else 0
+            for (index in start..7) {
+                val offset = base + index * 2
+                if (offset + 1 >= bytes.size) return false
+                val value = ((bytes[offset].toInt() and 0xFF) shl 8) or
+                    (bytes[offset + 1].toInt() and 0xFF)
+                if (value != RICARICA_MI_AID) return false
+            }
+        }
+        return true
     }
 
     /**
@@ -101,7 +142,7 @@ object MfcValueTool {
         }
 
         val before = transport.readBlock(info.block)
-        if (!MfcValueBlock.isValid(before, info.block)) {
+        if (!MfcValueBlock.isConsistent(before)) {
             throw MfcValueChangedException(MfcValueBlock.value(before))
         }
         val previous = MfcValueBlock.value(before)
@@ -132,7 +173,7 @@ object MfcValueTool {
         } catch (e: IOException) {
             throw MfcValueVerifyException(expected.toInt(), null)
         }
-        if (!MfcValueBlock.isValid(after, info.block)) {
+        if (!MfcValueBlock.isConsistent(after)) {
             throw MfcValueVerifyException(expected.toInt(), MfcValueBlock.value(after))
         }
         val value = MfcValueBlock.value(after)
@@ -150,4 +191,6 @@ object MfcValueTool {
             keyType = keyType,
         )
     }
+
+    private const val RICARICA_MI_AID = 0x0221
 }

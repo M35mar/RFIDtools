@@ -1,4 +1,4 @@
-// State holder for the MIFARE Classic credit/rides tool.
+// State holder for the MIFARE Classic credit tool.
 //
 // The flow is deliberately two-phase: scan with a key file, choose a value
 // block, then present the tag again so INCREMENT/DECREMENT + TRANSFER happen on
@@ -56,6 +56,7 @@ data class MfcValueState(
     val tagLabel: String = "",
     val sectorsRead: Int = 0,
     val sectorsTotal: Int = 0,
+    val ricaricaMi: Boolean = false,
     val valueBlocks: List<MfcValueBlockInfo> = emptyList(),
     val pendingBlock: MfcValueBlockInfo? = null,
     val pendingOperation: MfcValueOperation? = null,
@@ -144,6 +145,7 @@ class MfcValueViewModel(application: Application) : AndroidViewModel(application
                     keyFileLoading = false,
                     keyFileError = null,
                     uidHex = "",
+                    ricaricaMi = false,
                     valueBlocks = emptyList(),
                     pendingBlock = null,
                     pendingOperation = null,
@@ -178,6 +180,7 @@ class MfcValueViewModel(application: Application) : AndroidViewModel(application
             keyFileLoading = false,
             keyFileError = null,
             uidHex = "",
+            ricaricaMi = false,
             valueBlocks = emptyList(),
             pendingBlock = null,
             pendingOperation = null,
@@ -241,6 +244,7 @@ class MfcValueViewModel(application: Application) : AndroidViewModel(application
             tagLabel = "",
             sectorsRead = 0,
             sectorsTotal = 0,
+            ricaricaMi = false,
             valueBlocks = emptyList(),
             pendingBlock = null,
             pendingOperation = null,
@@ -286,6 +290,7 @@ class MfcValueViewModel(application: Application) : AndroidViewModel(application
             tagLabel = "",
             sectorsRead = 0,
             sectorsTotal = 0,
+            ricaricaMi = false,
             valueBlocks = emptyList(),
             pendingBlock = null,
             pendingOperation = null,
@@ -389,7 +394,9 @@ class MfcValueViewModel(application: Application) : AndroidViewModel(application
                         transport.close()
                     }
                 }
-                val blocks = withContext(Dispatchers.IO) { MfcValueTool.scan(read) }
+                val (blocks, ricaricaMi) = withContext(Dispatchers.IO) {
+                    MfcValueTool.scan(read) to MfcValueTool.isRicaricaMi(read)
+                }
                 if (!stateFlow.value.visible) return@launch
                 capture = read
                 scanUid = tag.id.toHex()
@@ -399,6 +406,7 @@ class MfcValueViewModel(application: Application) : AndroidViewModel(application
                     tagLabel = read.size.label,
                     sectorsRead = read.readableSectors.size,
                     sectorsTotal = read.size.sectors,
+                    ricaricaMi = ricaricaMi,
                     valueBlocks = blocks,
                     error = null,
                     success = null,
@@ -521,6 +529,7 @@ class MfcValueViewModel(application: Application) : AndroidViewModel(application
             tagLabel = "",
             sectorsRead = 0,
             sectorsTotal = 0,
+            ricaricaMi = false,
             valueBlocks = emptyList(),
             pendingBlock = null,
             pendingOperation = null,

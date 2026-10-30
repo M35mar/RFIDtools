@@ -11,7 +11,7 @@
 //   PWD_AUTH      0x1B + 4-byte password
 //   READ_CNT      0x39 + index        -> 3 bytes little endian
 //   READ_TEARING  0x3E + index        -> 0xBD when safe
-//   INCREMENT_CNT 0xA5 + index + 3-byte delta
+//   INCREMENT_CNT 0xA5 + index + 3-byte delta + 0x00 (ignored)
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -32,6 +32,19 @@ data class MfuCounterChange(
     /** The tag did not answer READ_TEARING; the write proceeded with a warning. */
     val tearingUnknown: Boolean = false,
 )
+
+/** Which command was running when the NFC link failed or the tag rejected it. */
+enum class MfuCounterStep {
+    VERSION,
+    AUTH,
+    READ_COUNTER,
+    INCREMENT,
+    VERIFY,
+}
+
+/** The tag did not answer, or the Android stack turned a NAK into TagLostException. */
+class MfuCounterIoException(val step: MfuCounterStep, cause: Throwable) :
+    IOException(cause.message ?: "comunicazione NFC interrotta", cause)
 
 /** The target is below the current value: an EV1 counter can only grow. */
 class MfuCounterTargetException(val current: Int, val target: Int) :
@@ -73,12 +86,12 @@ class MfuCounterTool(private val transport: UltralightTransport) {
         } catch (e: MfuCounterNotSupportedException) {
             throw e
         } catch (e: TagLostException) {
-            throw e
+            throw MfuCounterIoException(MfuCounterStep.READ_COUNTER, e)
         } catch (e: IOException) {
             if (password == null) {
                 throw TagAuthException("il contatore richiede la password")
             }
-            throw TagUnusableException("lettura del contatore non riuscita", e)
+            throw MfuCounterIoException(MfuCounterStep.READ_COUNTER, e)
         }
 
         if (target == previous) {
@@ -101,7 +114,7 @@ class MfuCounterTool(private val transport: UltralightTransport) {
         val actual = try {
             readCounter(index)
         } catch (e: TagLostException) {
-            throw e
+            throw MfuCounterIoException(MfuCounterStep.VERIFY, e)
         } catch (e: IOException) {
             throw MfuCounterVerifyException(target, null)
         }
@@ -125,7 +138,7 @@ class MfuCounterTool(private val transport: UltralightTransport) {
         val response = try {
             transport.transceive(byteArrayOf(CMD_GET_VERSION.toByte()))
         } catch (e: TagLostException) {
-            throw e
+            throw MfuCounterIoException(MfuCounterStep.VERSION, e)
         } catch (e: IOException) {
             throw MfuCounterUnsupportedException("GET_VERSION non risponde: ${e.message}")
         }
@@ -146,7 +159,7 @@ class MfuCounterTool(private val transport: UltralightTransport) {
         val response = transport.transceive(byteArrayOf(CMD_PWD_AUTH.toByte()) + password)
         response.size >= 2
     } catch (e: TagLostException) {
-        throw e
+        throw MfuCounterIoException(MfuCounterStep.AUTH, e)
     } catch (_: IOException) {
         false
     }
@@ -171,24 +184,35 @@ class MfuCounterTool(private val transport: UltralightTransport) {
             byteArrayOf(CMD_READ_TEARING.toByte(), index.toByte()),
         )
         if (response.isEmpty()) null else (response[0].toInt() and 0xFF) == TEARING_OK
-    } catch (e: TagLostException) {
-        throw e
     } catch (_: IOException) {
+        // READ_TEARING is a safety hint, not a prerequisite: some EV1 clones do
+        // not implement it. The increment below will fail if the tag is gone.
         null
     }
 
     private fun increment(index: Int, delta: Int) {
+        // Both the reference Android app and the Proxmark3 send a sixth, ignored
+        // byte. With a five-byte frame the tag/Android stack answers with
+        // TagLostException even when the tag is still on the phone.
         val command = byteArrayOf(
             CMD_INCREMENT_CNT.toByte(),
             index.toByte(),
             (delta and 0xFF).toByte(),
             ((delta ushr 8) and 0xFF).toByte(),
             ((delta ushr 16) and 0xFF).toByte(),
+            0x00,
         )
-        val response = transport.transceive(command)
+        val response = try {
+            transport.transceive(command)
+        } catch (e: IOException) {
+            throw MfuCounterIoException(MfuCounterStep.INCREMENT, e)
+        }
         // An empty answer is what some Android stacks return for a bare ACK.
         if (response.isNotEmpty() && (response[0].toInt() and 0xFF) != ACK) {
-            throw IOException("INCREMENT_CNT rifiutato dal tag")
+            throw MfuCounterIoException(
+                MfuCounterStep.INCREMENT,
+                IOException("INCREMENT_CNT rifiutato dal tag"),
+            )
         }
     }
 

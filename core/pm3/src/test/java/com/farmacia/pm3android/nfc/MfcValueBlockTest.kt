@@ -24,12 +24,23 @@ class MfcValueBlockTest {
     }
 
     @Test
-    fun `address must match the block number in the tool`() {
+    fun `non-standard address is accepted by the value tool`() {
         val block = MfcValueBlock.encode(10, 5)
 
         assertTrue(MfcValueBlock.isConsistent(block))
         assertFalse(MfcValueBlock.isValid(block, 4))
         assertTrue(MfcValueBlock.isValid(block, 5))
+    }
+
+    @Test
+    fun `address and its complement can differ from the block number`() {
+        val block = MfcValueBlock.encode(10, 4)
+        // A RicaricaMi-style address field: the two address copies differ, but
+        // each one is still followed by its own complement.
+        block[14] = 0x07
+        block[15] = 0xF8.toByte()
+
+        assertTrue(MfcValueBlock.isConsistent(block))
     }
 
     @Test
@@ -98,6 +109,10 @@ class MfcValueBlockTest {
             sector = 1,
             block = 4,
             value = 10,
+            address = 4,
+            addressMatches = true,
+            trailerReadable = true,
+            aclValid = true,
             increment = MfcKeyRequirement.ANY,
             decrement = MfcKeyRequirement.ANY,
             hasKeyA = true,
@@ -115,6 +130,10 @@ class MfcValueBlockTest {
         )
         assertFalse(keyBMissing.canIncrement)
         assertEquals(null, keyBMissing.incrementKey)
+
+        val unknownAcl = both.copy(trailerReadable = false, aclValid = false)
+        assertFalse(unknownAcl.canIncrement)
+        assertFalse(unknownAcl.canDecrement)
     }
 }
 

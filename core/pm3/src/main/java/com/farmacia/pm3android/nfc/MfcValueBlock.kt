@@ -38,6 +38,13 @@ data class MfcValueBlockInfo(
     val sector: Int,
     val block: Int,
     val value: Int,
+    /** Address field from bytes 12..15, even when it is not the block number. */
+    val address: Int,
+    val addressMatches: Boolean,
+    /** The sector trailer was actually read. */
+    val trailerReadable: Boolean,
+    /** The trailer access bits passed the complement check. */
+    val aclValid: Boolean,
     val increment: MfcKeyRequirement,
     val decrement: MfcKeyRequirement,
     val hasKeyA: Boolean,
@@ -51,16 +58,20 @@ data class MfcValueBlockInfo(
 
     val canDecrement: Boolean get() = decrementKey != null
 
-    private fun keyFor(requirement: MfcKeyRequirement): MfcKeyType? = when (requirement) {
-        MfcKeyRequirement.ANY -> when {
-            hasKeyA -> MfcKeyType.A
-            hasKeyB -> MfcKeyType.B
-            else -> null
-        }
+    private fun keyFor(requirement: MfcKeyRequirement): MfcKeyType? {
+        // Without a readable trailer there is no safe way to know the ACL.
+        if (!trailerReadable || !aclValid) return null
+        return when (requirement) {
+            MfcKeyRequirement.ANY -> when {
+                hasKeyA -> MfcKeyType.A
+                hasKeyB -> MfcKeyType.B
+                else -> null
+            }
 
-        MfcKeyRequirement.A -> if (hasKeyA) MfcKeyType.A else null
-        MfcKeyRequirement.B -> if (hasKeyB) MfcKeyType.B else null
-        MfcKeyRequirement.NONE -> null
+            MfcKeyRequirement.A -> if (hasKeyA) MfcKeyType.A else null
+            MfcKeyRequirement.B -> if (hasKeyB) MfcKeyType.B else null
+            MfcKeyRequirement.NONE -> null
+        }
     }
 }
 
@@ -111,9 +122,11 @@ object MfcValueBlock {
     }
 
     /**
-     * Value, complement and address fields agree. The block number is only
-     * checked by [isValid]: a value block read as a dump may be shown by the
-     * inspector even when its address byte is unusual.
+     * Value, complement and address fields agree. This mirrors the Proxmark3
+     * `mfc_value` check: the address field only has to be internally
+     * consistent, not equal to the block number. RicaricaMi and several transit
+     * cards use a slot/relative address there, and requiring the absolute block
+     * number hid their counters.
      */
     fun isConsistent(block: ByteArray): Boolean {
         if (block.size < BYTES) return false
@@ -122,13 +135,18 @@ object MfcValueBlock {
             if ((block[4 + index].toInt() and 0xFF) != (value xor 0xFF)) return false
             if ((block[8 + index].toInt() and 0xFF) != value) return false
         }
-        val address = block[12].toInt() and 0xFF
-        return (block[13].toInt() and 0xFF) == (address xor 0xFF) &&
-            (block[14].toInt() and 0xFF) == address &&
-            (block[15].toInt() and 0xFF) == (address xor 0xFF)
+        val first = block[12].toInt() and 0xFF
+        val firstInv = block[13].toInt() and 0xFF
+        val second = block[14].toInt() and 0xFF
+        val secondInv = block[15].toInt() and 0xFF
+        return (first xor firstInv) == 0xFF && (second xor secondInv) == 0xFF
     }
 
-    /** Standard block, and its address field points at [blockNumber]. */
+    /**
+     * Standard block, and its address field points at [blockNumber]. The value
+     * tool deliberately uses [isConsistent] instead: transit cards such as
+     * RicaricaMi store a slot/relative address in the field.
+     */
     fun isValid(block: ByteArray, blockNumber: Int): Boolean =
         isConsistent(block) && address(block) == (blockNumber and 0xFF)
 

@@ -36,6 +36,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -170,7 +171,7 @@ private fun CounterForm(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             for (index in 0..2) {
-                val label = stringResource(R.string.counter_number, index + 1)
+                val label = stringResource(R.string.counter_number, index)
                 if (index == state.counterIndex) {
                     Button(
                         onClick = { viewModel.setCounterIndex(index) },
@@ -204,6 +205,9 @@ private fun CounterForm(
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
             supportingText = { Text(stringResource(R.string.counter_password_help)) },
         )
+        TextButton(onClick = { viewModel.setPassword("FFFFFFFF") }) {
+            Text(stringResource(R.string.counter_use_default_password))
+        }
         if (!nfcAvailable || !nfcEnabled) {
             NfcUnavailableCard(
                 available = nfcAvailable,
@@ -245,7 +249,7 @@ private fun WaitingCard(state: MfuCounterState, viewModel: MfuCounterViewModel) 
             Text(
                 text = stringResource(
                     R.string.counter_waiting_body,
-                    state.counterIndex + 1,
+                    state.counterIndex,
                     state.target,
                 ),
                 style = MaterialTheme.typography.bodyMedium,
@@ -312,9 +316,9 @@ private fun DoneCard(
             )
             Text(
                 text = if (result.written) {
-                    stringResource(R.string.counter_done_body, result.index + 1, result.value)
+                    stringResource(R.string.counter_done_body, result.index, result.value)
                 } else {
-                    stringResource(R.string.counter_done_unchanged, result.index + 1, result.value)
+                    stringResource(R.string.counter_done_unchanged, result.index, result.value)
                 },
                 style = MaterialTheme.typography.bodyMedium,
             )

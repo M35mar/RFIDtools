@@ -173,6 +173,8 @@ class MfuCounterViewModel(application: Application) : AndroidViewModel(applicati
                 throw t
             } catch (t: TagLostException) {
                 fail(R.string.counter_error_lost)
+            } catch (t: MfuCounterIoException) {
+                fail(R.string.counter_error_io, text(stepRes(t.step)))
             } catch (t: TagAuthException) {
                 fail(R.string.counter_error_password)
             } catch (t: MfuCounterTargetException) {
@@ -204,6 +206,14 @@ class MfuCounterViewModel(application: Application) : AndroidViewModel(applicati
 
     private fun errorText(t: Throwable): String =
         t.message?.takeIf { it.isNotBlank() } ?: t.javaClass.simpleName
+
+    private fun stepRes(step: MfuCounterStep): Int = when (step) {
+        MfuCounterStep.VERSION -> R.string.counter_step_version
+        MfuCounterStep.AUTH -> R.string.counter_step_auth
+        MfuCounterStep.READ_COUNTER -> R.string.counter_step_read
+        MfuCounterStep.INCREMENT -> R.string.counter_step_increment
+        MfuCounterStep.VERIFY -> R.string.counter_step_verify
+    }
 
     /** Four bytes from eight hex digits, or null when the field is malformed. */
     private fun parsePassword(value: String): ByteArray? {

@@ -67,18 +67,8 @@ object DumpRowDetails {
     }
 
     /** MIFARE value block: value, ~value, value again, address and ~address. */
-    fun isValueBlock(bytes: ByteArray): Boolean {
-        if (bytes.size != MfcGeometry.BLOCK_SIZE) return false
-        for (offset in 0 until 4) {
-            val value = bytes[offset].toInt() and 0xFF
-            if ((bytes[4 + offset].toInt() and 0xFF) != (value xor 0xFF)) return false
-            if ((bytes[8 + offset].toInt() and 0xFF) != value) return false
-        }
-        val address = bytes[12].toInt() and 0xFF
-        return (bytes[13].toInt() and 0xFF) == (address xor 0xFF) &&
-            (bytes[14].toInt() and 0xFF) == address &&
-            (bytes[15].toInt() and 0xFF) == (address xor 0xFF)
-    }
+    fun isValueBlock(bytes: ByteArray): Boolean =
+        bytes.size == MfcGeometry.BLOCK_SIZE && MfcValueBlock.isConsistent(bytes)
 
     private fun classic(index: Int, bytes: ByteArray): List<String> {
         if (bytes.size != MfcGeometry.BLOCK_SIZE) return emptyList()

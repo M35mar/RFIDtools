@@ -26,6 +26,7 @@ class MfuCounterTest {
         assertEquals(10, change.previous)
         assertEquals(1337, change.value)
         assertTrue(change.written)
+        assertEquals(6, tag.lastIncrementCommandSize)
         assertTrue(change.tagLabel.contains("Ultralight EV1"))
     }
 
@@ -94,6 +95,35 @@ class MfuCounterTest {
         assertTrue(change.written)
         assertTrue(change.tearingUnknown)
         assertEquals(20, tag.counters[0])
+    }
+
+    @Test
+    fun `tearing command failure is non blocking`() {
+        val tag = FakeCounterTag(
+            counters = mutableListOf(10, 0, 0),
+            tearingFailure = true,
+        )
+
+        val change = MfuCounterTool(tag).setCounter(0, 20, null)
+
+        assertTrue(change.written)
+        assertTrue(change.tearingUnknown)
+        assertEquals(20, tag.counters[0])
+    }
+
+    @Test
+    fun `rejected increment reports the increment step`() {
+        val tag = FakeCounterTag(
+            counters = mutableListOf(10, 0, 0),
+            rejectIncrement = true,
+        )
+
+        try {
+            MfuCounterTool(tag).setCounter(0, 20, null)
+            fail("expected MfuCounterIoException")
+        } catch (e: MfuCounterIoException) {
+            assertEquals(MfuCounterStep.INCREMENT, e.step)
+        }
     }
 
     @Test
@@ -178,10 +208,13 @@ private class FakeCounterTag(
     private val tearing: Byte? = 0xBD.toByte(),
     private val acceptIncrement: Boolean = true,
     private val requireAuth: Boolean = false,
+    private val tearingFailure: Boolean = false,
+    private val rejectIncrement: Boolean = false,
 ) : UltralightTransport {
 
     var increments = 0
     var lastDelta = 0
+    var lastIncrementCommandSize = 0
     var authCount = 0
     private var authenticated = false
 
@@ -212,10 +245,19 @@ private class FakeCounterTag(
                 )
             }
 
-            0x3E -> if (tearing == null) byteArrayOf() else byteArrayOf(tearing)
+            0x3E -> when {
+                tearingFailure -> throw IOException("READ_TEARING non supportato")
+                tearing == null -> byteArrayOf()
+                else -> byteArrayOf(tearing)
+            }
 
             0xA5 -> {
+                if (command.size != 6) {
+                    throw IOException("INCREMENT_CNT frame di ${command.size} byte")
+                }
+                lastIncrementCommandSize = command.size
                 if (requireAuth && !authenticated) throw IOException("autenticazione richiesta")
+                if (rejectIncrement) throw IOException("INCREMENT_CNT rifiutato")
                 increments++
                 if (!acceptIncrement) return byteArrayOf(0x0A)
                 val index = command[1].toInt() and 0xFF
