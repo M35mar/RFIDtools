@@ -2,7 +2,8 @@
 
 The script is executed with ``__name__ == "__main__"`` so the usual
 ``if __name__ == "__main__":`` entry points work. Standard output and standard
-error are captured and returned to Kotlin, which appends them to the console.
+error are forwarded to the console while the script runs; when no sink is
+supplied they are captured and returned to Kotlin.
 """
 
 import io
@@ -12,6 +13,25 @@ import shlex
 import sys
 import traceback
 from contextlib import redirect_stderr, redirect_stdout
+
+
+class _StreamWriter(io.TextIOBase):
+    """Forwards every write to the Kotlin console sink."""
+
+    def __init__(self, sink):
+        self._sink = sink
+
+    def write(self, text):
+        if text:
+            self._sink.write(text)
+        return len(text)
+
+    def writelines(self, lines):
+        for line in lines:
+            self.write(line)
+
+    def flush(self):
+        pass
 
 
 def _split_arguments(arguments):
@@ -24,7 +44,11 @@ def _split_arguments(arguments):
         return arguments.split()
 
 
-def run_script(path, arguments):
+def _stopped(error):
+    return "stopped by user" in str(error)
+
+
+def run_script(path, arguments, sink=None):
     script_dir = os.path.dirname(os.path.abspath(path))
     if script_dir and script_dir not in sys.path:
         # Keep the app-level pm3 shim ahead of any same-named file shipped by
@@ -33,7 +57,8 @@ def run_script(path, arguments):
 
     old_argv = sys.argv
     sys.argv = [path] + _split_arguments(arguments)
-    output = io.StringIO()
+    streamed = sink is not None
+    output = _StreamWriter(sink) if streamed else io.StringIO()
     try:
         with redirect_stdout(output), redirect_stderr(output):
             runpy.run_path(path, run_name="__main__")
@@ -43,9 +68,17 @@ def run_script(path, arguments):
         # non-zero status.
         if exit_error.code not in (0, None):
             output.write("script exited with status %s\n" % exit_error.code)
-    except BaseException:
-        output.write(traceback.format_exc())
+    except BaseException as error:
+        if _stopped(error):
+            # The writer raises while a stop is pending, so report it through
+            # the bypass path instead of writing to the stream again.
+            if streamed:
+                sink.emitNow("stopped by user\n")
+            else:
+                output.write("stopped by user\n")
+        else:
+            output.write(traceback.format_exc())
     finally:
         sys.argv = old_argv
 
-    return output.getvalue()
+    return "" if streamed else output.getvalue()

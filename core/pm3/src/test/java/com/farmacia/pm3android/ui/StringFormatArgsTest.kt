@@ -148,7 +148,7 @@ class StringFormatArgsTest {
     @Test
     fun `translations keep the same placeholders as the default locale`() {
         val default = specsByName(File(moduleDir, "src/main/res/values/strings.xml"))
-        val translated = specsByName(File(moduleDir, "src/main/res/values-en/strings.xml"))
+        val translated = specsByName(File(moduleDir, "src/main/res/values-it/strings.xml"))
         assertEquals(
             "locale key sets differ",
             default.keys.sorted(),
@@ -156,7 +156,7 @@ class StringFormatArgsTest {
         )
         val problems = default.mapNotNull { (name, specs) ->
             val other = translated.getValue(name)
-            if (specs != other) "$name: default $specs, en $other" else null
+            if (specs != other) "$name: default $specs, it $other" else null
         }
         if (problems.isNotEmpty()) fail(problems.joinToString("\n"))
     }

@@ -1,5 +1,41 @@
 # Changelog
 
+## 1.1.1 – 2026-10-31
+
+### Highlights
+- Console output now appears while commands and scripts are still running.
+- A running script or command can be stopped with the Stop button or the
+  keyboard Send action.
+- The empty gap above the keyboard in the Console is gone.
+
+### Added
+- Live streaming of console output for native commands, Lua scripts and
+  Python scripts.
+- Cooperative Stop in the Console: while busy, the Send button becomes Stop.
+  Long commands poll an interrupt flag, Lua scripts use a debug hook, and
+  Python scripts check for a stop between statements.
+
+### Fixed
+- Double bottom inset in the Console: `imePadding()` no longer adds the IME
+  height that the navigation bar already reserves.
+- Lua `core.console(cmd, true)` capture is no longer emptied by the streaming
+  drain; grabber access is serialised with a mutex.
+- Multibyte UTF-8 characters split across two stream drains are no longer
+  dropped.
+
+### Changed
+- English is now the default resource language: devices set to a language the
+  app does not ship (Arabic, Russian, ...) fall back to English instead of
+  Italian. Italian stays available in `values-it/`.
+- The Console input stays editable while a command runs, so the IME Send
+  action can request a stop.
+- Proxmark3 client sources are patched at build time from
+  `patches/pm3-console.patch`.
+
+### Release
+- Version `1.1.1` (`versionCode` 16), built against the pinned Proxmark3
+  submodule.
+
 ## 1.1.0 – 2026-10-31
 
 ### Highlights

@@ -1,0 +1,239 @@
+diff --git a/client/src/cmdscript.c b/client/src/cmdscript.c
+index 49ea6d435..1ce4ee841 100644
+--- a/client/src/cmdscript.c
++++ b/client/src/cmdscript.c
+@@ -47,6 +47,15 @@
+ extern int luaopen_pm3(lua_State *L);
+ #endif
+ 
++// Stops a running Lua script at the next instruction batch when the host
++// requests it. g_user_interrupt is reset before the next console command.
++static void lua_interrupt_hook(lua_State *L, lua_Debug *ar) {
++    (void) ar;
++    if (g_user_interrupt) {
++        luaL_error(L, "stopped by user");
++    }
++}
++
+ #ifdef HAVE_PYTHON
+ #ifdef HAVE_PYTHON_SWIG
+ extern PyObject *PyInit__pm3(void);
+@@ -401,6 +410,7 @@ static int CmdScriptRun(const char *Cmd) {
+ #ifdef HAVE_LUA_SWIG
+         luaL_requiref(lua_state, "pm3", luaopen_pm3, 1);
+ #endif
++        lua_sethook(lua_state, lua_interrupt_hook, LUA_MASKCOUNT, 2000);
+         error = luaL_loadfile(lua_state, script_path);
+         free(script_path);
+         if (!error) {
+diff --git a/client/src/scripting.c b/client/src/scripting.c
+index 8c8acfd2f..ce76c3a28 100644
+--- a/client/src/scripting.c
++++ b/client/src/scripting.c
+@@ -436,7 +436,7 @@ static int l_CmdConsole(lua_State *L) {
+     if (capture) {
+         g_printAndLog |= PRINTANDLOG_GRAB;
+         // anything left in the grabber belongs to an earlier call
+-        g_grabbed_output.idx = 0;
++        grabber_capture_begin();
+     }
+ 
+     if (quiet) {
+@@ -451,15 +451,9 @@ static int l_CmdConsole(lua_State *L) {
+         return 0;
+     }
+ 
+-    if (g_grabbed_output.ptr == NULL) {
+-        lua_pushstring(L, "");
+-        return 1;
+-    }
+-
+-    g_grabbed_output.ptr[g_grabbed_output.idx] = 0;
+-    lua_pushstring(L, g_grabbed_output.ptr);
+-
+-    g_grabbed_output.idx = 0;
++    char *captured = grabber_capture_end();
++    lua_pushstring(L, captured != NULL ? captured : "");
++    free(captured);
+     return 1;
+ }
+ 
+diff --git a/client/src/ui.c b/client/src/ui.c
+index 265fbd598..563924427 100644
+--- a/client/src/ui.c
++++ b/client/src/ui.c
+@@ -61,6 +61,17 @@ bool g_GridLocked = false;
+ 
+ pthread_mutex_t g_print_lock = PTHREAD_MUTEX_INITIALIZER;
+ 
++// Set by the host to interrupt the command in progress (console Stop).
++volatile bool g_user_interrupt = false;
++
++// Serialises the grabbed-output buffer: the host may drain it while a command
++// is still appending output from its own thread.
++static pthread_mutex_t g_grabber_lock = PTHREAD_MUTEX_INITIALIZER;
++
++// Set while a script captures a command's output; the streaming drain must
++// leave that output for the script.
++static bool g_grabber_capture = false;
++
+ static void fPrintAndLog(FILE *stream, const char *fmt, ...);
+ 
+ #ifdef _WIN32
+@@ -172,17 +183,21 @@ int searchHomeFilePath(char **foundpath, const char *subdir, const char *filenam
+ }
+ 
+ void free_grabber(void) {
++    pthread_mutex_lock(&g_grabber_lock);
+     free(g_grabbed_output.ptr);
+     g_grabbed_output.ptr = NULL;
+     g_grabbed_output.size = 0;
+     g_grabbed_output.idx = 0;
++    pthread_mutex_unlock(&g_grabber_lock);
+ }
+ 
+ static void fill_grabber(const char *string) {
++    pthread_mutex_lock(&g_grabber_lock);
+     if (g_grabbed_output.ptr == NULL || g_grabbed_output.size - g_grabbed_output.idx < MAX_PRINT_BUFFER) {
+         char *tmp = realloc(g_grabbed_output.ptr, g_grabbed_output.size + MAX_PRINT_BUFFER);
+         if (tmp == NULL) {
+             // We leave current g_grabbed_output untouched
++            pthread_mutex_unlock(&g_grabber_lock);
+             PrintAndLogEx(WARNING, "Failed to allocate memory");
+             return;
+         }
+@@ -193,10 +208,102 @@ static void fill_grabber(const char *string) {
+     int len = snprintf(g_grabbed_output.ptr + g_grabbed_output.idx, MAX_PRINT_BUFFER, "%s", string);
+     if (len < 0 || len > MAX_PRINT_BUFFER) {
+         // We leave current g_grabbed_output_len untouched
++        pthread_mutex_unlock(&g_grabber_lock);
+         PrintAndLogEx(ERR, "snprintf error in fill_grabber()");
+         return;
+     }
+     g_grabbed_output.idx += len;
++    pthread_mutex_unlock(&g_grabber_lock);
++}
++
++// Copy out the grabbed output and clear what was copied. Safe to call while a
++// command is running: the caller owns (and must free) the returned string.
++// With hold_incomplete_utf8, a multibyte sequence split across two drains is
++// left in the buffer for the next call instead of being cut in half.
++static char *grabber_take(bool hold_incomplete_utf8) {
++    pthread_mutex_lock(&g_grabber_lock);
++    if (hold_incomplete_utf8 && g_grabber_capture) {
++        pthread_mutex_unlock(&g_grabber_lock);
++        return NULL;
++    }
++    char *copy = NULL;
++    size_t len = g_grabbed_output.idx;
++    if (g_grabbed_output.ptr != NULL && len > 0) {
++        size_t cut = len;
++        if (hold_incomplete_utf8) {
++            size_t i = len;
++            size_t continuation = 0;
++            while (i > 0 && continuation < 3) {
++                unsigned char c = (unsigned char) g_grabbed_output.ptr[i - 1];
++                if ((c & 0xC0) != 0x80) {
++                    size_t need = 1;
++                    if ((c & 0xE0) == 0xC0) {
++                        need = 2;
++                    } else if ((c & 0xF0) == 0xE0) {
++                        need = 3;
++                    } else if ((c & 0xF8) == 0xF0) {
++                        need = 4;
++                    }
++                    if (i - 1 + need > len) {
++                        cut = i - 1;
++                    }
++                    break;
++                }
++                i--;
++                continuation++;
++            }
++        }
++        if (cut > 0) {
++            copy = malloc(cut + 1);
++            if (copy != NULL) {
++                memcpy(copy, g_grabbed_output.ptr, cut);
++                copy[cut] = '\0';
++                if (cut < len) {
++                    memmove(g_grabbed_output.ptr, g_grabbed_output.ptr + cut, len - cut);
++                }
++                g_grabbed_output.idx = len - cut;
++            }
++        }
++    }
++    pthread_mutex_unlock(&g_grabber_lock);
++    return copy;
++}
++
++// Complete, still valid UTF-8 only: used by the streaming poller.
++char *grabber_take_copy(void) {
++    return grabber_take(true);
++}
++
++// Everything, including a trailing partial character: used at command end.
++char *grabber_take_all(void) {
++    return grabber_take(false);
++}
++
++// A script is about to capture a nested command's output: start from empty and
++// keep the streaming drain out of the way until grabber_capture_end().
++void grabber_capture_begin(void) {
++    pthread_mutex_lock(&g_grabber_lock);
++    g_grabber_capture = true;
++    g_grabbed_output.idx = 0;
++    pthread_mutex_unlock(&g_grabber_lock);
++}
++
++// Hands the captured text to the caller (free it with free()). The buffer is
++// cleared, since the script owns the copy.
++char *grabber_capture_end(void) {
++    pthread_mutex_lock(&g_grabber_lock);
++    char *copy = NULL;
++    if (g_grabbed_output.ptr != NULL) {
++        copy = malloc(g_grabbed_output.idx + 1);
++        if (copy != NULL) {
++            memcpy(copy, g_grabbed_output.ptr, g_grabbed_output.idx);
++            copy[g_grabbed_output.idx] = '\0';
++        }
++    }
++    g_grabbed_output.idx = 0;
++    g_grabber_capture = false;
++    pthread_mutex_unlock(&g_grabber_lock);
++    return copy;
+ }
+ 
+ void PrintAndLogOptions(const char *str[][2], size_t size, size_t space) {
+diff --git a/client/src/ui.h b/client/src/ui.h
+index 0c8298ecd..06af2c82d 100644
+--- a/client/src/ui.h
++++ b/client/src/ui.h
+@@ -87,6 +87,13 @@ void memcpy_filter_ansi(void *dest, const void *src, size_t n, bool filter);
+ void memcpy_filter_rlmarkers(void *dest, const void *src, size_t n);
+ void memcpy_filter_emoji(void *dest, const void *src, size_t n, emojiMode_t mode);
+ void free_grabber(void);
++char *grabber_take_copy(void);
++char *grabber_take_all(void);
++void grabber_capture_begin(void);
++char *grabber_capture_end(void);
++
++// Host-side interrupt flag: long loops and the Lua script hook poll it.
++extern volatile bool g_user_interrupt;
+ 
+ int searchHomeFilePath(char **foundpath, const char *subdir, const char *filename, bool create_home);
+ 
+diff --git a/client/src/util.c b/client/src/util.c
+index e8fb7c5eb..ad6a640a1 100644
+--- a/client/src/util.c
++++ b/client/src/util.c
+@@ -59,6 +59,9 @@ int g_numCPUs = 0;
+ #include <fcntl.h>
+ 
+ int kbd_enter_pressed(void) {
++    if (g_user_interrupt) {
++        return 1;
++    }
+     int flags;
+     if ((flags = fcntl(STDIN_FILENO, F_GETFL, 0)) < 0) {
+         PrintAndLogEx(ERR, "fcntl failed in kbd_enter_pressed");

@@ -154,6 +154,23 @@ set_property(TARGET pm3rrg_rdv4_linenoise PROPERTY POSITION_INDEPENDENT_CODE ON)
 EOF
 fi
 
+# Android JNI needs to drain the grabbed output while a command is still
+# running, and to stop a running Lua script. The diff lives in patches/ and is
+# idempotent so local builds and CI (fresh submodule checkout) stay aligned.
+CONSOLE_PATCH="$(cd "$(dirname "$0")/.." && pwd)/patches/pm3-console.patch"
+if [ -f "$CONSOLE_PATCH" ]; then
+    if grep -q "grabber_take_copy" "$PM3_ROOT/client/src/ui.c"; then
+        echo ">> console streaming/stop patch already applied"
+    elif git -C "$PM3_ROOT" apply --ignore-whitespace "$CONSOLE_PATCH" 2>/dev/null; then
+        echo ">> console streaming/stop patch applied"
+    elif command -v patch >/dev/null 2>&1 && (cd "$PM3_ROOT" && patch -p1 --forward < "$CONSOLE_PATCH" >/dev/null 2>&1); then
+        echo ">> console streaming/stop patch applied (patch)"
+    else
+        echo "console streaming/stop patch did not apply" >&2
+        exit 1
+    fi
+fi
+
 # Ninja hands custom commands to cmd.exe on Windows, where the upstream
 # `mkdir -p` in the bzip2/lz4 configure steps is a syntax error. Use CMake's
 # portable equivalent and read the archive from stdin (`-f -`): bsdtar, the

@@ -151,6 +151,10 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
     var execJob: Job? = null
         private set
 
+    // Streamed output arrives in arbitrary chunks: complete lines are flushed
+    // to the log while the tail waits for the next chunk or the command end.
+    private val streamBuffer = ConsoleLineBuffer()
+
     private val usbReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
@@ -486,10 +490,12 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
         addHistory(command)
         return submitWork {
             try {
-                appendQuietly(client.exec(command))
+                val output = client.exec(command) { chunk -> appendChunk(chunk) }
+                appendChunk(output, flush = true)
             } catch (t: CancellationException) {
                 throw t
             } catch (t: Throwable) {
+                appendChunk("", flush = true)
                 appendQuietly(
                     getApplication<Application>().getString(
                         R.string.console_error,
@@ -500,7 +506,20 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Asks the running command or script to stop. Cooperative: the client ends
+     * the command at its next cancellation point, so the UI stays busy until
+     * the native call returns.
+     */
+    fun stopCurrent(): Boolean {
+        if (!busyFlow.value) return false
+        appendLine(getApplication<Application>().getString(R.string.console_stopping))
+        client.requestStop()
+        return true
+    }
+
     fun clearConsole() {
+        streamBuffer.clear()
         linesFlow.value = emptyList()
     }
 
@@ -678,9 +697,11 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
                         script.name,
                     )
                     val executable = if (mirror.isFile) mirror else script.file
-                    Pm3PythonRunner.run(app, executable, arguments)
+                    Pm3PythonRunner.run(app, executable, arguments) { chunk ->
+                        appendChunk(chunk)
+                    }
                 }
-                appendQuietly(output)
+                appendChunk(output, flush = true)
             } catch (t: CancellationException) {
                 throw t
             } catch (t: Throwable) {
@@ -1084,5 +1105,12 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
         if (toAdd.any { it.isNotEmpty() }) {
             linesFlow.value = (linesFlow.value + toAdd).takeLast(MAX_CONSOLE_LINES)
         }
+    }
+
+    /** Adds the complete lines carried by a streamed chunk. */
+    private fun appendChunk(text: String, flush: Boolean = false) {
+        val lines = streamBuffer.append(text, flush)
+        if (lines.isEmpty()) return
+        linesFlow.value = (linesFlow.value + lines).takeLast(MAX_CONSOLE_LINES)
     }
 }

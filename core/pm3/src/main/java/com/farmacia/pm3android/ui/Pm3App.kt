@@ -10,6 +10,7 @@ import android.app.Activity
 import androidx.annotation.StringRes
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Spacer
@@ -267,7 +268,14 @@ fun Pm3App(
                     snackbarHost = { SnackbarHost(snackbarHostState) },
                 ) { padding ->
                     // All tabs share the same ViewModel instance and state.
-                    Box(modifier = Modifier.padding(padding)) {
+                    // Consume the Scaffold insets: a tab that adds imePadding()
+                    // must only pad for the keyboard area the bottom bar does
+                    // not already reserve.
+                    Box(
+                        modifier = Modifier
+                            .padding(padding)
+                            .consumeWindowInsets(padding),
+                    ) {
                         TABS[selected].content(
                             viewModel,
                             restoreViewModel,

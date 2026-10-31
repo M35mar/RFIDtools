@@ -16,8 +16,13 @@ import android.hardware.usb.UsbDevice
 import com.farmacia.pm3android.R
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -42,6 +47,7 @@ class Pm3Client(context: Context) {
         private const val SOCKET_NAME = "pm3.android"
         private const val PORT = "socket:$SOCKET_NAME"
         private const val USB_PERMISSION_TIMEOUT_MS = 60_000L
+        private const val STREAM_POLL_MS = 90L
     }
 
     private val applicationContext = context.applicationContext
@@ -228,12 +234,40 @@ class Pm3Client(context: Context) {
     }
 
     /**
-     * Runs one console command and returns everything it printed. Blocks for
-     * as long as the command runs; keep off the main thread and serialise
-     * calls at the UI layer (the client accepts one command at a time).
+     * Runs one console command and returns the output not delivered through
+     * [onChunk]. When [onChunk] is set, a poller drains the native capture
+     * buffer every [STREAM_POLL_MS] so the console updates while the command
+     * is still running. Keep off the main thread and serialise calls at the UI
+     * layer (the client accepts one command at a time).
      */
-    suspend fun exec(cmd: String): String = withContext(Dispatchers.IO) {
-        Pm3Native.nativeExec(cmd)
+    suspend fun exec(cmd: String, onChunk: ((String) -> Unit)? = null): String {
+        Pm3Native.stopRequested = false
+        if (onChunk == null) {
+            return withContext(Dispatchers.IO) { Pm3Native.nativeExec(cmd) }
+        }
+        return withContext(Dispatchers.IO) {
+            coroutineScope {
+                val poller = launch {
+                    while (isActive) {
+                        val chunk = Pm3Native.nativeGrab()
+                        if (chunk.isNotEmpty()) onChunk(chunk)
+                        delay(STREAM_POLL_MS)
+                    }
+                }
+                try {
+                    Pm3Native.nativeExec(cmd)
+                } finally {
+                    // The tail of the output is returned by nativeExec itself.
+                    poller.cancelAndJoin()
+                }
+            }
+        }
+    }
+
+    /** Asks the command in progress to stop; it completes on its own. */
+    fun requestStop() {
+        Pm3Native.stopRequested = true
+        Pm3Native.nativeAbort()
     }
 
     private suspend fun openUsbPort(): Pm3Port {

@@ -31,4 +31,20 @@ object Pm3Native {
      * thread; calls are serialised on the native side.
      */
     external fun nativeExec(cmd: String): String
+
+    /**
+     * Returns the console output produced since the last call. Safe to call
+     * from another thread while [nativeExec] is still running.
+     */
+    external fun nativeGrab(): String
+
+    /** Asks the command in progress to stop (cooperative, best effort). */
+    external fun nativeAbort()
+
+    /**
+     * True when the user asked to stop. The Python bridge polls this between
+     * script statements; native code uses its own flag.
+     */
+    @Volatile
+    var stopRequested: Boolean = false
 }

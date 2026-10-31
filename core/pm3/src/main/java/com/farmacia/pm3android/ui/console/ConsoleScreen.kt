@@ -9,11 +9,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -26,8 +28,10 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -201,7 +205,9 @@ fun ConsoleScreen(viewModel: Pm3ViewModel) {
                     value = commandInput,
                     onValueChange = { commandInput = it },
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = connectionState == Pm3ConnectionState.CONNECTED && !busy,
+                    // Typing stays possible while the PM3 is busy so the IME
+                    // Send action can also request a stop.
+                    enabled = connectionState == Pm3ConnectionState.CONNECTED,
                     placeholder = { Text(stringResource(R.string.console_placeholder)) },
                     singleLine = true,
                     trailingIcon = {
@@ -221,8 +227,9 @@ fun ConsoleScreen(viewModel: Pm3ViewModel) {
                     ),
                     keyboardActions = KeyboardActions(
                         onSend = {
-                            if (viewModel.runCommand(commandInput)) {
-                                commandInput = ""
+                            when {
+                                busy -> viewModel.stopCurrent()
+                                viewModel.runCommand(commandInput) -> commandInput = ""
                             }
                         },
                     ),
@@ -256,16 +263,31 @@ fun ConsoleScreen(viewModel: Pm3ViewModel) {
                     }
                 }
             }
-            Button(
-                onClick = {
-                    if (viewModel.runCommand(commandInput)) {
-                        commandInput = ""
-                    }
-                },
-                enabled = connectionState == Pm3ConnectionState.CONNECTED &&
-                    !busy && commandInput.isNotBlank(),
-            ) {
-                Text(stringResource(R.string.console_send))
+            if (busy) {
+                Button(
+                    onClick = { viewModel.stopCurrent() },
+                    enabled = connectionState == Pm3ConnectionState.CONNECTED,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
+                    ),
+                ) {
+                    Icon(Icons.Filled.Stop, contentDescription = null)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(stringResource(R.string.console_stop))
+                }
+            } else {
+                Button(
+                    onClick = {
+                        if (viewModel.runCommand(commandInput)) {
+                            commandInput = ""
+                        }
+                    },
+                    enabled = connectionState == Pm3ConnectionState.CONNECTED &&
+                        commandInput.isNotBlank(),
+                ) {
+                    Text(stringResource(R.string.console_send))
+                }
             }
         }
 

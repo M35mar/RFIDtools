@@ -105,6 +105,7 @@ val buildPm3Native = tasks.register<Exec>("buildPm3Native") {
     inputs.files(
         rootProject.file("scripts/build-native.sh"),
         rootProject.file("scripts/prepare-pm3.sh"),
+        rootProject.file("patches/pm3-console.patch"),
         project.file("src/main/lua-extra"),
     )
     outputs.file(project.file("src/main/jniLibs/arm64-v8a/libpm3android.so"))
@@ -119,8 +120,8 @@ android {
         applicationId = "com.farmacia.pm3android"
         minSdk = 26
         targetSdk = 37
-        versionCode = 15
-        versionName = "1.1.0"
+        versionCode = 16
+        versionName = "1.1.1"
 
         ndk {
             // The only device flavour this project targets.

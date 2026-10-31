@@ -20,6 +20,11 @@ object Pm3PythonBridge {
     @Suppress("UNUSED_PARAMETER")
     fun console(command: String, capture: Boolean, quiet: Boolean): String {
         check(Pm3Native.nativeIsOpen()) { "PM3 is not connected" }
-        return Pm3Native.nativeExec(command)
+        // Cooperative stop: Python scripts call back here for every PM3
+        // command, so a pending stop unwinds the script at the next one.
+        check(!Pm3Native.stopRequested) { "stopped by user" }
+        val output = Pm3Native.nativeExec(command)
+        check(!Pm3Native.stopRequested) { "stopped by user" }
+        return output
     }
 }
