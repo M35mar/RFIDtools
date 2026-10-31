@@ -138,11 +138,11 @@ jobs:
           fi
 
           {
-            printf '## Novità in %s\n\n' "${VERSION}"
+            printf '## What'"'"'s new in %s\n\n' "${VERSION}"
             printf '%s\n\n' "${HIGHLIGHTS}"
-            printf '[Changelog completo](https://github.com/%s/blob/main/CHANGELOG.md) · [Download APK](https://github.com/%s/releases/download/%s/pm3-release.apk)\n' \
+            printf '[Full changelog](https://github.com/%s/blob/main/CHANGELOG.md) · [Download APK](https://github.com/%s/releases/download/%s/pm3-release.apk)\n' \
               "${GITHUB_REPOSITORY}" "${GITHUB_REPOSITORY}" "${TAG}"
-            printf 'Firmato · si installa sopra le versioni precedenti.\n'
+            printf 'Signed · installs over previous releases.\n'
           } > "$NOTES"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release edit "$TAG" \
