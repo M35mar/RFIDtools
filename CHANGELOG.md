@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.1.0 – 2026-10-31
 
 ### Added
 - Bluetooth transports for the in-process Proxmark3 client, selected from the
@@ -36,6 +36,10 @@
 - Launcher icon replaced with the new `RFIDtools` artwork (tighter crop,
   black adaptive background, legacy PNG fallbacks for every density).
 - **Buy me a coffee** button with the PayPal icon added to Info → Links.
+
+### Release
+- Version `1.1.0` (`versionCode` 15), built against the pinned Proxmark3
+  submodule.
 
 ## 1.0.3 – 2026-10-30
 

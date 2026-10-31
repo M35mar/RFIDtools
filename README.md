@@ -244,9 +244,10 @@ never update an installed release. CI signs tagged builds with these secrets:
 ```
 
 Every push and pull request runs tests, lint and the debug build. Pushing a tag such as
-`0.7.0` additionally checks that the tag equals `versionName`, builds a signed release and
-publishes a GitHub release with only `pm3-release.apk` attached. Bump `versionCode` and
-`versionName` together in `core/pm3/build.gradle.kts` before tagging.
+`0.7.0` (or `v0.7.0`) additionally checks that the tag equals `versionName`, ignoring a
+leading `v`, builds a signed release and publishes a GitHub release with only
+`pm3-release.apk` attached. Bump `versionCode` and `versionName` together in
+`core/pm3/build.gradle.kts` before tagging.
 
 </details>
 

@@ -57,7 +57,8 @@ jobs:
         run: |
           set -euo pipefail
           VERSION_NAME=$(sed -n 's/^[[:space:]]*versionName = "\(.*\)"/\1/p' core/pm3/build.gradle.kts | head -n1)
-          if [ "${GITHUB_REF_NAME}" != "${VERSION_NAME}" ]; then
+          TAG="${GITHUB_REF_NAME#v}"
+          if [ "${TAG}" != "${VERSION_NAME}" ]; then
             echo "Tag ${GITHUB_REF_NAME} does not match versionName ${VERSION_NAME}." >&2
             exit 1
           fi
