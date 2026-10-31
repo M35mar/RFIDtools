@@ -2,6 +2,10 @@
 
 ## 1.1.0 – 2026-10-31
 
+### Highlights
+- Bluetooth: RDV4 BlueShark (SPP) e Proxmark5 BWM (BLE).
+- Nuovi strumenti NFC.
+
 ### Added
 - Bluetooth transports for the in-process Proxmark3 client, selected from the
   **Device** tab next to USB:

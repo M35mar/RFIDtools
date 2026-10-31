@@ -112,23 +112,38 @@ jobs:
         run: |
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
           APK="core/pm3/build/outputs/apk/release/pm3-release.apk"
           NOTES="$(mktemp)"
-          printf '%s\n' \
-            "Official RFIDtools ${TAG} release." \
-            '' \
-            'The attached APK is signed with the stable release key and can be installed as an in-app update.' \
-            '' \
-            "- Version: \`${TAG}\`" \
-            '- Package: `com.farmacia.pm3android`' \
-            "- Version name: \`${TAG}\`" \
-            '- ABI: `arm64-v8a`' \
-            '- Minimum Android: 8.0 (API 26)' \
-            '- Scripts: Lua, Cmd, Python (experimental)' \
-            '' \
-            'The app checks GitHub releases at startup. The **Check for updates** button in **Info → Links** downloads and installs the APK.' \
-            'See the README for installation, hardware compatibility, build and troubleshooting notes.' \
-            > "$NOTES"
+
+          # Release body: only the "### Highlights" bullets of the matching
+          # CHANGELOG section, so the release stays short. The full history
+          # stays in CHANGELOG.md, linked below.
+          HIGHLIGHTS="$(awk -v ver="## ${VERSION}" '
+            substr($0, 1, length(ver)) == ver { in_section = 1; next }
+            in_section && /^## / { exit }
+            in_section && /^### Highlights[[:space:]]*$/ { in_highlights = 1; next }
+            in_highlights && /^### / { exit }
+            in_highlights { print }
+          ' CHANGELOG.md)"
+
+          # Older tags have no Highlights subsection: fall back to the section
+          # bullets instead of publishing an empty body.
+          if [ -z "${HIGHLIGHTS}" ]; then
+            HIGHLIGHTS="$(awk -v ver="## ${VERSION}" '
+              substr($0, 1, length(ver)) == ver { in_section = 1; next }
+              in_section && /^## / { exit }
+              in_section && /^- / { print }
+            ' CHANGELOG.md)"
+          fi
+
+          {
+            printf '## Novità in %s\n\n' "${VERSION}"
+            printf '%s\n\n' "${HIGHLIGHTS}"
+            printf '[Changelog completo](https://github.com/%s/blob/main/CHANGELOG.md) · [Download APK](https://github.com/%s/releases/download/%s/pm3-release.apk)\n' \
+              "${GITHUB_REPOSITORY}" "${GITHUB_REPOSITORY}" "${TAG}"
+            printf 'Firmato · si installa sopra le versioni precedenti.\n'
+          } > "$NOTES"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release edit "$TAG" \
               --title "RFIDtools ${TAG}" \
