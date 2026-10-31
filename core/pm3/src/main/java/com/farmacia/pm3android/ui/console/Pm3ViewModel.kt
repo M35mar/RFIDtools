@@ -7,6 +7,8 @@
 package com.farmacia.pm3android.ui.console
 
 import android.app.Application
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -15,22 +17,29 @@ import android.hardware.usb.UsbManager
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.core.content.ContextCompat
+import androidx.core.content.IntentCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.farmacia.pm3android.BuildConfig
 import com.farmacia.pm3android.R
 import com.farmacia.pm3android.data.AppPreferences
 import com.farmacia.pm3android.data.AppSettings
+import com.farmacia.pm3android.data.ConnectionMode
 import com.farmacia.pm3android.data.Pm3File
 import com.farmacia.pm3android.data.Pm3FileFilter
 import com.farmacia.pm3android.data.Pm3Script
 import com.farmacia.pm3android.data.Pm3ScriptStore
 import com.farmacia.pm3android.data.ScriptLanguage
 import com.farmacia.pm3android.data.ThemeMode
+import com.farmacia.pm3android.pm3.BluetoothAdapterState
+import com.farmacia.pm3android.pm3.BluetoothDeviceInfo
+import com.farmacia.pm3android.pm3.BluetoothLink
+import com.farmacia.pm3android.pm3.BluetoothPermissions
 import com.farmacia.pm3android.pm3.Pm3Client
 import com.farmacia.pm3android.pm3.Pm3ConnectionState
 import com.farmacia.pm3android.pm3.Pm3PythonRunner
 import com.farmacia.pm3android.pm3.Pm3Resources
+import com.farmacia.pm3android.pm3.Pm3Transport
 import com.farmacia.pm3android.update.ApkInstaller
 import com.farmacia.pm3android.update.ReleaseCheck
 import com.farmacia.pm3android.update.ReleaseInfo
@@ -39,6 +48,7 @@ import com.farmacia.pm3android.update.UpdateState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -47,6 +57,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
 
 data class Pm3DeviceInfo(
     val name: String,
@@ -67,6 +78,10 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
     private companion object {
         const val MAX_CONSOLE_LINES = 5000
         const val MAX_HISTORY = 100
+
+        private const val BLUETOOTH_SCAN_MS = 15_000L
+        private val NATIVE_BLUETOOTH_CONNECT =
+            Regex("^hw\\s+connect\\s+(bt|ble):", RegexOption.IGNORE_CASE)
     }
 
     private val client = Pm3Client(application)
@@ -79,6 +94,20 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
 
     private val deviceFlow = MutableStateFlow<Pm3DeviceInfo?>(null)
     val device: StateFlow<Pm3DeviceInfo?> = deviceFlow
+
+    // One unified Bluetooth list: bonded Classic units and BLE scan results.
+    private val bluetoothDevicesFlow = MutableStateFlow<List<BluetoothDeviceInfo>>(emptyList())
+    val bluetoothDevices: StateFlow<List<BluetoothDeviceInfo>> = bluetoothDevicesFlow
+
+    private val bluetoothScanningFlow = MutableStateFlow(false)
+    val bluetoothScanning: StateFlow<Boolean> = bluetoothScanningFlow
+
+    private val bluetoothStateFlow = MutableStateFlow(BluetoothAdapterState.UNSUPPORTED)
+    val bluetoothState: StateFlow<BluetoothAdapterState> = bluetoothStateFlow
+
+    private val bondedBluetooth = ConcurrentHashMap<String, BluetoothDeviceInfo>()
+    private val scannedBluetooth = ConcurrentHashMap<String, BluetoothDeviceInfo>()
+    private var bluetoothScanJob: Job? = null
 
     private val filesFlow = MutableStateFlow<List<Pm3File>>(emptyList())
     val files: StateFlow<List<Pm3File>> = filesFlow
@@ -127,7 +156,10 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
             when (intent.action) {
                 UsbManager.ACTION_USB_DEVICE_ATTACHED -> refreshDevice()
                 UsbManager.ACTION_USB_DEVICE_DETACHED -> {
-                    val wasConnected = connectionState.value != Pm3ConnectionState.DISCONNECTED
+                    // A detach only matters when the active link is USB: the
+                    // Bluetooth transports stay up while the cable is pulled.
+                    val wasConnected = connectionState.value != Pm3ConnectionState.DISCONNECTED &&
+                        client.transport.value == Pm3Transport.USB
                     refreshDevice()
                     if (wasConnected) {
                         notify(getApplication<Application>().getString(R.string.device_detached_message))
@@ -137,6 +169,43 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    private val bluetoothReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.action) {
+                BluetoothAdapter.ACTION_STATE_CHANGED -> {
+                    val state = intent.getIntExtra(
+                        BluetoothAdapter.EXTRA_STATE,
+                        BluetoothAdapter.ERROR,
+                    )
+                    refreshBluetooth()
+                    if (state == BluetoothAdapter.STATE_TURNING_OFF ||
+                        state == BluetoothAdapter.STATE_OFF
+                    ) {
+                        stopBluetoothScan()
+                        abortBluetoothIfActive()
+                    }
+                }
+
+                BluetoothDevice.ACTION_ACL_DISCONNECTED -> {
+                    val device = IntentCompat.getParcelableExtra(
+                        intent,
+                        BluetoothDevice.EXTRA_DEVICE,
+                        BluetoothDevice::class.java,
+                    )
+                    val selected = preferences.settings.value.bluetoothAddress
+                    if (device != null && selected != null &&
+                        !selected.equals(device.address, ignoreCase = true)
+                    ) {
+                        return
+                    }
+                    abortBluetoothIfActive()
+                }
+
+                BluetoothDevice.ACTION_BOND_STATE_CHANGED -> refreshBluetooth()
             }
         }
     }
@@ -151,7 +220,18 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
             },
             ContextCompat.RECEIVER_EXPORTED,
         )
+        ContextCompat.registerReceiver(
+            application,
+            bluetoothReceiver,
+            IntentFilter().apply {
+                addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
+                addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
+                addAction(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
+            },
+            ContextCompat.RECEIVER_EXPORTED,
+        )
         refreshDevice()
+        refreshBluetooth()
         refreshFiles()
         refreshScripts()
         if (preferences.settings.value.autoCheckUpdates) {
@@ -181,6 +261,131 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
                 descriptor = client.describeDevice(dev),
             )
         }
+    }
+
+    fun refreshBluetooth() {
+        bluetoothStateFlow.value = if (!client.bluetoothSupported()) {
+            BluetoothAdapterState.UNSUPPORTED
+        } else {
+            client.bluetoothState()
+        }
+        val bonded = if (bluetoothStateFlow.value == BluetoothAdapterState.ON) {
+            client.bondedClassicDevices()
+        } else {
+            emptyList()
+        }
+        bondedBluetooth.clear()
+        bonded.forEach { bondedBluetooth[bluetoothKey(it)] = it }
+        publishBluetoothDevices()
+    }
+
+    fun setConnectionMode(mode: ConnectionMode) {
+        if (mode == preferences.settings.value.connectionMode) return
+        // Transport changes only while idle: the native client owns one link.
+        if (busyFlow.value || connectionState.value != Pm3ConnectionState.DISCONNECTED) return
+        stopBluetoothScan()
+        preferences.setConnectionMode(mode)
+        if (mode == ConnectionMode.BLUETOOTH) refreshBluetooth()
+    }
+
+    fun selectBluetoothDevice(info: BluetoothDeviceInfo) {
+        preferences.setBluetoothDevice(info.address, info.name, info.link)
+    }
+
+    fun startBluetoothScan() {
+        if (bluetoothScanningFlow.value) return
+        val app = getApplication<Application>()
+        refreshBluetooth()
+        when (bluetoothStateFlow.value) {
+            BluetoothAdapterState.ON -> Unit
+            BluetoothAdapterState.PERMISSION_REQUIRED -> {
+                notify(app.getString(R.string.device_bt_permissions))
+                return
+            }
+            BluetoothAdapterState.OFF -> {
+                notify(app.getString(R.string.device_bt_disabled))
+                return
+            }
+            BluetoothAdapterState.UNSUPPORTED -> {
+                notify(app.getString(R.string.device_bt_unsupported))
+                return
+            }
+        }
+        if (!BluetoothPermissions.has(app, scan = true)) {
+            notify(app.getString(R.string.device_bt_permissions))
+            return
+        }
+
+        scannedBluetooth.clear()
+        publishBluetoothDevices()
+        bluetoothScanningFlow.value = true
+
+        val onFound: (BluetoothDeviceInfo) -> Unit = { info ->
+            scannedBluetooth[bluetoothKey(info)] = info
+            publishBluetoothDevices()
+        }
+        // Classic discovery and the BLE scan run together; each stops on its
+        // own system timeout, so the shared job only bounds the UI state.
+        val classicStarted = client.classicBluetooth.startDiscovery(onFound) {}
+        val leStarted = client.bleBluetooth.startScan(onFound) {}
+        if (!classicStarted && !leStarted) {
+            bluetoothScanningFlow.value = false
+            notify(app.getString(R.string.device_bt_empty))
+            return
+        }
+
+        bluetoothScanJob?.cancel()
+        bluetoothScanJob = viewModelScope.launch {
+            delay(BLUETOOTH_SCAN_MS)
+            stopBluetoothScan()
+        }
+    }
+
+    fun stopBluetoothScan() {
+        bluetoothScanJob?.cancel()
+        bluetoothScanJob = null
+        client.classicBluetooth.stopDiscovery()
+        client.bleBluetooth.stopScan()
+        bluetoothScanningFlow.value = false
+    }
+
+    private fun abortBluetoothIfActive() {
+        val transport = client.transport.value
+        if (transport != Pm3Transport.BT_CLASSIC && transport != Pm3Transport.BT_LE) return
+        if (connectionState.value == Pm3ConnectionState.DISCONNECTED) return
+        // A user-initiated disconnect already tears the link down; do not
+        // report it as a lost connection.
+        if (busyFlow.value) return
+        notify(getApplication<Application>().getString(R.string.device_bt_lost_message))
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { client.abortNow() }
+            busyFlow.value = false
+        }
+    }
+
+    private fun bluetoothKey(info: BluetoothDeviceInfo): String =
+        "${info.address}|${info.link}"
+
+    private fun publishBluetoothDevices() {
+        val merged = LinkedHashMap<String, BluetoothDeviceInfo>()
+        bondedBluetooth.forEach { (key, info) -> merged[key] = info }
+        scannedBluetooth.forEach { (key, info) ->
+            val existing = merged[key]
+            merged[key] = if (existing == null) {
+                info
+            } else {
+                existing.copy(
+                    name = existing.name ?: info.name,
+                    rssi = info.rssi ?: existing.rssi,
+                    bonded = existing.bonded || info.bonded,
+                )
+            }
+        }
+        bluetoothDevicesFlow.value = merged.values.sortedWith(
+            compareByDescending<BluetoothDeviceInfo> { it.isProxmark }
+                .thenByDescending { it.bonded }
+                .thenBy { it.displayName.lowercase() },
+        )
     }
 
     fun refreshFiles() {
@@ -231,8 +436,15 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
         if (busyFlow.value || connectionState.value == Pm3ConnectionState.CONNECTED) {
             return
         }
+        val settings = preferences.settings.value
+        val transport = when {
+            settings.connectionMode == ConnectionMode.USB -> Pm3Transport.USB
+            settings.bluetoothLink == BluetoothLink.LE -> Pm3Transport.BT_LE
+            else -> Pm3Transport.BT_CLASSIC
+        }
+        val address = settings.bluetoothAddress
         submitWork {
-            appendQuietly(client.connect())
+            appendQuietly(client.connect(transport, address))
             refreshDevice()
             refreshResourcesState()
         }
@@ -255,6 +467,14 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
             connectionState.value != Pm3ConnectionState.CONNECTED
         ) {
             return false
+        }
+        // The embedded client is built without BlueZ: transport selection is
+        // app-side, so `hw connect bt:/ble:` cannot work here.
+        if (NATIVE_BLUETOOTH_CONNECT.containsMatchIn(command)) {
+            appendLine("> $command")
+            addHistory(command)
+            appendLine(getApplication<Application>().getString(R.string.console_bt_transport_hint))
+            return true
         }
         // Python scripts run in the Chaquopy runtime, not in the native client.
         // Intercept only an exact `script run name.py ...` so other client
@@ -598,6 +818,7 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
             appendLine("app commit: ${BuildConfig.APP_GIT_COMMIT}")
             appendLine("client commit: ${BuildConfig.PM3_CLIENT_COMMIT}")
             appendLine("connection: ${connectionState.value}")
+            appendLine("transport: ${client.transport.value ?: "-"}")
             appendLine("busy: ${busyFlow.value}")
             appendLine("android: ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})")
             appendLine("device: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
@@ -608,6 +829,20 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
                 appendLine("usb permission: ${device.hasPermission}")
                 appendLine(device.descriptor)
             }
+            val settings = preferences.settings.value
+            appendLine("mode: ${settings.connectionMode}")
+            appendLine("bluetooth: ${bluetoothStateFlow.value}")
+            appendLine(
+                "bluetooth device: " +
+                    (settings.bluetoothAddress?.let { address ->
+                        BluetoothDeviceInfo(
+                            name = settings.bluetoothName,
+                            address = address,
+                            link = settings.bluetoothLink,
+                        ).maskedAddress + " (${settings.bluetoothLink})"
+                    } ?: "none"),
+            )
+            appendLine("bluetooth scan: ${bluetoothScanningFlow.value}")
             if (log.isNotBlank()) {
                 appendLine("connect log:")
                 appendLine(log.trim())
@@ -740,6 +975,8 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         runCatching { getApplication<Application>().unregisterReceiver(usbReceiver) }
+        runCatching { getApplication<Application>().unregisterReceiver(bluetoothReceiver) }
+        stopBluetoothScan()
         // Closing the native client can block behind a running command. Release
         // the transport synchronously, then let native cleanup finish off the
         // main thread so Activity teardown cannot hit an ANR.

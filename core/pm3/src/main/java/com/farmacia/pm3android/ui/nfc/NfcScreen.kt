@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.CreditCard
+import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Nfc
 import androidx.compose.material.icons.filled.SaveAlt
 import androidx.compose.material3.AlertDialog
@@ -71,6 +72,7 @@ fun NfcScreen(
     onOpenApduConsole: () -> Unit,
     onOpenCounterTool: () -> Unit,
     onOpenValueTool: () -> Unit,
+    onOpenUidTool: () -> Unit,
 ) {
     val files by viewModel.files.collectAsState()
     val context = LocalContext.current
@@ -172,6 +174,14 @@ fun NfcScreen(
                     enabled = nfcEnabled,
                     modifier = Modifier.weight(1f),
                     onClick = onOpenValueTool,
+                )
+                NfcTile(
+                    icon = Icons.Filled.Fingerprint,
+                    title = stringResource(R.string.nfc_uid_title),
+                    description = stringResource(R.string.nfc_uid_desc),
+                    enabled = nfcEnabled,
+                    modifier = Modifier.weight(1f),
+                    onClick = onOpenUidTool,
                 )
             }
         }

@@ -54,6 +54,7 @@ import androidx.core.view.WindowCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.farmacia.pm3android.R
 import com.farmacia.pm3android.BuildConfig
+import com.farmacia.pm3android.data.ConnectionMode
 import com.farmacia.pm3android.data.ThemeMode
 import com.farmacia.pm3android.pm3.Pm3ConnectionState
 import com.farmacia.pm3android.ui.components.StatusPill
@@ -66,6 +67,7 @@ import com.farmacia.pm3android.ui.files.FilesScreen
 import com.farmacia.pm3android.ui.nfc.ApduConsoleScreen
 import com.farmacia.pm3android.ui.nfc.MfcValueScreen
 import com.farmacia.pm3android.ui.nfc.MfuCounterScreen
+import com.farmacia.pm3android.ui.nfc.MagicUidScreen
 import com.farmacia.pm3android.ui.nfc.NfcRestoreScreen
 import com.farmacia.pm3android.ui.nfc.NfcScreen
 import com.farmacia.pm3android.ui.nfc.TagInspectScreen
@@ -75,6 +77,7 @@ import com.farmacia.pm3android.ui.update.UpdatePromptDialog
 import com.farmacia.pm3android.nfc.ApduConsoleViewModel
 import com.farmacia.pm3android.nfc.MfcValueViewModel
 import com.farmacia.pm3android.nfc.MfuCounterViewModel
+import com.farmacia.pm3android.nfc.MagicUidViewModel
 import com.farmacia.pm3android.nfc.NfcRestoreViewModel
 import com.farmacia.pm3android.nfc.TagInspectViewModel
 import com.farmacia.pm3android.update.UpdateState
@@ -90,17 +93,18 @@ private data class Tab(
         ApduConsoleViewModel,
         MfuCounterViewModel,
         MfcValueViewModel,
+        MagicUidViewModel,
     ) -> Unit,
 )
 
 private val TABS = listOf(
-    Tab(R.string.nav_device, Icons.Filled.Usb) { viewModel, _, _, _, _, _, _ ->
+    Tab(R.string.nav_device, Icons.Filled.Usb) { viewModel, _, _, _, _, _, _, _ ->
         DeviceScreen(viewModel)
     },
-    Tab(R.string.nav_console, Icons.AutoMirrored.Filled.List) { viewModel, _, _, _, _, _, _ ->
+    Tab(R.string.nav_console, Icons.AutoMirrored.Filled.List) { viewModel, _, _, _, _, _, _, _ ->
         ConsoleScreen(viewModel = viewModel)
     },
-    Tab(R.string.nav_nfc, Icons.Filled.Nfc) { viewModel, restore, _, inspect, apdu, counter, value ->
+    Tab(R.string.nav_nfc, Icons.Filled.Nfc) { viewModel, restore, _, inspect, apdu, counter, value, uid ->
         NfcScreen(
             viewModel = viewModel,
             restoreViewModel = restore,
@@ -108,16 +112,17 @@ private val TABS = listOf(
             onOpenApduConsole = apdu::start,
             onOpenCounterTool = counter::start,
             onOpenValueTool = value::start,
+            onOpenUidTool = uid::start,
         )
     },
-    Tab(R.string.nav_files, Icons.Filled.Share) { viewModel, restore, editor, _, _, _, _ ->
+    Tab(R.string.nav_files, Icons.Filled.Share) { viewModel, restore, editor, _, _, _, _, _ ->
         FilesScreen(
             viewModel,
             onRestore = restore::open,
             onEditDump = editor::open,
         )
     },
-    Tab(R.string.nav_settings, Icons.Filled.Info) { viewModel, _, _, _, _, _, _ ->
+    Tab(R.string.nav_settings, Icons.Filled.Info) { viewModel, _, _, _, _, _, _, _ ->
         SettingsScreen(viewModel)
     },
 )
@@ -135,6 +140,7 @@ fun Pm3App(
     val apduViewModel: ApduConsoleViewModel = viewModel()
     val counterViewModel: MfuCounterViewModel = viewModel()
     val valueViewModel: MfcValueViewModel = viewModel()
+    val uidViewModel: MagicUidViewModel = viewModel()
     val settings by viewModel.settings.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
     val device by viewModel.device.collectAsState()
@@ -146,6 +152,7 @@ fun Pm3App(
     val apduState by apduViewModel.state.collectAsState()
     val counterState by counterViewModel.state.collectAsState()
     val valueState by valueViewModel.state.collectAsState()
+    val uidState by uidViewModel.state.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var selected by rememberSaveable { mutableIntStateOf(0) }
 
@@ -209,7 +216,12 @@ fun Pm3App(
                             title = { Text(stringResource(TABS[selected].labelRes)) },
                             actions = {
                                 if (selected == 0 || selected == 1) {
-                                    ConnectionPill(connectionState, device != null)
+                                    ConnectionPill(
+                                        state = connectionState,
+                                        deviceAttached = device != null,
+                                        mode = settings.connectionMode,
+                                        bluetoothConfigured = settings.bluetoothAddress != null,
+                                    )
                                     Spacer(modifier = Modifier.width(4.dp))
                                 }
                             },
@@ -264,6 +276,7 @@ fun Pm3App(
                             apduViewModel,
                             counterViewModel,
                             valueViewModel,
+                            uidViewModel,
                         )
                     }
                 }
@@ -337,6 +350,14 @@ fun Pm3App(
                     )
                 }
 
+                if (uidState.visible) {
+                    MagicUidScreen(
+                        state = uidState,
+                        viewModel = uidViewModel,
+                        onClose = uidViewModel::close,
+                    )
+                }
+
                 // The APDU console is the manual escape hatch: same overlay
                 // level, its own ISO-DEP connection.
                 if (apduState.visible) {
@@ -355,12 +376,18 @@ fun Pm3App(
 private fun ConnectionPill(
     state: Pm3ConnectionState,
     deviceAttached: Boolean,
+    mode: ConnectionMode,
+    bluetoothConfigured: Boolean,
 ) {
     val (text, color) = when {
         state == Pm3ConnectionState.CONNECTED ->
             stringResource(R.string.status_connected) to MaterialTheme.colorScheme.primary
         state == Pm3ConnectionState.CONNECTING ->
             stringResource(R.string.status_connecting) to MaterialTheme.colorScheme.tertiary
+        mode == ConnectionMode.BLUETOOTH && bluetoothConfigured ->
+            stringResource(R.string.status_bluetooth_ready) to MaterialTheme.colorScheme.secondary
+        mode == ConnectionMode.BLUETOOTH ->
+            stringResource(R.string.status_bluetooth_not_configured) to MaterialTheme.colorScheme.outline
         deviceAttached ->
             stringResource(R.string.status_usb_attached) to MaterialTheme.colorScheme.secondary
         else ->

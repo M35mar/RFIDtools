@@ -3,7 +3,7 @@
 // Connection sequence over the abstract-socket transport (the native client
 // blocks in connect() until the bridge accepts):
 //   1. install client resources into $HOME/.proxmark3
-//   2. claim the CDC interface and get the USB streams
+//   2. open the selected transport (USB CDC, Bluetooth Classic SPP or BLE)
 //   3. start the bridge listener ("pm3.android"), wait for accept()
 //   4. nativeOpen("socket:pm3.android") — the client connects and handshakes
 //
@@ -30,6 +30,12 @@ enum class Pm3ConnectionState {
     CONNECTED,
 }
 
+enum class Pm3Transport {
+    USB,
+    BT_CLASSIC,
+    BT_LE,
+}
+
 class Pm3Client(context: Context) {
     companion object {
         // Abstract socket name shared with the native client ("socket:pm3.android").
@@ -41,13 +47,17 @@ class Pm3Client(context: Context) {
     private val applicationContext = context.applicationContext
 
     private val usb = UsbCdc(applicationContext)
+    val classicBluetooth = BluetoothSpp(applicationContext)
+    val bleBluetooth = BleSpp(applicationContext)
+
     private val lifeCycleMutex = Mutex()
 
     private val stateFlow = MutableStateFlow(Pm3ConnectionState.DISCONNECTED)
     private val connectLogFlow = MutableStateFlow("")
+    private val transportFlow = MutableStateFlow<Pm3Transport?>(null)
 
     private val bridge = AtomicReference<LocalSocketBridge?>(null)
-    private val openedPort = AtomicReference<UsbCdc.OpenedPort?>(null)
+    private val openedPort = AtomicReference<Pm3Port?>(null)
 
     private var homeReady = false
 
@@ -60,17 +70,30 @@ class Pm3Client(context: Context) {
     val connectLog: StateFlow<String>
         get() = connectLogFlow
 
+    /** Transport that owns the current connection, null while disconnected. */
+    val transport: StateFlow<Pm3Transport?>
+        get() = transportFlow
+
     fun foundDevice(): UsbDevice? = usb.findDevice()
 
     fun hasPermission(device: UsbDevice): Boolean = usb.hasPermission(device)
 
     fun describeDevice(device: UsbDevice): String = usb.describe(device)
 
+    fun bluetoothSupported(): Boolean = classicBluetooth.isSupported()
+
+    fun bluetoothState(): BluetoothAdapterState = classicBluetooth.adapterState()
+
+    fun bondedClassicDevices(): List<BluetoothDeviceInfo> = classicBluetooth.bondedDevices()
+
     /**
      * Connects to the PM3. Returns the client log of the attempt; on success
      * the state is CONNECTED, otherwise it ends back at DISCONNECTED.
      */
-    suspend fun connect(): String = lifeCycleMutex.withLock {
+    suspend fun connect(
+        transport: Pm3Transport = Pm3Transport.USB,
+        bluetoothAddress: String? = null,
+    ): String = lifeCycleMutex.withLock {
         if (stateFlow.value == Pm3ConnectionState.CONNECTED) {
             return connectLogFlow.value
         }
@@ -79,29 +102,22 @@ class Pm3Client(context: Context) {
         }
         abortRequested = false
         stateFlow.value = Pm3ConnectionState.CONNECTING
+        // Remember the transport while connecting too: a USB detach or a
+        // Bluetooth ACL drop has to abort only its own link.
+        transportFlow.value = transport
         connectLogFlow.value = ""
 
         var freshBridge: LocalSocketBridge? = null
-        var freshPort: UsbCdc.OpenedPort? = null
+        var freshPort: Pm3Port? = null
 
         try {
             prepareHome()
 
-            val device = usb.findDevice()
-                ?: error(applicationContext.getString(R.string.connect_device_missing))
-            val granted = withTimeoutOrNull(USB_PERMISSION_TIMEOUT_MS) {
-                usb.requestPermission(device)
+            freshPort = when (transport) {
+                Pm3Transport.USB -> openUsbPort()
+                Pm3Transport.BT_CLASSIC -> openClassicPort(bluetoothAddress)
+                Pm3Transport.BT_LE -> openBlePort(bluetoothAddress)
             }
-            if (granted == null) {
-                error(applicationContext.getString(R.string.connect_permission_timeout))
-            }
-            if (!granted) {
-                error(applicationContext.getString(R.string.connect_permission_denied))
-            }
-            if (abortRequested) error(applicationContext.getString(R.string.connect_cancelled))
-
-            freshPort = usb.open(device)
-                ?: error(applicationContext.getString(R.string.connect_cdc_open_failed))
 
             val (input, output) = freshPort.streams()
             if (abortRequested) error(applicationContext.getString(R.string.connect_cancelled))
@@ -115,16 +131,22 @@ class Pm3Client(context: Context) {
 
             if (abortRequested) error(applicationContext.getString(R.string.connect_cancelled))
             if (!Pm3Native.nativeIsOpen()) {
-                connectLogFlow.value = openLog.ifBlank {
-                    applicationContext.getString(R.string.connect_client_open_failed)
-                }
+                val message = decorateError(
+                    openLog.ifBlank {
+                        applicationContext.getString(R.string.connect_client_open_failed)
+                    },
+                    transport,
+                )
+                connectLogFlow.value = message
                 stateFlow.value = Pm3ConnectionState.DISCONNECTED
-                return@withLock connectLogFlow.value
+                transportFlow.value = null
+                return@withLock message
             }
 
             if (abortRequested) error(applicationContext.getString(R.string.connect_cancelled))
             bridge.set(freshBridge)
             openedPort.set(freshPort)
+            transportFlow.value = transport
             // Ownership moved to the client; do not clean these up below.
             freshBridge = null
             freshPort = null
@@ -137,12 +159,13 @@ class Pm3Client(context: Context) {
             // do not turn cancellation into a connection error, but never leave
             // the UI stuck in CONNECTING.
             stateFlow.value = Pm3ConnectionState.DISCONNECTED
+            transportFlow.value = null
             throw t
         } catch (t: Throwable) {
-            val message = t.message?.takeIf { it.isNotBlank() }
-                ?: t.javaClass.simpleName
+            val message = t.message?.takeIf { it.isNotBlank() } ?: t.javaClass.simpleName
             connectLogFlow.value = message
             stateFlow.value = Pm3ConnectionState.DISCONNECTED
+            transportFlow.value = null
             message
         } finally {
             if (freshBridge != null || freshPort != null) {
@@ -170,19 +193,24 @@ class Pm3Client(context: Context) {
         } finally {
             bridge.getAndSet(null)?.stop()
             openedPort.getAndSet(null)?.close()
+            transportFlow.value = null
             stateFlow.value = Pm3ConnectionState.DISCONNECTED
         }
     }
 
     /**
      * Emergency teardown: close the transport first so a native read/write
-     * blocked on USB cannot keep the client alive, then release the client.
+     * blocked on the link cannot keep the client alive, then release the
+     * client.
      */
     fun abortNow() {
         abortRequested = true
+        classicBluetooth.cancelConnect()
+        bleBluetooth.cancelConnect()
         bridge.getAndSet(null)?.stop()
         openedPort.getAndSet(null)?.close()
         runCatching { Pm3Native.nativeClose() }
+        transportFlow.value = null
         stateFlow.value = Pm3ConnectionState.DISCONNECTED
     }
 
@@ -206,6 +234,71 @@ class Pm3Client(context: Context) {
      */
     suspend fun exec(cmd: String): String = withContext(Dispatchers.IO) {
         Pm3Native.nativeExec(cmd)
+    }
+
+    private suspend fun openUsbPort(): Pm3Port {
+        val device = usb.findDevice()
+            ?: error(applicationContext.getString(R.string.connect_device_missing))
+        val granted = withTimeoutOrNull(USB_PERMISSION_TIMEOUT_MS) {
+            usb.requestPermission(device)
+        }
+        if (granted == null) {
+            error(applicationContext.getString(R.string.connect_permission_timeout))
+        }
+        if (!granted) {
+            error(applicationContext.getString(R.string.connect_permission_denied))
+        }
+        if (abortRequested) error(applicationContext.getString(R.string.connect_cancelled))
+        return usb.open(device)
+            ?: error(applicationContext.getString(R.string.connect_cdc_open_failed))
+    }
+
+    private suspend fun openClassicPort(address: String?): Pm3Port {
+        if (address.isNullOrBlank()) {
+            error(applicationContext.getString(R.string.connect_bluetooth_no_device))
+        }
+        if (!classicBluetooth.isSupported()) {
+            error(applicationContext.getString(R.string.connect_bluetooth_unsupported))
+        }
+        if (!BluetoothPermissions.has(applicationContext, scan = false)) {
+            error(applicationContext.getString(R.string.connect_bluetooth_permission))
+        }
+        if (classicBluetooth.adapterState() != BluetoothAdapterState.ON) {
+            error(applicationContext.getString(R.string.connect_bluetooth_disabled))
+        }
+        return classicBluetooth.open(address)
+    }
+
+    private suspend fun openBlePort(address: String?): Pm3Port {
+        if (address.isNullOrBlank()) {
+            error(applicationContext.getString(R.string.connect_bluetooth_no_device))
+        }
+        if (!bleBluetooth.isSupported()) {
+            error(applicationContext.getString(R.string.connect_bluetooth_unsupported))
+        }
+        if (!BluetoothPermissions.has(applicationContext, scan = false)) {
+            error(applicationContext.getString(R.string.connect_bluetooth_permission))
+        }
+        if (bleBluetooth.adapterState() != BluetoothAdapterState.ON) {
+            error(applicationContext.getString(R.string.connect_bluetooth_disabled))
+        }
+        return bleBluetooth.open(address)
+    }
+
+    /** Adds the firmware/build hint that explains a Bluetooth handshake failure. */
+    private fun decorateError(message: String, transport: Pm3Transport): String {
+        val hint = when (transport) {
+            Pm3Transport.USB -> null
+            Pm3Transport.BT_CLASSIC ->
+                applicationContext.getString(R.string.connect_bt_firmware_hint)
+            Pm3Transport.BT_LE ->
+                applicationContext.getString(R.string.connect_ble_firmware_hint)
+        } ?: return message
+        return when {
+            message.isBlank() -> hint
+            message.contains(hint) -> message
+            else -> "$message\n$hint"
+        }
     }
 
     private suspend fun prepareHome() {

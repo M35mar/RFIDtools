@@ -10,12 +10,13 @@ If this project saves you time or makes your pentesting easier, consider support
 
 ---
 
-**Proxmark3 in your pocket — no Termux, no external process, no Bluetooth bridge.**
+**Proxmark3 in your pocket — no Termux, no external process.**
 
 RFIDtools runs the Proxmark3 Iceman client **inside the app process** and talks to a
-PM3-compatible board over direct USB CDC-ACM. The UI is native Android (Compose +
-Material 3), the client is compiled into `libpm3android.so`, and the phone's own NFC
-reader is available as a separate section that works without any Proxmark3.
+PM3-compatible board over USB CDC-ACM or Bluetooth (Classic SPP for the RDV4 BlueShark,
+BLE for the Proxmark5 BWM). The UI is native Android (Compose + Material 3), the client
+is compiled into `libpm3android.so`, and the phone's own NFC reader is available as a
+separate section that works without any Proxmark3.
 
 [![Android CI](https://github.com/M35mar/RFIDtools/actions/workflows/android.yml/badge.svg?branch=main)](https://github.com/M35mar/RFIDtools/actions/workflows/android.yml)
 [![Release](https://img.shields.io/github/v/release/M35mar/RFIDtools?sort=semver)](https://github.com/M35mar/RFIDtools/releases)
@@ -41,9 +42,9 @@ from **Info → Links → Check for updates**. The first install is a manual sid
 
 | Tab | What you get |
 | --- | --- |
-| **Device** | USB status, vendor/product IDs, serial and interface diagnostics with copy/share. Sub-tab **PM3 tools**: searchable LF, HF, MIFARE Classic (one-tap autopwn) and Ultralight Ev1 commands, parameter dialogs, recent commands. |
+| **Device** | Transport selector (**USB** / **Bluetooth**), USB status, vendor/product IDs, serial and interface diagnostics with copy/share. The Bluetooth list mixes bonded Classic devices and BLE scan results (RDV4 BlueShark and Proxmark5 BWM). Sub-tab **PM3 tools**: searchable LF, HF, MIFARE Classic (one-tap autopwn) and Ultralight Ev1 commands, parameter dialogs, recent commands. |
 | **Console** | Free-form command input with history, follow mode, font size, copy/share of the output. Commands run through the in-process client, not a shell. |
-| **NFC** | Five actions: **Read tag**, **Restore tag**, **APDU console**, **Set counter** and **Credit**. Read tag identifies the tag with the phone's reader across the HF families Android exposes — Classic, Plus, Ultralight/NTAG, my-d move lean, DESFire, Calypso/BNEVT, ISO 15693 (ICODE, ST25, EM), FeliCa/ISO 18092, eMRTD passports and national eIDs, SmartMX and generic ISO-DEP applets — and reads its memory in the same field. Shows UID, ATQA/SAK, ATS/ATQB, memory, DESFire applications/files, Calypso ICC/environment/free files, MAD/NDEF (Type 2/3/4/5), sectors with access bits and counters, then offers **Save dump**. Optional key-based reads: DESFire files with an AES key, MIFARE Plus SL3 sectors. Restore tag writes Ultralight/NTAG and MIFARE Classic dumps (the latter with the keys from `hf-mf-<UID>-key.bin`); my-d move lean dumps are saved for the Proxmark3, since page 03 is OTP. Set counter brings an Ultralight EV1 counter to a chosen value; Credit increments or decrements a standard MIFARE Classic value block with a key file, including RicaricaMi/En1545 counters. Saves a text report. No Proxmark3 required. |
+| **NFC** | Six actions: **Read tag**, **Restore tag**, **APDU console**, **Set counter**, **Credit** and **Change UID**. Read tag identifies the tag with the phone's reader across the HF families Android exposes — Classic, Plus, Ultralight/NTAG, my-d move lean, DESFire, Calypso/BNEVT, ISO 15693 (ICODE, ST25, EM), FeliCa/ISO 18092, eMRTD passports and national eIDs, SmartMX and generic ISO-DEP applets — and reads its memory in the same field. Shows UID, ATQA/SAK, ATS/ATQB, memory, DESFire applications/files, Calypso ICC/environment/free files, MAD/NDEF (Type 2/3/4/5), sectors with access bits and counters, then offers **Save dump**. Optional key-based reads: DESFire files with an AES key, MIFARE Plus SL3 sectors. Restore tag writes Ultralight/NTAG and MIFARE Classic dumps (the latter with the keys from `hf-mf-<UID>-key.bin`); my-d move lean dumps are saved for the Proxmark3, since page 03 is OTP. Set counter brings an Ultralight EV1 counter to a chosen value; Credit increments or decrements a standard MIFARE Classic value block with a key file, including RicaricaMi/En1545 counters; Change UID writes a new UID to Gen2/CUID, Gen3/APDU and Ultralight EV1 DirectWrite magic cards. Saves a text report. No Proxmark3 required. |
 | **Data** | Dumps, traces, logs and tag reports; filters, import/export via the Storage Access Framework, share. Built-in hex editor for `.bin` blocks and pages, with decoded access bits and value blocks. |
 | **Info** | Version, build and client commit, theme, settings backup/restore, client-resource reset, in-app updates, licence and links. |
 
@@ -55,7 +56,7 @@ fail). Only import scripts you trust.
 ### Tag inspector
 
 The **NFC** section works without a Proxmark3 and identifies the tag from the phone's
-reader. Most tools read only; the two write tools are described below.
+reader. Most tools read only; the three write tools are described below.
 
 - **Read tag**: one action that identifies the tag and reads its memory while the tag
   stays on the phone, then offers **Save dump** with an editable name. A partial or
@@ -91,6 +92,16 @@ reader. Most tools read only; the two write tools are described below.
   which covers RicaricaMi/En1545 counters (sectors 2–5, blocks 0/1; sector 5 blocks 1/2).
   RicaricaMi also keeps an En1545 hash: the value block changes, but the tool does not
   recompute that hash, so a gate may reject the card.
+- **Change UID**: type a 4-byte (8 hex digits) or 7-byte (14 hex digits) UID and the
+  sector-0 Classic key (default `FFFFFFFFFFFF`), confirm the irreversible write, then
+  present the card once. The UID length must match the card that is presented. For
+  Classic cards the phone preserves SAK, ATQA and the manufacturer bytes and recomputes
+  the BCC; Gen2/CUID cards accept a normal block-0 write, while Gen3/APDU cards use
+  `90 F0 CC CC 10` (4-byte UID) or `90 FB CC CC 07` (7-byte UID). Ultralight EV1
+  DirectWrite cards get pages 0–2 rewritten with both BCCs, keeping the internal and
+  lock bytes. Every path reads the result back when the card allows it. Gen1a, Gen1b and
+  other backdoor-only cards cannot be written through the Android NFC API: the tool says
+  so and points to the Proxmark3.
 - **APDU console**: pick an ISO-DEP card, type a command in hexadecimal and read the
   response with the ISO 7816 status word; `61xx` and `6Cxx` are handled automatically.
   It is the manual path for applets the automatic probes do not name.
@@ -108,7 +119,7 @@ the Calypso card.
 ## Quick start
 
 1. Install [`pm3-release.apk`](https://github.com/M35mar/RFIDtools/releases/latest/download/pm3-release.apk).
-2. Connect the Proxmark3 with a USB OTG cable or adapter.
+2. Connect the Proxmark3 with a USB OTG cable or adapter (or use Bluetooth, see below).
 3. Open the app and accept the Android USB permission prompt.
 4. Go to **Device → Device**, tap **Connect**, then use **Console** or **PM3 tools**.
 
@@ -116,12 +127,66 @@ Use **Data** for dumps, traces, logs and reports, and **NFC** to identify tags a
 them using the phone alone. If the board is not detected, check the cable/adapter and confirm
 it enumerates as `0x9ac4:0x4b8f`.
 
+## Bluetooth
+
+Select **Bluetooth** in the transport selector on the **Device** tab. The device list is
+unified: bonded Classic units and BLE scan results appear side by side, badged **SPP** or
+**BLE**, and the app remembers only the last device used. Connection is manual, like USB:
+select the device, then tap **Connect**.
+
+| Module | Link | Name | Requirement |
+| --- | --- | --- | --- |
+| RDV4 BlueShark | Classic SPP | `PM3_RDV4.0` | Pair with PIN `1234`; firmware built with `PLATFORM_EXTRAS=BTADDON` |
+| Proxmark5 BWM | BLE, service `0xAE86`, characteristic `0xAE88` | `Proxmark5` | No pairing; firmware built with `PLATFORM=PM5 PLATFORM_EXTRAS=BWM` |
+
+### RDV4 BlueShark (Bluetooth Classic)
+
+1. Turn the BlueShark module on (battery switch); its LED blinks.
+2. Android settings → Bluetooth → pair `PM3_RDV4.0` with PIN `1234`.
+3. App → **Device** → **Bluetooth** → select `PM3_RDV4.0` → **Connect**.
+4. A steady LED and `hw version` in the Console confirm the link.
+
+The firmware must be built with `PLATFORM_EXTRAS=BTADDON`, which enables the host USART
+at 115200 baud while leaving USB available:
+
+```bash
+# Makefile.platform
+PLATFORM_EXTRAS=BTADDON
+make clean && make -j
+./pm3-flash-fullimage
+```
+
+### Proxmark5 BWM (BLE)
+
+1. Build and flash the firmware with `PLATFORM=PM5 PLATFORM_EXTRAS=BWM`.
+2. App → **Device** → **Bluetooth** → **Scan**, select **Proxmark5** (BLE) → **Connect**.
+
+BLE support is new and marked experimental: some Android stacks need a retry after a
+GATT 133 error. The app requests an MTU of 517 and falls back to the default 23-byte ATT
+MTU when the phone or firmware refuses it.
+
+### Notes and limits
+
+- Throughput is lower than USB (RFCOMM ≈128 kbit/s, BLE lower still), so dumps and traces
+  take longer. **Flashing always requires USB.**
+- The app opens the link itself and feeds the embedded client through its internal
+  socket; `hw connect bt:`/`ble:` from the Console is intentionally rejected with a hint,
+  because the native client is built without BlueZ.
+- Permissions: Android 12+ asks for **Nearby devices** (`BLUETOOTH_SCAN` /
+  `BLUETOOTH_CONNECT`); Android 9–11 asks for location to scan; Android 8 uses coarse
+  location.
+- If the socket opens but the handshake fails, the connection log appends the firmware
+  build hint for the selected transport.
+
 ## Requirements
 
-- Android **8.0+** (API 26), **arm64-v8a**, with USB host/OTG.
-- Proxmark3 hardware exposing USB IDs `0x9ac4:0x4b8f` (CDC-ACM).
+- Android **8.0+** (API 26), **arm64-v8a**.
+- Proxmark3 hardware exposing USB IDs `0x9ac4:0x4b8f` (CDC-ACM), or a Bluetooth module:
+  RDV4 BlueShark (Classic SPP) or Proxmark5 BWM (BLE).
 - Firmware built from the **same pinned Proxmark3 commit** as the embedded client, so the
   `CAPABILITIES_VERSION` handshake matches.
+- USB host/OTG is optional in the manifest: a phone without it can still use Bluetooth,
+  and a phone without Bluetooth can still use USB.
 
 Firmware is **not** included and **not** flashed by this app — use a desktop client.
 

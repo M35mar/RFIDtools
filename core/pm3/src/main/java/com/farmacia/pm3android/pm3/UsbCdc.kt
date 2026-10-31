@@ -182,7 +182,7 @@ class UsbCdc(private val context: Context) {
         private val inputEndpoint: UsbEndpoint,
         private val outputEndpoint: UsbEndpoint,
         private val isAttached: () -> Boolean,
-    ) {
+    ) : Pm3Port {
 
         @Volatile
         private var closed = false
@@ -190,9 +190,9 @@ class UsbCdc(private val context: Context) {
         private val inputStream = Input()
         private val outputStream = Output()
 
-        fun streams(): Pair<InputStream, OutputStream> = inputStream to outputStream
+        override fun streams(): Pair<InputStream, OutputStream> = inputStream to outputStream
 
-        fun close() {
+        override fun close() {
             if (closed) return
             closed = true
             runCatching { inputStream.close() }

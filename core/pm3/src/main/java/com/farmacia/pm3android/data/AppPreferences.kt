@@ -7,6 +7,7 @@ package com.farmacia.pm3android.data
 
 import android.content.Context
 import androidx.core.content.edit
+import com.farmacia.pm3android.pm3.BluetoothLink
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import org.json.JSONObject
@@ -17,6 +18,12 @@ enum class ThemeMode {
     DARK,
 }
 
+/** Which physical link the user selected on the Device screen. */
+enum class ConnectionMode {
+    USB,
+    BLUETOOTH,
+}
+
 data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val dynamicColor: Boolean = true,
@@ -25,6 +32,10 @@ data class AppSettings(
     val keepScreenOn: Boolean = false,
     val followConsole: Boolean = true,
     val autoCheckUpdates: Boolean = true,
+    val connectionMode: ConnectionMode = ConnectionMode.USB,
+    val bluetoothAddress: String? = null,
+    val bluetoothName: String? = null,
+    val bluetoothLink: BluetoothLink = BluetoothLink.CLASSIC,
 )
 
 class AppPreferences(context: Context) {
@@ -39,6 +50,10 @@ class AppPreferences(context: Context) {
         const val KEY_FOLLOW_CONSOLE = "follow_console"
         const val KEY_AUTO_CHECK_UPDATES = "auto_check_updates"
         const val KEY_LAST_NOTIFIED_UPDATE = "last_notified_update"
+        const val KEY_CONNECTION_MODE = "connection_mode"
+        const val KEY_BT_ADDRESS = "bluetooth_address"
+        const val KEY_BT_NAME = "bluetooth_name"
+        const val KEY_BT_LINK = "bluetooth_link"
 
         const val MIN_FONT_SIZE = 10
         const val MAX_FONT_SIZE = 22
@@ -57,6 +72,12 @@ class AppPreferences(context: Context) {
     fun setKeepScreenOn(enabled: Boolean) = update { copy(keepScreenOn = enabled) }
     fun setFollowConsole(enabled: Boolean) = update { copy(followConsole = enabled) }
     fun setAutoCheckUpdates(enabled: Boolean) = update { copy(autoCheckUpdates = enabled) }
+    fun setConnectionMode(mode: ConnectionMode) = update { copy(connectionMode = mode) }
+
+    /** Remembers only the last Bluetooth device; the PIN is handled by the OS. */
+    fun setBluetoothDevice(address: String, name: String?, link: BluetoothLink) = update {
+        copy(bluetoothAddress = address, bluetoothName = name, bluetoothLink = link)
+    }
 
     /** Version already shown in the startup update dialog, so it is not repeated. */
     fun lastNotifiedUpdateVersion(): String? =
@@ -77,6 +98,10 @@ class AppPreferences(context: Context) {
             .put("keepScreenOn", value.keepScreenOn)
             .put("followConsole", value.followConsole)
             .put("autoCheckUpdates", value.autoCheckUpdates)
+            .put("connectionMode", value.connectionMode.name)
+            .put("bluetoothAddress", value.bluetoothAddress ?: JSONObject.NULL)
+            .put("bluetoothName", value.bluetoothName ?: JSONObject.NULL)
+            .put("bluetoothLink", value.bluetoothLink.name)
             .toString(2)
     }
 
@@ -94,6 +119,14 @@ class AppPreferences(context: Context) {
             keepScreenOn = json.optBoolean("keepScreenOn", false),
             followConsole = json.optBoolean("followConsole", true),
             autoCheckUpdates = json.optBoolean("autoCheckUpdates", true),
+            connectionMode = runCatching {
+                ConnectionMode.valueOf(json.optString("connectionMode", ConnectionMode.USB.name))
+            }.getOrDefault(ConnectionMode.USB),
+            bluetoothAddress = json.optString("bluetoothAddress").takeIf { it.isNotBlank() },
+            bluetoothName = json.optString("bluetoothName").takeIf { it.isNotBlank() },
+            bluetoothLink = runCatching {
+                BluetoothLink.valueOf(json.optString("bluetoothLink", BluetoothLink.CLASSIC.name))
+            }.getOrDefault(BluetoothLink.CLASSIC),
         )
         _settings.value = restored
         persist(restored)
@@ -112,6 +145,18 @@ class AppPreferences(context: Context) {
             keepScreenOn = prefs.getBoolean(KEY_KEEP_SCREEN_ON, false),
             followConsole = prefs.getBoolean(KEY_FOLLOW_CONSOLE, true),
             autoCheckUpdates = prefs.getBoolean(KEY_AUTO_CHECK_UPDATES, true),
+            connectionMode = runCatching {
+                ConnectionMode.valueOf(
+                    prefs.getString(KEY_CONNECTION_MODE, null) ?: ConnectionMode.USB.name,
+                )
+            }.getOrDefault(ConnectionMode.USB),
+            bluetoothAddress = prefs.getString(KEY_BT_ADDRESS, null),
+            bluetoothName = prefs.getString(KEY_BT_NAME, null),
+            bluetoothLink = runCatching {
+                BluetoothLink.valueOf(
+                    prefs.getString(KEY_BT_LINK, null) ?: BluetoothLink.CLASSIC.name,
+                )
+            }.getOrDefault(BluetoothLink.CLASSIC),
         )
     }
 
@@ -130,6 +175,10 @@ class AppPreferences(context: Context) {
             putBoolean(KEY_KEEP_SCREEN_ON, value.keepScreenOn)
             putBoolean(KEY_FOLLOW_CONSOLE, value.followConsole)
             putBoolean(KEY_AUTO_CHECK_UPDATES, value.autoCheckUpdates)
+            putString(KEY_CONNECTION_MODE, value.connectionMode.name)
+            putString(KEY_BT_ADDRESS, value.bluetoothAddress)
+            putString(KEY_BT_NAME, value.bluetoothName)
+            putString(KEY_BT_LINK, value.bluetoothLink.name)
         }
     }
 }

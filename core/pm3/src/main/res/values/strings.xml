@@ -25,7 +25,7 @@
     <string name="action_close">Chiudi</string>
     <string name="action_execute">Esegui</string>
 
-    <string name="device_title">Proxmark3</string>
+    <string name="device_title">Proxmark3/5</string>
     <string name="device_none">Nessun dispositivo USB collegato. Collega il PM3 e premi Aggiorna.</string>
     <string name="device_ready">Pronto: %1$s — permesso USB già concesso.</string>
     <string name="device_permission_missing">Pronto: %1$s — il permesso USB verrà richiesto alla connessione.</string>
@@ -229,6 +229,7 @@
     <string name="settings_target">Target</string>
     <string name="settings_target_value">Android 8+ (API 26), arm64-v8a</string>
     <string name="settings_license">Licenza</string>
+    <string name="settings_donate">Offrimi un caffè</string>
     <string name="settings_license_title">GNU GPL v3</string>
     <string name="settings_links">Link</string>
     <string name="settings_github">Repository GitHub</string>
@@ -803,4 +804,90 @@
     <string name="value_error_changed">Il valore è cambiato durante la scrittura (ora %1$d): rileggi il tag.</string>
     <string name="value_error_verify">Il tag non ha confermato il nuovo valore.</string>
     <string name="value_error_write">Scrittura non riuscita: %1$s</string>
+
+    <!-- Bluetooth connection -->
+    <string name="connect_bluetooth_no_device">Nessun dispositivo Bluetooth selezionato</string>
+    <string name="connect_bluetooth_unsupported">Bluetooth non supportato su questo dispositivo</string>
+    <string name="connect_bluetooth_disabled">Bluetooth spento: attivalo e riprova</string>
+    <string name="connect_bluetooth_permission">Permesso Bluetooth mancante: consentilo e riprova</string>
+    <string name="connect_bt_firmware_hint">Suggerimento: il firmware del PM3 deve essere compilato con PLATFORM_EXTRAS=BTADDON (USART a 115200 baud).</string>
+    <string name="connect_ble_firmware_hint">Suggerimento: il firmware del Proxmark5 deve essere compilato con PLATFORM=PM5 PLATFORM_EXTRAS=BWM.</string>
+
+    <string name="status_bluetooth_ready">BT pronto</string>
+    <string name="status_bluetooth_not_configured">BT da configurare</string>
+
+    <string name="device_transport">Trasporto</string>
+    <string name="device_transport_usb">USB</string>
+    <string name="device_transport_bluetooth">Bluetooth</string>
+    <string name="device_bt_card_title">Proxmark via Bluetooth</string>
+    <string name="device_bt_unsupported">Bluetooth non supportato su questo dispositivo.</string>
+    <string name="device_bt_disabled">Bluetooth spento. Attivalo per cercare il Proxmark.</string>
+    <string name="device_bt_permissions">Servono i permessi Bluetooth per cercare e collegare il dispositivo.</string>
+    <string name="device_bt_scan">Cerca</string>
+    <string name="device_bt_stop_scan">Interrompi</string>
+    <string name="device_bt_settings">Impostazioni Bluetooth</string>
+    <string name="device_bt_pair_hint">RDV4: associa PM3_RDV4.0 con PIN 1234. Proxmark5 BWM: nessuna associazione necessaria.</string>
+    <string name="device_bt_slow_hint">Il Bluetooth è più lento dell\'USB: dump e trace richiedono più tempo. Il flashing richiede l\'USB.</string>
+    <string name="device_bt_empty">Nessun dispositivo trovato. Associa il PM3 nelle impostazioni di sistema oppure avvia la ricerca.</string>
+    <string name="device_bt_scanning">Ricerca in corso…</string>
+    <string name="device_bt_selected">Selezionato: %1$s</string>
+    <string name="device_bt_not_selected">Nessun dispositivo selezionato</string>
+    <string name="device_bt_badge_spp">SPP</string>
+    <string name="device_bt_badge_ble">BLE</string>
+    <string name="device_bt_bonded">Associato</string>
+    <string name="device_bt_rssi">%1$d dBm</string>
+    <string name="device_bt_ready">Pronto: %1$s</string>
+    <string name="device_bt_connected">Connesso: %1$s</string>
+    <string name="device_bt_select">Seleziona</string>
+    <string name="device_bt_lost_message">PM3 Bluetooth disconnesso: connessione chiusa.</string>
+
+    <string name="console_bt_transport_hint">hw connect bt:/ble: non è supportato dal client integrato: scegli il trasporto nella schermata Dispositivo.</string>
+    <string name="nfc_uid_title">Modifica UID</string>
+    <string name="nfc_uid_desc">Cambia l\'UID di una magic card Classic o Ultralight.</string>
+
+    <string name="uid_title">Modifica UID</string>
+    <string name="uid_desc">Scrivi un nuovo UID su una magic card MIFARE Classic 1K/4K o Ultralight EV1. Il telefono usa la scrittura diretta Gen2/CUID o gli APDU Gen3; le carte Gen1a, Gen1b e backdoor richiedono il Proxmark3.</string>
+    <string name="uid_warning">Il blocco 0 cambia in modo irreversibile. Controlla UID, chiave e tipo di carta prima di scrivere.</string>
+    <string name="uid_uid_label">Nuovo UID</string>
+    <string name="uid_uid_hint">es. 11223344 o 04112233445566</string>
+    <string name="uid_uid_help">8 caratteri per un UID di 4 byte, 14 per uno di 7 byte. La lunghezza deve corrispondere alla carta.</string>
+    <string name="uid_key_label">Chiave Classic (settore 0)</string>
+    <string name="uid_key_hint">FFFFFFFFFFFF</string>
+    <string name="uid_key_help">12 caratteri esadecimali. Viene usata solo per le carte Classic e provata come Key A e Key B.</string>
+    <string name="uid_use_default_key">Usa FFFFFFFFFFFF</string>
+    <string name="uid_start">Avvia</string>
+    <string name="uid_confirm_title">Scrivere il nuovo UID?</string>
+    <string name="uid_confirm_body">Verrà sovrascritto il blocco 0 della carta con l\'UID %1$s. L\'operazione è irreversibile e la carta può diventare illeggibile se i dati non sono corretti.</string>
+    <string name="uid_confirm_write">Scrivi UID</string>
+    <string name="uid_waiting_title">Avvicina la carta</string>
+    <string name="uid_waiting_body">Tieni ferma la carta: scrivo l\'UID %1$s e lo verifico.</string>
+    <string name="uid_working">Scrittura e verifica in corso…</string>
+    <string name="uid_working_body">Non allontanare la carta fino alla conferma.</string>
+    <string name="uid_done_title">UID aggiornato</string>
+    <string name="uid_done_unverified_title">UID inviato</string>
+    <string name="uid_done_body">La carta ora usa l\'UID %1$s.</string>
+    <string name="uid_done_unverified">Il comando è stato accettato. Avvicina di nuovo la carta per leggere il nuovo UID.</string>
+    <string name="uid_row_old">UID precedente</string>
+    <string name="uid_row_new">Nuovo UID</string>
+    <string name="uid_row_card">Carta</string>
+    <string name="uid_row_method">Metodo</string>
+    <string name="uid_row_verified">Verifica</string>
+    <string name="uid_verified_yes">letto e confermato</string>
+    <string name="uid_verified_no">solo comando accettato</string>
+    <string name="uid_method_direct">scrittura diretta Gen2/CUID</string>
+    <string name="uid_method_apdu">APDU Gen3 (blocco 0)</string>
+    <string name="uid_method_apdu_uid">APDU Gen3 (solo UID)</string>
+    <string name="uid_method_ultralight">scrittura diretta pagine 0-2</string>
+    <string name="uid_done_note">Se stai clonando una carta, scrivi anche il resto del dump con lo strumento Scrivi.</string>
+    <string name="uid_done_again">Modifica un altro UID</string>
+    <string name="uid_error_uid_format">L\'UID deve avere 8 (4 byte) o 14 (7 byte) caratteri esadecimali.</string>
+    <string name="uid_error_key_format">La chiave Classic deve avere 12 caratteri esadecimali.</string>
+    <string name="uid_error_length">La carta ha un UID di %1$d byte, ma ne hai inseriti %2$d. La lunghezza deve corrispondere.</string>
+    <string name="uid_error_unsupported">Carta non compatibile: servono una magic card Gen2/CUID, Gen3/APDU o Ultralight EV1 DirectWrite. Le Gen1a, Gen1b e backdoor richiedono il Proxmark3.</string>
+    <string name="uid_error_key">Chiave Classic rifiutata dal settore 0. Controlla la chiave e riprova.</string>
+    <string name="uid_error_read">Non sono riuscito a leggere il blocco 0 o le pagine UID della carta.</string>
+    <string name="uid_error_write">La carta ha rifiutato la scrittura. Potrebbe non essere una magic card compatibile.</string>
+    <string name="uid_error_verify">La carta non ha confermato il nuovo UID: rileggila prima di usarla.</string>
+    <string name="uid_error_lost">Comunicazione NFC interrotta: tieni ferma la carta e riprova.</string>
+    <string name="uid_error_generic">Operazione non riuscita: %1$s</string>
 </resources>

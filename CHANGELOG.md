@@ -1,5 +1,42 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- Bluetooth transports for the in-process Proxmark3 client, selected from the
+  **Device** tab next to USB:
+  - RDV4 BlueShark over Bluetooth Classic SPP (`PM3_RDV4.0`, PIN `1234`).
+  - Proxmark5 BWM over BLE (service `0xAE86`, characteristic `0xAE88`).
+  - One unified device list: bonded Classic units and BLE scan results with
+    `SPP`/`BLE` badges, RSSI and one remembered device.
+  - Active scanning (Classic discovery plus BLE scan), manual connect, and a
+    transport-aware status pill and diagnostics.
+- Runtime Bluetooth permission flow (`BLUETOOTH_SCAN`/`BLUETOOTH_CONNECT` on
+  Android 12+, location on older releases).
+- **Change UID** tool in the NFC tab for MIFARE Classic 1K/4K (4- and 7-byte
+  UID) and Ultralight EV1 magic cards:
+  - Gen2/CUID through a normal block-0 write, Gen3/APDU through
+    `90 F0 CC CC 10` or `90 FB CC CC 07`, Ultralight EV1 DirectWrite through
+    pages 0–2.
+  - Editable sector-0 key (default `FFFFFFFFFFFF`), UID length checked
+    against the presented card, SAK/ATQA/manufacturer/internal/lock bytes
+    preserved and BCC recomputed.
+  - Irreversible-write confirmation and read-back verification where the card
+    allows it. Gen1a/Gen1b/backdoor cards report that Proxmark3 is required.
+
+### Changed
+- `android.hardware.usb.host` is no longer required, so Bluetooth-only phones
+  can install the app.
+- A USB detach only aborts a USB connection; a Bluetooth ACL drop or the
+  adapter turning off only aborts the Bluetooth link.
+- `hw connect bt:`/`ble:` in the Console is rejected with an explanation,
+  because the embedded client is still built without BlueZ.
+- The Device screen title is now **Proxmark3/5**, without the transport icon,
+  and USB/Bluetooth use the same button style and size as Connect/Disconnect.
+- Launcher icon replaced with the new `RFIDtools` artwork (tighter crop,
+  black adaptive background, legacy PNG fallbacks for every density).
+- **Buy me a coffee** button with the PayPal icon added to Info → Links.
+
 ## 1.0.3 – 2026-10-30
 
 ### Fixed
