@@ -1,202 +1,104 @@
-# RFIDtools
+<div align="center">
+  <img src="docs/assets/logo.png" width="128" height="128" alt="RFIDtools logo" />
+  <h1>RFIDtools</h1>
+  <p><b>Proxmark3 in your pocket.</b><br />
+  Native Android client · USB &amp; Bluetooth · NFC toolkit</p>
 
-## 💖 Support the Project
+  <p>
+    <a href="https://github.com/M35mar/RFIDtools/actions/workflows/android.yml"><img src="https://github.com/M35mar/RFIDtools/actions/workflows/android.yml/badge.svg?branch=main" alt="Android CI" /></a>
+    <a href="https://github.com/M35mar/RFIDtools/releases"><img src="https://img.shields.io/github/v/release/M35mar/RFIDtools?sort=semver" alt="Latest release" /></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg" alt="GPL-3.0" /></a>
+    <img src="https://img.shields.io/badge/Android-8%2B%20(API%2026)-green.svg" alt="Android 8+" />
+    <img src="https://img.shields.io/badge/ABI-arm64--v8a-informational.svg" alt="arm64-v8a" />
+  </p>
 
-**RFIDtools** is a free, open-source app for Android.
-If this project saves you time or makes your pentesting easier, consider supporting its independent development!
-
-* 🚀 **Help keep it ad-free** — [![Sponsor](https://img.shields.io/github/sponsors/M35mar?label=Sponsor&logo=GitHub&color=fe8e86)](https://github.com/sponsors/M35mar)
-* ☕ **Buy me a coffee** — [![Donate](https://img.shields.io/badge/Donate-PayPal-green.svg?logo=paypal)](https://paypal.com/biz/profile/acquistaliSRL)
+  <p>
+    <a href="https://github.com/M35mar/RFIDtools/releases/latest/download/pm3-release.apk"><b>⬇️ Download APK</b></a>
+    &nbsp;·&nbsp;
+    <a href="https://github.com/M35mar/RFIDtools/releases">Releases</a>
+    &nbsp;·&nbsp;
+    <a href="CHANGELOG.md">Changelog</a>
+  </p>
+</div>
 
 ---
 
-**Proxmark3 in your pocket — no Termux, no external process.**
+## 💖 Support the project
 
-RFIDtools runs the Proxmark3 Iceman client **inside the app process** and talks to a
-PM3-compatible board over USB CDC-ACM or Bluetooth (Classic SPP for the RDV4 BlueShark,
-BLE for the Proxmark5 BWM). The UI is native Android (Compose + Material 3), the client
-is compiled into `libpm3android.so`, and the phone's own NFC reader is available as a
-separate section that works without any Proxmark3.
+RFIDtools is free and open source. If it saves you time, you can keep it ad-free:
 
-[![Android CI](https://github.com/M35mar/RFIDtools/actions/workflows/android.yml/badge.svg?branch=main)](https://github.com/M35mar/RFIDtools/actions/workflows/android.yml)
-[![Release](https://img.shields.io/github/v/release/M35mar/RFIDtools?sort=semver)](https://github.com/M35mar/RFIDtools/releases)
-[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
-[![Android 8+](https://img.shields.io/badge/Android-8%2B%20(API%2026)-green.svg)](#requirements)
-[![arm64-v8a](https://img.shields.io/badge/ABI-arm64--v8a-informational.svg)](#requirements)
+[![Sponsor](https://img.shields.io/github/sponsors/M35mar?label=Sponsor&logo=GitHub&color=fe8e86)](https://github.com/sponsors/M35mar)
+[![Donate](https://img.shields.io/badge/Donate-PayPal-green.svg?logo=paypal)](https://paypal.com/biz/profile/acquistaliSRL)
 
-## Download
+## ✨ Features
 
-### [⬇️ Download `pm3-release.apk`](https://github.com/M35mar/RFIDtools/releases/latest/download/pm3-release.apk)
+- **Embedded Proxmark3 client** — the Iceman client runs inside the app, over USB or Bluetooth. No Termux, no external process.
+- **Device & Console** — transport selector, connection diagnostics, full command console with history and follow mode.
+- **PM3 tools** — one-tap LF, HF, Classic autopwn and Ultralight EV1 commands with parameter dialogs.
+- **Phone NFC toolkit** — read, restore, APDU console, EV1 counter, Classic credit and change UID. Works without a Proxmark3.
+- **Data manager** — dumps, traces, logs and reports, with a built-in hex editor for blocks and pages.
+- **Scripts** — import and run `.lua`, `.cmd` and `.py` files with arguments.
 
-Signed release build, package `com.farmacia.pm3android`. It installs over any previous
-release, so in-app updates work. Debug builds (`pm3-debug.apk`, package
-`com.farmacia.pm3android.debug`) exist only as CI artifacts and are never published.
+## 📲 Install
 
-The app checks GitHub for a newer release at startup and can download and install it
-from **Info → Links → Check for updates**. The first install is a manual sideload.
+[**Download `pm3-release.apk`**](https://github.com/M35mar/RFIDtools/releases/latest/download/pm3-release.apk) — signed release, package `com.farmacia.pm3android`.
 
-> **Coming from a debug build?** It cannot update in place: export your data, uninstall,
-> then install `pm3-release.apk` once.
+- Installs over any previous release, so in-app updates work.
+- First install is a manual sideload; later updates come from **Info → Links → Check for updates**.
+- Debug builds (`pm3-debug.apk`) exist only as CI artifacts and cannot update a release install.
 
-## Features
+## 🚀 Quick start
 
-| Tab | What you get |
-| --- | --- |
-| **Device** | Transport selector (**USB** / **Bluetooth**), USB status, vendor/product IDs, serial and interface diagnostics with copy/share. The Bluetooth list mixes bonded Classic devices and BLE scan results (RDV4 BlueShark and Proxmark5 BWM). Sub-tab **PM3 tools**: searchable LF, HF, MIFARE Classic (one-tap autopwn) and Ultralight Ev1 commands, parameter dialogs, recent commands. |
-| **Console** | Free-form command input with history, follow mode, font size, copy/share of the output. Commands run through the in-process client, not a shell. |
-| **NFC** | Six actions: **Read tag**, **Restore tag**, **APDU console**, **Set counter**, **Credit** and **Change UID**. Read tag identifies the tag with the phone's reader across the HF families Android exposes — Classic, Plus, Ultralight/NTAG, my-d move lean, DESFire, Calypso/BNEVT, ISO 15693 (ICODE, ST25, EM), FeliCa/ISO 18092, eMRTD passports and national eIDs, SmartMX and generic ISO-DEP applets — and reads its memory in the same field. Shows UID, ATQA/SAK, ATS/ATQB, memory, DESFire applications/files, Calypso ICC/environment/free files, MAD/NDEF (Type 2/3/4/5), sectors with access bits and counters, then offers **Save dump**. Optional key-based reads: DESFire files with an AES key, MIFARE Plus SL3 sectors. Restore tag writes Ultralight/NTAG and MIFARE Classic dumps (the latter with the keys from `hf-mf-<UID>-key.bin`); my-d move lean dumps are saved for the Proxmark3, since page 03 is OTP. Set counter brings an Ultralight EV1 counter to a chosen value; Credit increments or decrements a standard MIFARE Classic value block with a key file, including RicaricaMi/En1545 counters; Change UID writes a new UID to Gen2/CUID, Gen3/APDU and Ultralight EV1 DirectWrite magic cards. Saves a text report. No Proxmark3 required. |
-| **Data** | Dumps, traces, logs and tag reports; filters, import/export via the Storage Access Framework, share. Built-in hex editor for `.bin` blocks and pages, with decoded access bits and value blocks. |
-| **Info** | Version, build and client commit, theme, settings backup/restore, client-resource reset, in-app updates, licence and links. |
-
-**Scripts:** import `.lua`, `.cmd` and `.py` files, run them with arguments and keep them
-across resource resets. Lua and Cmd run in the native client; Python runs in an embedded
-CPython runtime (experimental - scripts needing SWIG objects or extra pip packages may
-fail). Only import scripts you trust.
-
-### Tag inspector
-
-The **NFC** section works without a Proxmark3 and identifies the tag from the phone's
-reader. Most tools read only; the three write tools are described below.
-
-- **Read tag**: one action that identifies the tag and reads its memory while the tag
-  stays on the phone, then offers **Save dump** with an editable name. A partial or
-  failed read links to the full read, which accepts a key file or a password.
-- **Restore notes**: the dump card states the caveat per family — Ultralight EV1
-  counters are changed only by the explicit counter tool, MIFARE Classic needs the
-  sector keys, my-d move lean page 03 (OTP/CC) cannot be rewritten and is restored only
-  with a Proxmark3.
-- **Keyless**: family, UID, ATQA/SAK, ATS/ATQB and technologies; GET_VERSION on NXP cards;
-  MIFARE Classic sectors with access bits, MAD and NDEF; Ultralight/NTAG capability
-  container and counters; page memory read with the `0x30` command on Type 2 chips that
-  expose no MifareUltralight (Infineon my-d move lean on transport tickets), named from
-  the memory size; DESFire PICC parameters, applications, DF names and file
-  settings; Calypso FCI, ICC manufacturing record, environment and the standard free
-  files (events, contracts, counters, special events, contract list); ISO 15693 system
-  information (manufacturer, DSFID/AFI, memory geometry, IC reference); FeliCa PMm and
-  system codes; eMRTD/eID application, EF.CardAccess and PACE/BAC status; SmartMX and
-  generic ISO-DEP ATS with the applications found by the AID scan; EMV/NDEF ISO-DEP
-  applications. NDEF messages are decoded for Type 2, Type 3, Type 4 and Type 5 tags.
-- **Set counter**: choose counter 0–2 and an absolute target (0–16,777,215), present the
-  tag once. The phone uses GET_VERSION, optional PWD_AUTH, READ_CNT, READ_TEARING and
-  INCREMENT_CNT, computes the delta from the current value and reads the counter back.
-  EV1 counters are one-way: the tool refuses a target below the current value and never
-  resets a counter; resetting still needs the Proxmark3.
-- **Credit**: read a MIFARE Classic with a key file (or the factory key when
-  none is selected), choose a standard value block and increment or decrement it. The
-  first presentation scans the card, the second applies INCREMENT/DECREMENT + TRANSFER
-  and verifies the result. The tool lists only standard value blocks; credit stored in
-  normal data blocks is left alone. Access conditions are enforced: `000` works with
-  either key, `001` is decrement-only and `110` requires Key B. A block whose keys or
-  ACL do not allow the operation is shown read-only or with a warning. The address field
-  is accepted even when it is relative/slot-based instead of the absolute block number,
-  which covers RicaricaMi/En1545 counters (sectors 2–5, blocks 0/1; sector 5 blocks 1/2).
-  RicaricaMi also keeps an En1545 hash: the value block changes, but the tool does not
-  recompute that hash, so a gate may reject the card.
-- **Change UID**: type a 4-byte (8 hex digits) or 7-byte (14 hex digits) UID and the
-  sector-0 Classic key (default `FFFFFFFFFFFF`), confirm the irreversible write, then
-  present the card once. The UID length must match the card that is presented. For
-  Classic cards the phone preserves SAK, ATQA and the manufacturer bytes and recomputes
-  the BCC; Gen2/CUID cards accept a normal block-0 write, while Gen3/APDU cards use
-  `90 F0 CC CC 10` (4-byte UID) or `90 FB CC CC 07` (7-byte UID). Ultralight EV1
-  DirectWrite cards get pages 0–2 rewritten with both BCCs, keeping the internal and
-  lock bytes. Every path reads the result back when the card allows it. Gen1a, Gen1b and
-  other backdoor-only cards cannot be written through the Android NFC API: the tool says
-  so and points to the Proxmark3.
-- **APDU console**: pick an ISO-DEP card, type a command in hexadecimal and read the
-  response with the ISO 7816 status word; `61xx` and `6Cxx` are handled automatically.
-  It is the manual path for applets the automatic probes do not name.
-- **DESFire authenticated read**: enter a 16-byte AES key and key number, present the
-  tag again and the app runs the EV1 AES handshake and reads standard, backup, record
-  and value files in plain or MACed mode. Enciphered files are reported as not read.
-- **MIFARE Plus SL3**: enter the AES key and sector (A/B) and the app reads the sector
-  blocks after the native `0x70`/`0x72` handshake.
-- **Keys** are kept in memory only for the read, never written to a file or report.
-
-Calypso secure sessions are **not** implemented: they require a Calypso SAM and the
-licensed Calypso specification, so only the free data is shown. The app states this in
-the Calypso card.
-
-## Quick start
-
-1. Install [`pm3-release.apk`](https://github.com/M35mar/RFIDtools/releases/latest/download/pm3-release.apk).
-2. Connect the Proxmark3 with a USB OTG cable or adapter (or use Bluetooth, see below).
+1. Install the APK.
+2. Connect the Proxmark3 with a USB OTG cable or adapter.
 3. Open the app and accept the Android USB permission prompt.
-4. Go to **Device → Device**, tap **Connect**, then use **Console** or **PM3 tools**.
+4. Go to **Device → Connect**, then use **Console** or **PM3 tools**.
 
-Use **Data** for dumps, traces, logs and reports, and **NFC** to identify tags and work with
-them using the phone alone. If the board is not detected, check the cable/adapter and confirm
-it enumerates as `0x9ac4:0x4b8f`.
+Using **Bluetooth**? Select it in the Device transport selector, pick your unit and tap **Connect**. Using **NFC**? Open the NFC tab — the phone reader handles tags on its own.
 
-## Bluetooth
+## 🔵 Bluetooth
 
-Select **Bluetooth** in the transport selector on the **Device** tab. The device list is
-unified: bonded Classic units and BLE scan results appear side by side, badged **SPP** or
-**BLE**, and the app remembers only the last device used. Connection is manual, like USB:
-select the device, then tap **Connect**.
+Bonded Classic units and BLE scan results appear in one list, badged **SPP** or **BLE**. The app remembers the last device only.
 
 | Module | Link | Name | Requirement |
 | --- | --- | --- | --- |
-| RDV4 BlueShark | Classic SPP | `PM3_RDV4.0` | Pair with PIN `1234`; firmware built with `PLATFORM_EXTRAS=BTADDON` |
-| Proxmark5 BWM | BLE, service `0xAE86`, characteristic `0xAE88` | `Proxmark5` | No pairing; firmware built with `PLATFORM=PM5 PLATFORM_EXTRAS=BWM` |
+| RDV4 BlueShark | Classic SPP | `PM3_RDV4.0` | Pair with PIN `1234`; firmware with `PLATFORM_EXTRAS=BTADDON` |
+| Proxmark5 BWM | BLE | `Proxmark5` | No pairing; firmware with `PLATFORM=PM5 PLATFORM_EXTRAS=BWM` |
 
-### RDV4 BlueShark (Bluetooth Classic)
+- Throughput is lower than USB: dumps and traces take longer. **Flashing always requires USB.**
+- Android 12+ asks for **Nearby devices**; older versions ask for location to scan.
+- BLE is experimental: after a GATT 133 error, retry the connection.
 
-1. Turn the BlueShark module on (battery switch); its LED blinks.
-2. Android settings → Bluetooth → pair `PM3_RDV4.0` with PIN `1234`.
-3. App → **Device** → **Bluetooth** → select `PM3_RDV4.0` → **Connect**.
-4. A steady LED and `hw version` in the Console confirm the link.
+## 📡 NFC toolkit
 
-The firmware must be built with `PLATFORM_EXTRAS=BTADDON`, which enables the host USART
-at 115200 baud while leaving USB available:
+Everything here runs on the phone alone.
 
-```bash
-# Makefile.platform
-PLATFORM_EXTRAS=BTADDON
-make clean && make -j
-./pm3-flash-fullimage
-```
+| Tool | What it does |
+| --- | --- |
+| **Read tag** | Identifies the tag and reads its memory in one tap; save the result as a dump. |
+| **Restore tag** | Writes Ultralight/NTAG and MIFARE Classic dumps. Classic needs `hf-mf-<UID>-key.bin`. |
+| **APDU console** | Sends raw ISO-DEP commands and shows the response with its status word. |
+| **Set counter** | Brings an Ultralight EV1 counter to a target value. Increment only. |
+| **Credit** | Increments or decrements a MIFARE Classic value block with a key file. |
+| **Change UID** | Rewrites the UID of Gen2/CUID, Gen3/APDU and Ultralight EV1 DirectWrite magic cards. |
 
-### Proxmark5 BWM (BLE)
+- Keys are kept in memory only, never written to disk or to a report.
+- Gen1a, Gen1b and backdoor cards cannot be written through Android NFC: use a Proxmark3.
+- Calypso secure sessions need a SAM and the licensed spec, so only free data is shown.
 
-1. Build and flash the firmware with `PLATFORM=PM5 PLATFORM_EXTRAS=BWM`.
-2. App → **Device** → **Bluetooth** → **Scan**, select **Proxmark5** (BLE) → **Connect**.
-
-BLE support is new and marked experimental: some Android stacks need a retry after a
-GATT 133 error. The app requests an MTU of 517 and falls back to the default 23-byte ATT
-MTU when the phone or firmware refuses it.
-
-### Notes and limits
-
-- Throughput is lower than USB (RFCOMM ≈128 kbit/s, BLE lower still), so dumps and traces
-  take longer. **Flashing always requires USB.**
-- The app opens the link itself and feeds the embedded client through its internal
-  socket; `hw connect bt:`/`ble:` from the Console is intentionally rejected with a hint,
-  because the native client is built without BlueZ.
-- Permissions: Android 12+ asks for **Nearby devices** (`BLUETOOTH_SCAN` /
-  `BLUETOOTH_CONNECT`); Android 9–11 asks for location to scan; Android 8 uses coarse
-  location.
-- If the socket opens but the handshake fails, the connection log appends the firmware
-  build hint for the selected transport.
-
-## Requirements
+## 📋 Requirements
 
 - Android **8.0+** (API 26), **arm64-v8a**.
-- Proxmark3 hardware exposing USB IDs `0x9ac4:0x4b8f` (CDC-ACM), or a Bluetooth module:
-  RDV4 BlueShark (Classic SPP) or Proxmark5 BWM (BLE).
-- Firmware built from the **same pinned Proxmark3 commit** as the embedded client, so the
-  `CAPABILITIES_VERSION` handshake matches.
-- USB host/OTG is optional in the manifest: a phone without it can still use Bluetooth,
-  and a phone without Bluetooth can still use USB.
+- Proxmark3 with USB IDs `0x9ac4:0x4b8f`, or RDV4 BlueShark / Proxmark5 BWM.
+- Firmware built from the same pinned Proxmark3 commit as the embedded client.
+- Firmware is **not** included and never flashed by the app: use a desktop client, over USB.
 
-Firmware is **not** included and **not** flashed by this app — use a desktop client.
-
-## Build
+## 🛠️ Build
 
 <details>
 <summary><b>Build from source</b></summary>
 
-Requires Android SDK platform 37, build-tools 37.0.0, NDK 27.2.12479018, CMake 3.22.1,
-JDK 21, Python 3.14 (Chaquopy), plus Git, Bash and Ninja.
+Requires JDK 21, Python 3.14, Android SDK platform 37, build-tools 37.0.0, NDK 27.2.12479018, CMake 3.22.1, Git, Bash and Ninja.
 
 ```bash
 git submodule update --init --recursive
@@ -204,26 +106,21 @@ git submodule update --init --recursive
 ./gradlew :core:pm3:installDebug   # with a device attached
 ```
 
-`preBuild` runs `scripts/build-native.sh` and produces
-`core/pm3/src/main/jniLibs/arm64-v8a/libpm3android.so`. Client resources (dictionaries,
-Lua/Cmd/Python scripts) are synced from the submodule into `assets/`. Both directories are
-build artifacts and excluded from git; `dictionaries/extras` (28 MB) is not packaged.
+`preBuild` compiles the client into `core/pm3/src/main/jniLibs/arm64-v8a/libpm3android.so` and syncs client resources into `assets/`. Both are build artifacts and are not committed.
 
 </details>
 
 <details>
 <summary><b>Release signing</b></summary>
 
-Release builds are signed when `keystore.properties` exists; otherwise Gradle produces an
-unsigned APK that cannot install over a release build.
+Release builds are signed when `keystore.properties` exists. Back up `release.jks` and the properties file: losing them means no future APK can update an installed release.
 
 ```bash
 cp keystore.properties.example keystore.properties
 # storeFile=release.jks  keyAlias=rfidtools
 ```
 
-**Back up `release.jks` and `keystore.properties`.** Losing the key means future APKs can
-never update an installed release. CI signs tagged builds with these secrets:
+CI signs tagged builds with these repository secrets:
 
 | Secret | Value |
 | --- | --- |
@@ -243,108 +140,59 @@ never update an installed release. CI signs tagged builds with these secrets:
 ./gradlew :core:pm3:assembleDebug
 ```
 
-Every push and pull request runs tests, lint and the debug build. Pushing a tag such as
-`0.7.0` (or `v0.7.0`) additionally checks that the tag equals `versionName`, ignoring a
-leading `v`, builds a signed release and publishes a GitHub release with only
-`pm3-release.apk` attached. Bump `versionCode` and `versionName` together in
-`core/pm3/build.gradle.kts` before tagging.
+Every push runs tests, lint and the debug build. A tag such as `1.1.0` (or `v1.1.0`) must match `versionName`, then builds a signed release and publishes `pm3-release.apk`. Bump `versionCode` and `versionName` together in `core/pm3/build.gradle.kts` before tagging.
 
 </details>
 
-## Troubleshooting
+## ❓ Troubleshooting
 
 <details>
 <summary><b>The Proxmark3 is not detected</b></summary>
 
-- Use a data-capable cable and an OTG adapter supported by the phone.
-- Confirm USB host mode and check `adb shell dumpsys usb` for `0x9ac4:0x4b8f`.
-- Replug the device and reopen the app.
+Use a data-capable cable and a supported OTG adapter. Confirm USB host mode and that the board enumerates as `0x9ac4:0x4b8f` (`adb shell dumpsys usb`), then replug it and reopen the app.
 
 </details>
 
 <details>
 <summary><b>The USB permission prompt does not appear</b></summary>
 
-- Disconnect and reconnect the board; make sure no other app holds the interface.
-- The app waits up to 60 seconds for permission, then returns to `DISCONNECTED`.
+Reconnect the board and make sure no other app holds the interface. The app waits up to 60 seconds, then returns to `DISCONNECTED`.
 
 </details>
 
 <details>
-<summary><b>Connection or firmware handshake fails</b></summary>
+<summary><b>The connection handshake fails</b></summary>
 
-- The firmware must match the pinned Proxmark3 client commit: reflash from a PC.
-- Check **Device → Device** diagnostics for VID/PID and interface details.
+The firmware must match the pinned client commit: reflash from a PC. Check **Device** diagnostics for VID/PID and interface details.
 
 </details>
 
 <details>
 <summary><b>The update check or install fails</b></summary>
 
-- The check needs internet and reads the public GitHub API; rate limits or an outage can
-  make it fail. Retry from **Info → Links → Check for updates**.
-- A release without an asset named exactly `pm3-release.apk` is reported as incompatible.
-- If Android blocks the install, allow **Install unknown apps** for RFIDtools and retry.
+The check uses the public GitHub API, so rate limits or an outage can make it fail. Retry from **Info → Links → Check for updates**. Allow **Install unknown apps** for RFIDtools if Android blocks the install.
 
 </details>
 
 <details>
-<summary><b>I need to reset the client resources</b></summary>
+<summary><b>I need to reset client resources</b></summary>
 
-Open **Info → Reset client resources** while disconnected. Dumps, traces, logs and imported
-scripts are preserved; dictionaries, bundled scripts and resources are reinstalled on the
-next connection.
+Open **Info → Reset client resources** while disconnected. Dumps, traces, logs and imported scripts are preserved.
 
 </details>
 
-## Privacy and security
+## 🔒 Privacy & security
 
-- `INTERNET` is used only for the GitHub release check and APK download. No analytics,
-  telemetry or advertising SDK.
-- Client data stays in the app's private `filesDir` and leaves only through an explicit
-  share or export.
-- Installation always goes through the system package installer; the app never installs
-  silently and exposes no network service.
-- Imported scripts run with the app's permissions and can open network connections — only
-  import code you trust.
+- `INTERNET` is used only for the GitHub release check and APK download. No analytics, telemetry or ads.
+- Client data stays in the app's private storage and leaves only through an explicit share or export.
+- The app never installs APKs silently and exposes no network service.
+- Imported scripts run with the app's permissions: only import code you trust.
 
-## License and credits
+## 📜 License & credits
 
-GPL-3.0, same as the embedded Proxmark3 client. See [LICENSE](LICENSE) and
-[CHANGELOG.md](CHANGELOG.md) for the full history.
+GPL-3.0, the same as the embedded Proxmark3 client. See [LICENSE](LICENSE) and [CHANGELOG.md](CHANGELOG.md).
 
-- Original **RFIDtools** (GPL-3.0) by [RfidResearchGroup](https://github.com/RfidResearchGroup);
-  this repository is a derivative rewritten with an in-process client instead of Termux.
-- Embedded client: [RfidResearchGroup/proxmark3](https://github.com/RfidResearchGroup/proxmark3)
-  (Iceman fork, pinned submodule).
-- Ultralight Ev1 counter-reset script based on [Quarkslab's anti-tearing research](https://blog.quarkslab.com/rfid-monotonic-counter-anti-tearing-defeated.html).
-- Python execution via [Chaquopy](https://chaquo.com/chaquopy/); bundled pyscripts keep
-  their upstream licences.
-
-## Architecture
-
-<details>
-<summary><b>How the client runs inside the app</b></summary>
-
-```text
-┌───────────────────────── app process ─────────────────────────┐
-│  Compose UI (Device · Console · NFC · Data · Info)            │
-│        │ commands as strings                                  │
-│        ▼                                                      │
-│  Pm3Client ─→ Pm3Native (JNI, libpm3android.so)               │
-│        │                 │ pm3_console() → captured output    │
-│        ▼                 ▼                                    │
-│  UsbCdc ◀── LocalSocketBridge (socket:pm3.android)            │
-└───────────────────────────────────────────────────────────────┘
-                        ▲ USB CDC bulk transfers
-                  Proxmark3 device
-```
-
-- The client's `socket:` transport is reused unchanged; the Kotlin `LocalSocketBridge`
-  listens on the same abstract namespace it connects to.
-- `pm3_open()`'s `exit()` on failure is reimplemented in `pm3_jni.c` and reported as a status.
-- Output is captured with the client's own grabber — no PTY, no pipes.
-- Python scripts share the same USB session and command serialisation through
-  `Pm3PythonBridge`.
-
-</details>
+- Original **RFIDtools** by [RfidResearchGroup](https://github.com/RfidResearchGroup), rewritten with an in-process client.
+- Embedded client: [RfidResearchGroup/proxmark3](https://github.com/RfidResearchGroup/proxmark3).
+- Ultralight EV1 counter-reset research by [Quarkslab](https://blog.quarkslab.com/rfid-monotonic-counter-anti-tearing-defeated.html).
+- Python execution via [Chaquopy](https://chaquo.com/chaquopy/).
