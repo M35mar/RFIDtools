@@ -3,7 +3,9 @@ name: Android CI
 on:
   push:
     branches: [ main, master ]
-    tags: [ '*' ]
+    # Release tags only. Broad '*' would also run the release job for archive
+    # or backup tags, which must not publish an APK.
+    tags: [ '[0-9]*', 'v[0-9]*' ]
   pull_request:
   workflow_dispatch:
 
