@@ -37,9 +37,12 @@ import com.farmacia.pm3android.pm3.BluetoothLink
 import com.farmacia.pm3android.pm3.BluetoothPermissions
 import com.farmacia.pm3android.pm3.Pm3Client
 import com.farmacia.pm3android.pm3.Pm3ConnectionState
+import com.farmacia.pm3android.pm3.Pm3OperationService
 import com.farmacia.pm3android.pm3.Pm3PythonRunner
 import com.farmacia.pm3android.pm3.Pm3Resources
 import com.farmacia.pm3android.pm3.Pm3Transport
+import com.farmacia.pm3android.ui.results.TagInfo
+import com.farmacia.pm3android.ui.results.TagParsers
 import com.farmacia.pm3android.update.ApkInstaller
 import com.farmacia.pm3android.update.ReleaseCheck
 import com.farmacia.pm3android.update.ReleaseInfo
@@ -135,6 +138,10 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
 
     private val historyFlow = MutableStateFlow<List<String>>(emptyList())
     val history: StateFlow<List<String>> = historyFlow
+
+    /** Structured summary of the last command, null when it is not a tag read. */
+    private val lastResultFlow = MutableStateFlow<TagInfo?>(null)
+    val lastResult: StateFlow<TagInfo?> = lastResultFlow
 
     private val messagesFlow = MutableSharedFlow<String>(extraBufferCapacity = 16)
     val messages: SharedFlow<String> = messagesFlow
@@ -488,10 +495,17 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
         }
         appendLine("> $command")
         addHistory(command)
-        return submitWork {
+        lastResultFlow.value = null
+        return submitWork(foreground = true) {
+            val captured = StringBuilder()
             try {
-                val output = client.exec(command) { chunk -> appendChunk(chunk) }
+                val output = client.exec(command) { chunk ->
+                    captured.append(chunk)
+                    appendChunk(chunk)
+                }
+                captured.append(output)
                 appendChunk(output, flush = true)
+                lastResultFlow.value = TagParsers.parse(command, captured.toString())
             } catch (t: CancellationException) {
                 throw t
             } catch (t: Throwable) {
@@ -521,6 +535,7 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
     fun clearConsole() {
         streamBuffer.clear()
         linesFlow.value = emptyList()
+        lastResultFlow.value = null
     }
 
     fun clearHistory() {
@@ -685,8 +700,9 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
         }
         appendLine("> $command")
         addHistory(command)
+        lastResultFlow.value = null
         val app = getApplication<Application>()
-        return submitWork {
+        return submitWork(foreground = true) {
             try {
                 val output = withContext(Dispatchers.IO) {
                     // Run the installed mirror so sibling modules in
@@ -997,6 +1013,7 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
     override fun onCleared() {
         runCatching { getApplication<Application>().unregisterReceiver(usbReceiver) }
         runCatching { getApplication<Application>().unregisterReceiver(bluetoothReceiver) }
+        runCatching { Pm3OperationService.stop(getApplication()) }
         stopBluetoothScan()
         // Closing the native client can block behind a running command. Release
         // the transport synchronously, then let native cleanup finish off the
@@ -1073,14 +1090,24 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
         t.message?.takeIf { it.isNotBlank() } ?: t.javaClass.simpleName
 
 
-    private fun submitWork(block: suspend () -> Unit): Boolean {
+    private fun submitWork(
+        foreground: Boolean = false,
+        block: suspend () -> Unit,
+    ): Boolean {
         if (busyFlow.value) return false
         busyFlow.value = true
+        val app = getApplication<Application>()
+        if (foreground) {
+            runCatching { Pm3OperationService.start(app) }
+        }
         execJob = viewModelScope.launch {
             try {
                 block()
             } finally {
                 busyFlow.value = false
+                if (foreground) {
+                    runCatching { Pm3OperationService.stop(app) }
+                }
             }
         }
         return true

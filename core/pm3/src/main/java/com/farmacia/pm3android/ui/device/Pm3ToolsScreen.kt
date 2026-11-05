@@ -7,7 +7,6 @@
 
 package com.farmacia.pm3android.ui.device
 
-import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -51,53 +50,8 @@ import com.farmacia.pm3android.R
 import com.farmacia.pm3android.pm3.Pm3ConnectionState
 import com.farmacia.pm3android.ui.components.SectionCard
 import com.farmacia.pm3android.ui.console.Pm3ViewModel
+import com.farmacia.pm3android.ui.results.TagResultCard
 import com.farmacia.pm3android.ui.scripts.ScriptsSection
-
-/** Factories returning the common type, so list inference stays simple. */
-private fun valueOf(
-    name: String,
-    @StringRes label: Int,
-    placeholder: String,
-    defaultValue: String = "",
-    digitsOnly: Boolean = false,
-): ToolParam = ToolValue(name, label, placeholder, defaultValue, digitsOnly)
-
-private fun flagOf(@StringRes label: Int, literal: String): ToolParam =
-    ToolSwitch(literal, label, literal)
-
-/** A value the user types in; digitsOnly forbids anything but numbers. */
-private data class ToolValue(
-    val name: String,
-    @StringRes val label: Int,
-    val placeholder: String,
-    val defaultValue: String = "",
-    val digitsOnly: Boolean = false,
-) : ToolParam
-
-/** A checkbox that appends its literal (already with dashes) when checked. */
-private data class ToolSwitch(
-    val name: String,
-    @StringRes val label: Int,
-    val literal: String,
-) : ToolParam
-
-private sealed interface ToolParam
-
-private fun ToolParam.asValue(): ToolValue? = this as? ToolValue
-private fun ToolParam.asSwitch(): ToolSwitch? = this as? ToolSwitch
-
-private data class ToolCommand(
-    @StringRes val label: Int,
-    /** Command template; "{name}" tokens are replaced by ToolValue entries. */
-    val template: String,
-    @StringRes val description: Int,
-    val params: List<ToolParam> = emptyList(),
-)
-
-private data class ToolSectionData(
-    @StringRes val title: Int,
-    val commands: List<ToolCommand>,
-)
 
 private data class LocalizedToolCommand(
     val command: ToolCommand,
@@ -110,170 +64,35 @@ private data class LocalizedToolSection(
     val commands: List<LocalizedToolCommand>,
 )
 
-private val LF_COMMANDS = listOf(
-    ToolCommand(
-        R.string.tool_lf_em410x_label,
-        "lf em 410x reader",
-        R.string.tool_lf_em410x_desc,
-    ),
-    ToolCommand(
-        R.string.tool_lf_hid_label,
-        "lf hid reader",
-        R.string.tool_lf_hid_desc,
-    ),
-    ToolCommand(
-        R.string.tool_lf_ioprox_label,
-        "lf io reader",
-        R.string.tool_lf_ioprox_desc,
-    ),
-    ToolCommand(
-        R.string.tool_lf_t55xx_detect_label,
-        "lf t55xx detect",
-        R.string.tool_lf_t55xx_detect_desc,
-    ),
-    ToolCommand(
-        R.string.tool_lf_t55xx_dump_label,
-        "lf t55xx dump",
-        R.string.tool_lf_t55xx_dump_desc,
-    ),
-)
-
-private val HF_COMMANDS = listOf(
-    ToolCommand(
-        R.string.tool_hf_search_label,
-        "hf search",
-        R.string.tool_hf_search_desc,
-    ),
-    ToolCommand(
-        R.string.tool_hf_14a_info_label,
-        "hf 14a info",
-        R.string.tool_hf_14a_info_desc,
-    ),
-)
-
-private val MFC_COMMANDS = listOf(
-    ToolCommand(
-        R.string.tool_mfc_info_label,
-        "hf mf info",
-        R.string.tool_mfc_info_desc,
-    ),
-    ToolCommand(
-        R.string.tool_mfc_dump_label,
-        "hf mf dump",
-        R.string.tool_mfc_dump_desc,
-    ),
-    ToolCommand(
-        R.string.tool_mfc_chk_label,
-        "hf mf chk",
-        R.string.tool_mfc_chk_desc,
-    ),
-    ToolCommand(
-        R.string.tool_mfc_autopwn_label,
-        "hf mf autopwn",
-        R.string.tool_mfc_autopwn_desc,
-    ),
-)
-
-private val MFU_EV1_COMMANDS = listOf(
-    ToolCommand(
-        R.string.tool_mfuev1_info_label,
-        "hf mfu info",
-        R.string.tool_mfuev1_info_desc,
-    ),
-    ToolCommand(
-        R.string.tool_mfuev1_dump_label,
-        "hf mfu dump",
-        R.string.tool_mfuev1_dump_desc,
-    ),
-    ToolCommand(
-        R.string.tool_mfuev1_restore_label,
-        "hf mfu restore -f {file}",
-        R.string.tool_mfuev1_restore_desc,
-        listOf(
-            valueOf(
-                "file",
-                R.string.tool_mfuev1_restore_param_file,
-                "dump.bin",
-            ),
-        ),
-    ),
-    ToolCommand(
-        R.string.tool_mfuev1_incr_label,
-        "hf mfu incr -c {counter} -v {value}",
-        R.string.tool_mfuev1_incr_desc,
-        listOf(
-            valueOf(
-                "counter",
-                R.string.tool_mfuev1_counter_param,
-                "0",
-                defaultValue = "0",
-                digitsOnly = true,
-            ),
-            valueOf(
-                "value",
-                R.string.tool_mfuev1_increment_param,
-                "1",
-                defaultValue = "1",
-                digitsOnly = true,
-            ),
-        ),
-    ),
-    ToolCommand(
-        R.string.tool_mfuev1_countertear_label,
-        "hf mfu countertear -c {counter}",
-        R.string.tool_mfuev1_countertear_desc,
-        listOf(
-            valueOf(
-                "counter",
-                R.string.tool_mfuev1_counter_param,
-                "0",
-                defaultValue = "0",
-                digitsOnly = true,
-            ),
-        ),
-    ),
-    ToolCommand(
-        R.string.tool_mfuev1_reset_label,
-        "script run mfuev1_counter_reset.lua -c {counter}",
-        R.string.tool_mfuev1_reset_desc,
-        listOf(
-            valueOf(
-                "counter",
-                R.string.tool_mfuev1_counter_param,
-                "0",
-                defaultValue = "0",
-                digitsOnly = true,
-            ),
-            flagOf(R.string.tool_param_skip_checks, "-f"),
-        ),
-    ),
-)
-
 @Composable
 fun Pm3ToolsScreen(viewModel: Pm3ViewModel) {
     val connectionState by viewModel.connectionState.collectAsState()
     val busy by viewModel.busy.collectAsState()
     val history by viewModel.history.collectAsState()
+    val lastResult by viewModel.lastResult.collectAsState()
     val enabled = connectionState == Pm3ConnectionState.CONNECTED && !busy
 
     var pendingCommand by remember { mutableStateOf<LocalizedToolCommand?>(null) }
+    var dangerPending by remember { mutableStateOf<Pair<String, LocalizedToolCommand>?>(null) }
     var search by rememberSaveable { mutableStateOf("") }
+
+    val execute: (String, LocalizedToolCommand) -> Unit = { commandText, command ->
+        if (command.command.danger == DangerLevel.SAFE) {
+            viewModel.runCommand(commandText)
+        } else {
+            dangerPending = commandText to command
+        }
+    }
 
     val launch: (LocalizedToolCommand) -> Unit = { command ->
         if (command.command.params.isEmpty()) {
-            viewModel.runCommand(command.command.template)
+            execute(command.command.template, command)
         } else {
             pendingCommand = command
         }
     }
 
-    val sections = listOf(
-        ToolSectionData(R.string.tool_section_lf, LF_COMMANDS),
-        ToolSectionData(R.string.tool_section_hf_generic, HF_COMMANDS),
-        ToolSectionData(R.string.tool_section_mfc, MFC_COMMANDS),
-        ToolSectionData(R.string.tool_section_mfuev1, MFU_EV1_COMMANDS),
-    )
-    val localizedSections = sections.map { section ->
+    val localizedSections = TOOL_SECTIONS.map { section ->
         LocalizedToolSection(
             title = stringResource(section.title),
             commands = section.commands.map { command ->
@@ -313,6 +132,14 @@ fun Pm3ToolsScreen(viewModel: Pm3ViewModel) {
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
+        }
+
+        lastResult?.let { info ->
+            TagResultCard(
+                info = info,
+                enabled = enabled,
+                onRerun = { command -> viewModel.runCommand(command) },
+            )
         }
 
         OutlinedTextField(
@@ -372,43 +199,46 @@ fun Pm3ToolsScreen(viewModel: Pm3ViewModel) {
                 onDismiss = { pendingCommand = null },
                 onConfirm = { values, switches ->
                     pendingCommand = null
-                    viewModel.runCommand(
+                    execute(
                         composeCommand(command.command, values, switches),
+                        command,
                     )
                 },
             )
         }
-    }
-}
 
-private fun composeCommand(
-    command: ToolCommand,
-    values: Map<String, String>,
-    switches: Map<String, Boolean>,
-): String {
-    var result = command.template
-    for (param in command.params) {
-        param.asValue()?.let { value ->
-            result = result.replace(
-                "{${value.name}}",
-                values[value.name]?.takeIf { it.isNotBlank() } ?: value.defaultValue,
+        dangerPending?.let { (commandText, command) ->
+            AlertDialog(
+                onDismissRequest = { dangerPending = null },
+                title = {
+                    Text(
+                        stringResource(
+                            if (command.command.danger == DangerLevel.DESTRUCTIVE) {
+                                R.string.danger_destructive_title
+                            } else {
+                                R.string.danger_write_title
+                            },
+                        ),
+                    )
+                },
+                text = { Text(stringResource(R.string.danger_message, commandText)) },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            dangerPending = null
+                            viewModel.runCommand(commandText)
+                        },
+                    ) {
+                        Text(stringResource(R.string.danger_confirm))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { dangerPending = null }) {
+                        Text(stringResource(R.string.action_cancel))
+                    }
+                },
             )
         }
-        param.asSwitch()?.let { switch ->
-            if (switches[switch.name] == true) {
-                result = "$result ${switch.literal}"
-            }
-        }
-    }
-    return result
-}
-
-private fun entryValid(entry: ToolValue, text: String?): Boolean {
-    val content = text.orEmpty()
-    return if (entry.digitsOnly) {
-        content.isNotEmpty() && content.all { it.isDigit() }
-    } else {
-        content.isNotBlank()
     }
 }
 

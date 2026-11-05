@@ -120,8 +120,8 @@ android {
         applicationId = "com.farmacia.pm3android"
         minSdk = 26
         targetSdk = 37
-        versionCode = 16
-        versionName = "1.1.1"
+        versionCode = 20000
+        versionName = "2.0.0"
 
         ndk {
             // The only device flavour this project targets.
@@ -192,8 +192,23 @@ chaquopy {
     }
 }
 
+// Fast local checks: -PskipNative skips the (slow) NDK build when the .so is
+// already in jniLibs; -PskipSync also skips the asset copy when the assets are
+// already present. The default build and CI always run both steps.
+val skipNative = providers.gradleProperty("skipNative")
+    .map { it.toBoolean() }
+    .getOrElse(false)
+val skipSync = providers.gradleProperty("skipSync")
+    .map { it.toBoolean() }
+    .getOrElse(false)
+
 tasks.named("preBuild") {
-    dependsOn(buildPm3Native, syncPm3ClientResources)
+    if (!skipNative) {
+        dependsOn(buildPm3Native)
+    }
+    if (!skipSync) {
+        dependsOn(syncPm3ClientResources)
+    }
 }
 
 dependencies {

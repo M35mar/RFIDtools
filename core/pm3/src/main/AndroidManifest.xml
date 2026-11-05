@@ -44,6 +44,13 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!-- Keep a running Proxmark3 command alive when the app is backgrounded. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <!-- Required by the connectedDevice foreground-service type on API 34+. -->
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+
     <!-- Optional phone-NFC restore path: the PM3 remains the primary tool, so
          a device without NFC can still install and use every other feature. -->
     <uses-permission android:name="android.permission.NFC" />
@@ -87,6 +94,12 @@
                 android:name="android.app.shortcuts"
                 android:resource="@xml/shortcuts" />
         </activity>
+
+        <!-- Foreground service for long native/Python commands. -->
+        <service
+            android:name=".pm3.Pm3OperationService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
 
         <!-- Share gate for client output files (dumps, traces, logs). -->
         <provider

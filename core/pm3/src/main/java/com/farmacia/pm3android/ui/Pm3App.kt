@@ -6,7 +6,12 @@
 
 package com.farmacia.pm3android.ui
 
+import android.Manifest
 import android.app.Activity
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
@@ -41,16 +46,19 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.farmacia.pm3android.R
@@ -144,6 +152,7 @@ fun Pm3App(
     val uidViewModel: MagicUidViewModel = viewModel()
     val settings by viewModel.settings.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
+    val busy by viewModel.busy.collectAsState()
     val device by viewModel.device.collectAsState()
     val updateState by viewModel.updateState.collectAsState()
     val updatePrompt by viewModel.updatePrompt.collectAsState()
@@ -156,6 +165,28 @@ fun Pm3App(
     val uidState by uidViewModel.state.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var selected by rememberSaveable { mutableIntStateOf(0) }
+    val context = LocalContext.current
+
+    // Long commands run in a foreground service, so Android 13+ needs the
+    // notification permission. Ask only when the first long operation starts:
+    // a user who only browses the NFC tab never sees the prompt.
+    var notificationAsked by remember { mutableStateOf(false) }
+    val notificationPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { }
+    LaunchedEffect(busy) {
+        if (!busy || notificationAsked || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            return@LaunchedEffect
+        }
+        val granted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.POST_NOTIFICATIONS,
+        ) == PackageManager.PERMISSION_GRANTED
+        if (!granted) {
+            notificationAsked = true
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
 
     // requestedTab is a one-shot shortcut/navigation request, not the initial
     // state: rotation restores `selected` and must not jump back to a tab.

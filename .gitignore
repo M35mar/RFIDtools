@@ -1,6 +1,7 @@
 # Build system
 .gradle/
 build/
+.kotlin/
 local.properties
 .cxx/
 *.apk

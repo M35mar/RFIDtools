@@ -34,7 +34,9 @@ RFIDtools is free and open source. If it saves you time, you can keep it ad-free
 
 - **Embedded Proxmark3 client** — the Iceman client runs inside the app, over USB or Bluetooth. No Termux, no external process.
 - **Device & Console** — transport selector, connection diagnostics, full command console with history and follow mode.
-- **PM3 tools** — one-tap LF, HF, Classic autopwn and Ultralight EV1 commands with parameter dialogs.
+- **PM3 tools** — one-tap LF, HF, ISO 15693, iCLASS, DESFire, Classic autopwn and Ultralight EV1 commands with parameter dialogs. Writes and destructive commands require an explicit confirmation.
+- **Long-running commands** — a foreground service keeps native commands and Python scripts alive in the background; the notification Stop action interrupts both paths.
+- **Result cards** — tag reads are summarised as UID/ATQA/SAK/type cards above the console, with the raw output one tap away.
 - **Phone NFC toolkit** — read, restore, APDU console, EV1 counter, Classic credit and change UID. Works without a Proxmark3.
 - **Data manager** — dumps, traces, logs and reports, with a built-in hex editor for blocks and pages.
 - **Scripts** — import and run `.lua`, `.cmd` and `.py` files with arguments.
@@ -108,6 +110,12 @@ git submodule update --init --recursive
 
 `preBuild` compiles the client into `core/pm3/src/main/jniLibs/arm64-v8a/libpm3android.so` and syncs client resources into `assets/`. Both are build artifacts and are not committed.
 
+For quick Kotlin-only checks after a full build, skip those two steps:
+
+```bash
+./gradlew :core:pm3:testDebugUnitTest -PskipNative=true -PskipSync=true
+```
+
 </details>
 
 <details>
@@ -140,7 +148,7 @@ CI signs tagged builds with these repository secrets:
 ./gradlew :core:pm3:assembleDebug
 ```
 
-Every push runs tests, lint and the debug build. A tag such as `1.1.0` (or `v1.1.0`) must match `versionName`, then builds a signed release and publishes `pm3-release.apk`. Bump `versionCode` and `versionName` together in `core/pm3/build.gradle.kts` before tagging.
+Every push runs tests, lint and the debug build. A tag such as `2.0.0` (or `v2.0.0`) must match `versionName`, then builds a signed release and publishes `pm3-release.apk`. Bump `versionCode` and `versionName` together in `core/pm3/build.gradle.kts` before tagging.
 
 </details>
 

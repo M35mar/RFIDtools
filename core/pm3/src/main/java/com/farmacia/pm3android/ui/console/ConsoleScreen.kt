@@ -67,6 +67,7 @@ import com.farmacia.pm3android.ui.components.ConfirmDialog
 import com.farmacia.pm3android.ui.components.EmptyState
 import com.farmacia.pm3android.ui.components.copyText
 import com.farmacia.pm3android.ui.components.shareText
+import com.farmacia.pm3android.ui.results.TagResultCard
 
 @Composable
 fun ConsoleScreen(viewModel: Pm3ViewModel) {
@@ -75,6 +76,7 @@ fun ConsoleScreen(viewModel: Pm3ViewModel) {
     val busy by viewModel.busy.collectAsState()
     val lines by viewModel.lines.collectAsState()
     val history by viewModel.history.collectAsState()
+    val lastResult by viewModel.lastResult.collectAsState()
     val settings by viewModel.settings.collectAsState()
     val context = LocalContext.current
     val consoleTitle = stringResource(R.string.console_title)
@@ -166,6 +168,14 @@ fun ConsoleScreen(viewModel: Pm3ViewModel) {
                 Icon(Icons.Filled.Clear, contentDescription = null)
                 Text(stringResource(R.string.action_clear))
             }
+        }
+
+        lastResult?.let { info ->
+            TagResultCard(
+                info = info,
+                enabled = !busy && connectionState == Pm3ConnectionState.CONNECTED,
+                onRerun = { command -> viewModel.runCommand(command) },
+            )
         }
 
         Card(modifier = Modifier.weight(1f).fillMaxWidth()) {

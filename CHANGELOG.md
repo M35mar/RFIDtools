@@ -1,5 +1,56 @@
 # Changelog
 
+## 2.0.0 – 2026-11-05
+
+### Highlights
+- Long PM3 commands and Python scripts now keep running when the app is in
+  the background, with a notification **Stop** action.
+- The PM3 tool catalog covers ISO 15693, iCLASS, DESFire, LF search, antenna
+  tuning and NDEF reads; writes and destructive commands require confirmation.
+- Tag reads show a structured UID/ATQA/SAK/type card above the console, while
+  the raw output stays one tap away.
+- Every 1.x feature is retained: NFC toolkit, Bluetooth, Python, dump editor,
+  scripts and in-app updates. The package id is unchanged, so 1.x installs
+  update in place.
+
+### Added
+- Foreground operation service for native commands and Python scripts:
+  - starts only while a long command is running and stops as soon as it ends;
+  - notification Stop interrupts native loops and Python scripts;
+  - Android 13+ asks for the notification permission on the first long
+    command instead of at launch.
+- Expanded PM3 tool catalog:
+  - LF: `lf search`, `lf t55xx info`;
+  - HF: `hw tune`, `hf mfu ndefread`;
+  - ISO 15693: `hf 15 info`, `hf 15 reader`, `hf 15 dump`;
+  - iCLASS/Picopass: `hf iclass info`, `hf iclass dump`;
+  - DESFire: `hf mfdes info`.
+- `DangerLevel` policy and confirmation dialogs for writes (`hf mfu restore`,
+  `hf mfu incr`) and destructive operations (`countertear`, counter reset).
+- Structured result cards parsed from client output (UID, ATQA, SAK, type,
+  modulation, chip/version fields) with re-read and raw-output views.
+- Pure-JVM tests for the command catalog, command composition/validation and
+  the result parser.
+- `-PskipNative=true` and `-PskipSync=true` Gradle flags for fast local
+  Kotlin-only checks once the native library and assets have been built.
+
+### Changed
+- Version `2.0.0` (`versionCode` 20000). The application id remains
+  `com.farmacia.pm3android` and the signing key is unchanged.
+- The tool catalog is now Compose-free and unit-tested, so dangerous commands
+  cannot silently lose their confirmation policy.
+
+### Fixed
+- The notification Stop action now sets both the native interrupt flag and the
+  cooperative Python stop flag; stopping from the notification no longer
+  leaves a Python script running.
+- Foreground-service shutdown uses `stopService`/`stopForeground`, avoiding the
+  background-service restrictions that affect `startService()`.
+
+### Release
+- Version `2.0.0` (`versionCode` 20000), built against the pinned Proxmark3
+  submodule.
+
 ## 1.1.1 – 2026-10-31
 
 ### Highlights
