@@ -31,6 +31,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,9 +54,16 @@ fun ScriptsSection(viewModel: Pm3ViewModel) {
     val busy by viewModel.busy.collectAsState()
     val fileOpBusy by viewModel.fileOpBusy.collectAsState()
 
-    var pendingDelete by remember { mutableStateOf<Pm3Script?>(null) }
-    var pendingRun by remember { mutableStateOf<Pm3Script?>(null) }
-    var runArguments by remember { mutableStateOf("") }
+    // Paths, not objects: dialogs and typed arguments survive a rotation.
+    var pendingDeletePath by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingRunPath by rememberSaveable { mutableStateOf<String?>(null) }
+    var runArguments by rememberSaveable { mutableStateOf("") }
+    val pendingDelete = pendingDeletePath?.let { path ->
+        scripts.firstOrNull { it.file.absolutePath == path }
+    }
+    val pendingRun = pendingRunPath?.let { path ->
+        scripts.firstOrNull { it.file.absolutePath == path }
+    }
 
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
@@ -93,9 +101,9 @@ fun ScriptsSection(viewModel: Pm3ViewModel) {
                     canEdit = !busy && !fileOpBusy,
                     onRun = {
                         runArguments = ""
-                        pendingRun = script
+                        pendingRunPath = script.file.absolutePath
                     },
-                    onDelete = { pendingDelete = script },
+                    onDelete = { pendingDeletePath = script.file.absolutePath },
                 )
             }
         }
@@ -107,14 +115,14 @@ fun ScriptsSection(viewModel: Pm3ViewModel) {
             body = stringResource(R.string.scripts_delete_body, script.name),
             confirmLabel = stringResource(R.string.action_delete),
             onConfirm = { viewModel.deleteScript(script) },
-            onDismiss = { pendingDelete = null },
+            onDismiss = { pendingDeletePath = null },
             destructive = true,
         )
     }
 
     pendingRun?.let { script ->
         AlertDialog(
-            onDismissRequest = { pendingRun = null },
+            onDismissRequest = { pendingRunPath = null },
             title = { Text(stringResource(R.string.scripts_run_title, script.name)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -136,14 +144,14 @@ fun ScriptsSection(viewModel: Pm3ViewModel) {
                 Button(
                     onClick = {
                         viewModel.runScript(script, runArguments)
-                        pendingRun = null
+                        pendingRunPath = null
                     },
                 ) {
                     Text(stringResource(R.string.action_execute))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { pendingRun = null }) {
+                TextButton(onClick = { pendingRunPath = null }) {
                     Text(stringResource(R.string.action_cancel))
                 }
             },
@@ -182,13 +190,13 @@ private fun ScriptRow(
         IconButton(onClick = onRun, enabled = canRun) {
             Icon(
                 imageVector = Icons.Filled.PlayArrow,
-                contentDescription = stringResource(R.string.action_execute),
+                contentDescription = stringResource(R.string.a11y_run_script, script.name),
             )
         }
         IconButton(onClick = onDelete, enabled = canEdit) {
             Icon(
                 imageVector = Icons.Filled.Delete,
-                contentDescription = stringResource(R.string.action_delete),
+                contentDescription = stringResource(R.string.a11y_delete_script, script.name),
             )
         }
     }

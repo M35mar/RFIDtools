@@ -19,6 +19,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import androidx.core.content.ContextCompat
 import androidx.core.content.IntentCompat
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
@@ -203,6 +204,13 @@ class BluetoothSpp(private val context: Context) {
             }
 
             activeSocket = socket
+            // cancelConnect() may have landed between the check above and this
+            // assignment: honour it now or the socket would stay connected.
+            if (cancelRequested) {
+                runCatching { socket.close() }
+                if (activeSocket === socket) activeSocket = null
+                throw IOException("Connessione annullata")
+            }
             try {
                 runInterruptible { socket.connect() }
                 if (cancelRequested) throw IOException("Connessione annullata")
@@ -211,6 +219,11 @@ class BluetoothSpp(private val context: Context) {
                 socket.inputStream
                 socket.outputStream
                 return@withContext SppPort(socket)
+            } catch (t: CancellationException) {
+                // runInterruptible turns cancellation into an interrupt on the
+                // connecting thread: rethrow it instead of retrying.
+                runCatching { socket.close() }
+                throw t
             } catch (t: Throwable) {
                 lastError = t
                 runCatching { socket.close() }

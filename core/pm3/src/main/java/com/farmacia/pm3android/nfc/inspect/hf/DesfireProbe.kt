@@ -31,6 +31,10 @@ object DesfireProbe : HfProbe {
                 null
             } ?: return@withIsoDep null
 
+            // GetVersion answers on other NXP parts too: only hardware type
+            // 0x01 is a DESFire, everything else falls through to ISO-DEP.
+            if (!details.version.isDesfire) return@withIsoDep null
+
             val content = try {
                 NdefType4.read(transport)
             } catch (error: Throwable) {

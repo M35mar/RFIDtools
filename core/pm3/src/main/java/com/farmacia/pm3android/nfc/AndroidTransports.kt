@@ -23,6 +23,13 @@ import com.farmacia.pm3android.nfc.inspect.RawTagTransport
 import com.farmacia.pm3android.nfc.inspect.TagSession
 import java.io.IOException
 
+// Messages for a card that left the field mid-operation. They are user-facing:
+// the UI shows them instead of a misleading "authentication failed".
+private const val TAG_LOST_AUTH = "carta allontanata durante l'autenticazione"
+private const val TAG_LOST_READ = "carta allontanata durante la lettura"
+private const val TAG_LOST_WRITE = "carta allontanata durante la scrittura"
+private const val TAG_LOST_VALUE = "carta allontanata durante l'operazione sul valore"
+
 class AndroidClassicTransport(tag: Tag) : ClassicTransport {
 
     private val tech: MifareClassic = MifareClassic.get(tag)
@@ -40,32 +47,57 @@ class AndroidClassicTransport(tag: Tag) : ClassicTransport {
 
     override fun blockCount(sector: Int): Int = tech.getBlockCountInSector(sector)
 
+    // A wrong key is reported as "false", a card that left the field is not:
+    // it is turned into TagUnusableException so the restore stops immediately
+    // instead of reporting a key or write failure for a card that is gone.
     override fun authenticate(sector: Int, key: ByteArray, keyA: Boolean): Boolean = try {
         if (keyA) {
             tech.authenticateSectorWithKeyA(sector, key)
         } else {
             tech.authenticateSectorWithKeyB(sector, key)
         }
+    } catch (lost: TagLostException) {
+        throw TagUnusableException(TAG_LOST_AUTH, lost)
     } catch (_: IOException) {
         false
     }
 
-    override fun readBlock(block: Int): ByteArray = tech.readBlock(block)
+    override fun readBlock(block: Int): ByteArray = try {
+        tech.readBlock(block)
+    } catch (lost: TagLostException) {
+        throw TagUnusableException(TAG_LOST_READ, lost)
+    }
 
     override fun writeBlock(block: Int, data: ByteArray) {
-        tech.writeBlock(block, data)
+        try {
+            tech.writeBlock(block, data)
+        } catch (lost: TagLostException) {
+            throw TagUnusableException(TAG_LOST_WRITE, lost)
+        }
     }
 
     override fun increment(block: Int, value: Int) {
-        tech.increment(block, value)
+        try {
+            tech.increment(block, value)
+        } catch (lost: TagLostException) {
+            throw TagUnusableException(TAG_LOST_VALUE, lost)
+        }
     }
 
     override fun decrement(block: Int, value: Int) {
-        tech.decrement(block, value)
+        try {
+            tech.decrement(block, value)
+        } catch (lost: TagLostException) {
+            throw TagUnusableException(TAG_LOST_VALUE, lost)
+        }
     }
 
     override fun transfer(block: Int) {
-        tech.transfer(block)
+        try {
+            tech.transfer(block)
+        } catch (lost: TagLostException) {
+            throw TagUnusableException(TAG_LOST_VALUE, lost)
+        }
     }
 
     override fun close() {

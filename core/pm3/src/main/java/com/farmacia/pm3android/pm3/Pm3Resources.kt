@@ -14,10 +14,15 @@ import com.farmacia.pm3android.data.Pm3ScriptStore
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.FileOutputStream
+import java.io.IOException
 
 object Pm3Resources {
 
     private const val TAG = "pm3-resources"
+    // Staging and backup trees live inside .proxmark3: same volume, so the
+    // install can swap directories with a rename instead of deleting files.
+    private const val STAGING_DIRECTORY = ".staging"
+    private const val BACKUP_SUFFIX = ".old"
 
     // Reinstall on every app version bump: the bundled client resource set
     // can change when the proxmark3 submodule is updated.
@@ -55,11 +60,24 @@ object Pm3Resources {
         }
         val assets = context.assets
         target.mkdirs()
-        for (dir in DIRECTORIES) {
-            val destination = File(target, dir)
-            destination.deleteRecursively()
-            destination.mkdirs()
-            copyAssetDirectory(assets, dir, destination)
+        // Stage the whole bundle first: a failed copy leaves the installed
+        // tree untouched, and only complete directories are ever swapped.
+        val staging = File(target, STAGING_DIRECTORY)
+        try {
+            staging.deleteRecursively()
+            if (!staging.mkdirs()) {
+                throw IOException("cannot create ${staging.path}")
+            }
+            for (dir in DIRECTORIES) {
+                val staged = File(staging, dir)
+                staged.mkdirs()
+                copyAssetDirectory(assets, dir, staged)
+            }
+            for (dir in DIRECTORIES) {
+                swapDirectory(File(target, dir), File(staging, dir))
+            }
+        } finally {
+            staging.deleteRecursively()
         }
         for (dir in listOf("traces", "logs")) {
             File(target, dir).mkdirs()
@@ -122,6 +140,73 @@ object Pm3Resources {
         assets.open(assetPath).use { input ->
             FileOutputStream(output).use { fos ->
                 input.copyTo(fos)
+            }
+        }
+    }
+
+    /**
+     * Replaces [destination] with the staged copy in one rename. Entries that
+     * exist only in the destination are moved back afterwards, so files the
+     * user added inside a bundled tree survive an upgrade.
+     */
+    private fun swapDirectory(destination: File, staged: File) {
+        val parent = destination.parentFile ?: return
+        val backup = File(parent, destination.name + BACKUP_SUFFIX)
+        // A previous run may have died between the two renames, or while
+        // restoring user entries: finish that before the backup is recycled.
+        if (backup.isDirectory) {
+            if (destination.exists()) {
+                runCatching { restoreUserEntries(backup, destination) }
+            } else {
+                runCatching { backup.renameTo(destination) }
+            }
+        }
+        backup.deleteRecursively()
+        val hadDestination = destination.exists()
+        if (hadDestination && !destination.renameTo(backup)) {
+            // Some volumes refuse renames: merge without deleting anything.
+            mergeDirectory(staged, destination)
+            staged.deleteRecursively()
+            return
+        }
+        if (!staged.renameTo(destination)) {
+            // Put the previous tree back: a failed install must be a no-op.
+            if (hadDestination) {
+                runCatching { backup.renameTo(destination) }
+            }
+            throw IOException("cannot install ${destination.name}")
+        }
+        if (hadDestination) {
+            restoreUserEntries(backup, destination)
+            backup.deleteRecursively()
+        }
+    }
+
+    /** Moves entries that exist only in [backup] back into [destination]. */
+    private fun restoreUserEntries(backup: File, destination: File) {
+        for (entry in backup.listFiles() ?: return) {
+            val restored = File(destination, entry.name)
+            if (!restored.exists()) {
+                if (!entry.renameTo(restored)) {
+                    entry.copyRecursively(restored, overwrite = false)
+                }
+                continue
+            }
+            if (entry.isDirectory && restored.isDirectory) {
+                restoreUserEntries(entry, restored)
+            }
+        }
+    }
+
+    /** Fallback for volumes without rename: overwrite bundled files only. */
+    private fun mergeDirectory(source: File, destination: File) {
+        destination.mkdirs()
+        for (entry in source.listFiles() ?: return) {
+            val target = File(destination, entry.name)
+            if (entry.isDirectory) {
+                mergeDirectory(entry, target)
+            } else {
+                entry.copyTo(target, overwrite = true)
             }
         }
     }

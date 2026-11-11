@@ -10,9 +10,11 @@ import com.farmacia.pm3android.nfc.inspect.content.NdefKind
 import com.farmacia.pm3android.nfc.inspect.content.NdefStatus
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 import java.io.IOException
 
@@ -138,8 +140,125 @@ class HfProbeTest {
         assertTrue(result.identity.notes.contains(TagNote.EMRTD_PACE))
         assertTrue(result.identity.notes.contains(TagNote.EMRTD_NEEDS_MRZ))
         val details = result.details as EmrtdDetails
-        assertTrue(details.paceSupported)
+        assertEquals(true, details.paceSupported)
         assertTrue(details.bacSupported)
+    }
+
+    @Test
+    fun `iso dep app probe rethrows tag loss`() {
+        val transport = object : IsoDepTransport {
+            override fun transceive(command: ByteArray): ByteArray =
+                throw IOException("tag lost")
+        }
+
+        try {
+            IsoDepAppProbe.probe(transport) { it is IOException }
+            fail("expected tag loss")
+        } catch (_: IOException) {
+            // expected: the probe must not turn it into "no applet"
+        }
+    }
+
+    @Test
+    fun `iso dep app probe does not hide a transport failure by default`() {
+        val transport = object : IsoDepTransport {
+            override fun transceive(command: ByteArray): ByteArray =
+                throw IOException("boom")
+        }
+
+        try {
+            IsoDepAppProbe.probe(transport)
+            fail("expected the failure to propagate")
+        } catch (_: IOException) {
+            // The caller applies the tag-loss predicate.
+        }
+    }
+
+    @Test
+    fun `a version that is not desfire falls through to iso dep`() {
+        val snapshot = TagSnapshot(
+            uid = ByteArray(4) { it.toByte() },
+            techs = listOf(NfcTech.NFC_A, NfcTech.ISO_DEP),
+        )
+        val result = HfProbeRegistry.run(
+            ProbeContext(
+                snapshot = snapshot,
+                session = FakeSession(isoDep = FakeNonDesfire()),
+                log = CommandLog(),
+            ),
+        )
+
+        assertEquals(TagFamily.ISO_DEP, result.identity.family)
+        assertFalse(result.details is DesfireDetails)
+    }
+
+    @Test
+    fun `terminal authentication oids do not mean pace`() {
+        // id-TA: 0.4.0.127.0.7.2.2.2, the same prefix as id-PACE but not PACE.
+        val ta = byteArrayOf(
+            0x30, 0x0A,
+            0x06, 0x08,
+            0x04, 0x00, 0x7F, 0x00, 0x07, 0x02, 0x02, 0x02,
+        )
+        val result = HfProbeRegistry.run(
+            ProbeContext(
+                snapshot = TagSnapshot(
+                    uid = ByteArray(4) { it.toByte() },
+                    techs = listOf(NfcTech.NFC_A, NfcTech.ISO_DEP),
+                ),
+                session = FakeSession(isoDep = FakeEmrtd(ta)),
+                log = CommandLog(),
+            ),
+        )
+
+        val details = result.details as EmrtdDetails
+        assertEquals(false, details.paceSupported)
+    }
+
+    @Test
+    fun `pace oid past the first sixty four bytes is found`() {
+        // A sequence with a 70-byte octet string, then the id-PACE OID.
+        val cardAccess = byteArrayOf(0x30, 0x52, 0x04, 0x46) +
+            ByteArray(70) +
+            byteArrayOf(
+                0x06, 0x08,
+                0x04, 0x00, 0x7F, 0x00, 0x07, 0x02, 0x02, 0x04,
+            )
+        val result = HfProbeRegistry.run(
+            ProbeContext(
+                snapshot = TagSnapshot(
+                    uid = ByteArray(4) { it.toByte() },
+                    techs = listOf(NfcTech.NFC_A, NfcTech.ISO_DEP),
+                ),
+                session = FakeSession(isoDep = FakeEmrtd(cardAccess)),
+                log = CommandLog(),
+            ),
+        )
+
+        val details = result.details as EmrtdDetails
+        assertEquals(true, details.paceSupported)
+        assertEquals(cardAccess.size, details.cardAccess!!.size)
+    }
+
+    @Test
+    fun `iso15693 refuses block numbers outside the one byte space`() {
+        val last = Iso15693.readBlock(255)
+        assertEquals(0x20, last[1].toInt() and 0xFF)
+        assertEquals(0xFF, last[2].toInt() and 0xFF)
+
+        val full = Iso15693.readMultipleBlocks(0, 256)
+        assertEquals(0xFF, full[3].toInt() and 0xFF)
+
+        try {
+            Iso15693.readBlock(256)
+            fail("expected IllegalArgumentException")
+        } catch (_: IllegalArgumentException) {
+        }
+        try {
+            Iso15693.readMultipleBlocks(250, 10)
+            fail("expected IllegalArgumentException")
+        } catch (_: IllegalArgumentException) {
+        }
     }
 
     @Test
@@ -330,13 +449,13 @@ class HfProbeTest {
         }
     }
 
-    private class FakeEmrtd : IsoDepTransport {
+    private class FakeEmrtd(private val cardAccess: ByteArray? = null) : IsoDepTransport {
         override fun transceive(command: ByteArray): ByteArray {
             val key = command.joinToString("") { "%02X".format(it.toInt() and 0xFF) }
             return when (key) {
                 "00A4040C07A000000247100100" -> OK
                 "00A4020C02011C" -> OK
-                "00B0000040" -> CARD_ACCESS + OK
+                "00B00000FF" -> (cardAccess ?: CARD_ACCESS) + OK
                 "0084000008" -> ByteArray(8) + OK
                 else -> byteArrayOf(0x6A, 0x82.toByte())
             }
@@ -350,6 +469,26 @@ class HfProbeTest {
                 0x30, 0x0A,
                 0x06, 0x08,
                 0x04, 0x00, 0x7F, 0x00, 0x07, 0x02, 0x02, 0x04,
+            )
+        }
+    }
+
+    /** Answers GetVersion with a non-DESFire hardware type and nothing else. */
+    private class FakeNonDesfire : IsoDepTransport {
+        override fun transceive(command: ByteArray): ByteArray {
+            val ins = command.getOrNull(1)?.toInt()?.and(0xFF)
+            return if (ins == 0x60) VERSION + OK else byteArrayOf(0x6A, 0x82.toByte())
+        }
+
+        private companion object {
+            val OK = byteArrayOf(0x91.toByte(), 0x00)
+
+            /** Hardware type 0x02 is not a DESFire (0x01). */
+            val VERSION = byteArrayOf(
+                0x04, 0x02, 0x01, 0x01, 0x00, 0x18, 0x05,
+                0x00, 0x00, 0x00,
+                0x01, 0x00,
+                0x00, 0x00,
             )
         }
     }

@@ -110,6 +110,14 @@ class NfcRestoreViewModel(application: Application) : AndroidViewModel(applicati
     private var keyFileBytes: ByteArray? = null
     private var keyFileLabel: String? = null
 
+    /**
+     * Set when the screen is left or the app goes to the background while a
+     * restore is running. The engines check it between blocks and return a
+     * partial report instead of writing on a card nobody is holding anymore.
+     */
+    @Volatile
+    private var abortRequested = false
+
     fun open(file: File) {
         image = null
         stateFlow.value = NfcRestoreState(
@@ -178,6 +186,38 @@ class NfcRestoreViewModel(application: Application) : AndroidViewModel(applicati
             val current = stateFlow.value
             if (current.visible && current.dumping) {
                 stateFlow.value = current.copy(keyFiles = names)
+            }
+        }
+    }
+
+    /**
+     * Backup on request: switches the open restore to a read of the card. The
+     * dump is saved through the usual naming screen and nothing is written to
+     * the tag. The restore has to be started again afterwards.
+     */
+    fun startBackup() {
+        val current = stateFlow.value
+        if (current.mode == NfcMode.DUMP) return
+        if (current.stage != RestoreStage.PREVIEW && current.stage != RestoreStage.ERROR) return
+        mfuCapture = null
+        mfcCapture = null
+        stateFlow.value = current.copy(
+            mode = NfcMode.DUMP,
+            stage = RestoreStage.WAITING,
+            error = null,
+            report = null,
+            progressDone = 0,
+            progressTotal = 0,
+            nameDraft = "",
+            sectorsRead = 0,
+            sectorsTotal = 0,
+            unreadableBlocks = 0,
+        )
+        viewModelScope.launch {
+            val names = withContext(Dispatchers.IO) { fileList() }
+            val now = stateFlow.value
+            if (now.visible && now.dumping) {
+                stateFlow.value = now.copy(keyFiles = names)
             }
         }
     }
@@ -333,6 +373,16 @@ class NfcRestoreViewModel(application: Application) : AndroidViewModel(applicati
         )
     }
 
+    /**
+     * Stops the write pass at the next block. Safe to call from the main
+     * thread: the engines only read a flag.
+     */
+    fun cancelRestore() {
+        if (stateFlow.value.stage == RestoreStage.WORKING) {
+            abortRequested = true
+        }
+    }
+
     /** Called from the reader-mode callback on the main thread. */
     fun onTag(tag: Tag) {
         val current = stateFlow.value
@@ -342,6 +392,7 @@ class NfcRestoreViewModel(application: Application) : AndroidViewModel(applicati
             return
         }
         val image = image ?: return
+        abortRequested = false
         stateFlow.value = current.copy(
             stage = RestoreStage.WORKING,
             error = null,
@@ -681,6 +732,7 @@ class NfcRestoreViewModel(application: Application) : AndroidViewModel(applicati
                         dump,
                         MfcRestoreOptions(candidates = candidates),
                         progress,
+                        abort = { abortRequested },
                     )
                 } finally {
                     transport.close()
@@ -695,7 +747,13 @@ class NfcRestoreViewModel(application: Application) : AndroidViewModel(applicati
                         password = parsePassword(current.password),
                         writeConfig = true,
                     )
-                    restorer.restore(image.dump, options, snapshot = null, progress = progress)
+                    restorer.restore(
+                        image.dump,
+                        options,
+                        snapshot = null,
+                        progress = progress,
+                        abort = { abortRequested },
+                    )
                 } finally {
                     transport.close()
                 }

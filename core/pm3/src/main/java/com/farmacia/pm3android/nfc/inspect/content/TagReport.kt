@@ -373,7 +373,13 @@ object TagReport {
         out.appendLine("eMRTD / eID")
         out.appendLine("  AID: ${details.aidHex}")
         details.label?.let { out.appendLine("  Label: $it") }
-        out.appendLine("  PACE: ${if (details.paceSupported) "yes" else "no"}")
+        out.appendLine(
+            "  PACE: " + when (details.paceSupported) {
+                true -> "yes"
+                false -> "no"
+                null -> "unknown"
+            },
+        )
         out.appendLine("  BAC: ${if (details.bacSupported) "yes" else "no"}")
         details.cardAccess?.let { out.appendLine("  EF.CardAccess: ${it.toHexSpaced()}") }
         out.appendLine()

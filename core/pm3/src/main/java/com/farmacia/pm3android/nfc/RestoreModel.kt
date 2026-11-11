@@ -40,6 +40,13 @@ enum class StepNote {
     AUTH_FAILED,
     WRITE_FAILED,
     VERIFY_FAILED,
+
+    /**
+     * Ultralight configuration was left untouched because the password page
+     * could not be written: writing AUTH0/PROT without the matching password
+     * would lock the user out of the card.
+     */
+    PASSWORD_FAILED,
 }
 
 data class StepResult(
@@ -53,12 +60,19 @@ data class RestoreReport(
     val tagLabel: String,
     val steps: List<StepResult>,
     val durationMs: Long = 0,
+    /**
+     * The restore stopped before the last block because the user left the
+     * screen, the app went to the background or the card was removed. The tag
+     * may hold a mix of old and new data: the card must not be presented as a
+     * completed restore.
+     */
+    val aborted: Boolean = false,
 ) {
     val written: Int get() = steps.count { it.status == StepStatus.WRITTEN || it.status == StepStatus.VERIFIED }
     val unchanged: Int get() = steps.count { it.status == StepStatus.UNCHANGED }
     val skipped: Int get() = steps.count { it.status == StepStatus.SKIPPED }
     val failed: Int get() = steps.count { it.status == StepStatus.FAILED }
-    val ok: Boolean get() = failed == 0
+    val ok: Boolean get() = failed == 0 && !aborted
 
     /** Failed steps plus notes worth showing, in card order. */
     val highlights: List<StepResult>

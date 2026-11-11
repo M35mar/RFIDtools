@@ -25,6 +25,14 @@ class BleByteBuffer(private val capacityBytes: Int = 512 * 1024) {
     @Volatile
     private var closed = false
 
+    /**
+     * Set when a non-blocking [offer] had to drop data. The reader throws on
+     * its next read: a byte pipe with a hole cannot be resynchronised.
+     */
+    @Volatile
+    var overflowed: Boolean = false
+        private set
+
     fun write(data: ByteArray) {
         var index = 0
         while (index < data.size) {
@@ -44,9 +52,32 @@ class BleByteBuffer(private val capacityBytes: Int = 512 * 1024) {
         }
     }
 
+    /**
+     * Non-blocking write used from GATT callbacks: drops the whole chunk and
+     * flags [overflowed] instead of waiting for the reader. Returns false when
+     * the data was dropped or the buffer is closed.
+     */
+    fun offer(data: ByteArray): Boolean {
+        if (data.isEmpty()) return true
+        lock.withLock {
+            if (closed) return false
+            if (sizeBytes + data.size > capacityBytes) {
+                overflowed = true
+                return false
+            }
+            chunks.addLast(data.copyOf())
+            sizeBytes += data.size
+            notEmpty.signalAll()
+            return true
+        }
+    }
+
     /** Blocks until data is available, the buffer is closed, or [length] is read. */
     fun read(buffer: ByteArray, offset: Int, length: Int): Int {
         if (length == 0) return 0
+        if (overflowed) {
+            throw IOException("buffer overflow: data was dropped")
+        }
         lock.withLock {
             while (sizeBytes == 0 && !closed) {
                 notEmpty.await()

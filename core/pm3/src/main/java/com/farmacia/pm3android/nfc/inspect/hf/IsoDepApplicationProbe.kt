@@ -28,7 +28,9 @@ object IsoDepApplicationProbe : HfProbe {
         context.session.withIsoDep { transport ->
             val abort = context.abort
             val application: ApplicationDetails? = try {
-                IsoDepAppProbe.probe(transport)
+                // The probe rethrows only the failures the session calls fatal
+                // (a tag that left the field); the rest become "no app found".
+                IsoDepAppProbe.probe(transport, abort)
             } catch (error: Throwable) {
                 if (abort(error)) throw error
                 null

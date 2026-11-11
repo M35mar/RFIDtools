@@ -22,10 +22,10 @@ object UpdateParser {
      */
     fun numericVersion(raw: String): List<Int>? {
         val match = VERSION_PREFIX.find(raw.trim()) ?: return null
-        return match.groupValues[1]
-            .split('.')
-            .mapNotNull { it.toIntOrNull() }
-            .takeIf { it.isNotEmpty() }
+        // Every component must parse: dropping an overflowing one
+        // ("2.0.99999999999") would silently compare a shorter version.
+        val numbers = match.groupValues[1].split('.').map { it.toIntOrNull() ?: return null }
+        return numbers.takeIf { it.isNotEmpty() }
     }
 
     /** Human-readable version without the leading `v`. */
@@ -41,6 +41,21 @@ object UpdateParser {
             if (a != b) return a > b
         }
         return false
+    }
+
+    private val TRUSTED_HOSTS = setOf(
+        "github.com",
+        "api.github.com",
+        "objects.githubusercontent.com",
+        "github-releases.githubusercontent.com",
+    )
+
+    /** HTTPS on a GitHub host only: anything else is not a release asset. */
+    fun isTrustedDownloadUrl(raw: String): Boolean {
+        val uri = runCatching { java.net.URI(raw.trim()) }.getOrNull() ?: return false
+        if (!uri.scheme.equals("https", ignoreCase = true)) return false
+        val host = uri.host?.lowercase() ?: return false
+        return TRUSTED_HOSTS.any { host == it || host.endsWith(".$it") }
     }
 
     /**
@@ -82,8 +97,10 @@ object UpdateParser {
                 it.optString("name").equals(preferred, ignoreCase = true)
             } ?: return null
 
+        // The digest and the URL come from the same JSON document, so the URL
+        // must be restricted to the release host on its own.
         val url = selected.optString("browser_download_url")
-        if (url.isBlank()) return null
+        if (!isTrustedDownloadUrl(url)) return null
         return ReleaseAsset(
             name = selected.optString("name"),
             downloadUrl = url,

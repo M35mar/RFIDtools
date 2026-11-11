@@ -128,15 +128,26 @@ object NdefParser {
         return NdefContent.absent
     }
 
-    /** Parses one NDEF message that already lives between [start] and [end]. */
-    fun parseMessage(data: ByteArray, start: Int = 0, end: Int = data.size): NdefContent {
-        if (end <= start) return NdefContent.absent
+    /**
+     * Parses one NDEF message that already lives between [start] and [end].
+     * [depth] counts smart-poster nesting, so a crafted card cannot recurse
+     * without end.
+     */
+    fun parseMessage(
+        data: ByteArray,
+        start: Int = 0,
+        end: Int = data.size,
+        depth: Int = 0,
+    ): NdefContent {
+        val limit = minOf(end, data.size)
+        if (start < 0 || limit <= start) return NdefContent.absent
+        if (depth > MAX_DEPTH) return NdefContent(emptyList(), 0, NdefStatus.INVALID)
         val records = mutableListOf<NdefRecord>()
         var position = start
         var chunk: Chunk? = null
 
-        while (position < end) {
-            if (position + 2 > end) return truncated(end - position)
+        while (position < limit) {
+            if (position + 2 > limit) return truncated(limit - position)
             val flags = data[position].toInt() and 0xFF
             val typeLength = data[position + 1].toInt() and 0xFF
             val short = flags and 0x10 != 0
@@ -145,17 +156,17 @@ object NdefParser {
 
             val payloadLength: Int
             if (short) {
-                if (cursor >= end) return truncated(end - position)
+                if (cursor >= limit) return truncated(limit - position)
                 payloadLength = data[cursor].toInt() and 0xFF
                 cursor++
             } else {
-                if (cursor + 4 > end) return truncated(end - position)
+                if (cursor + 4 > limit) return truncated(limit - position)
                 payloadLength = readInt32(data, cursor)
                 cursor += 4
             }
 
             val idLength = if (hasId) {
-                if (cursor >= end) return truncated(end - position)
+                if (cursor >= limit) return truncated(limit - position)
                 val value = data[cursor].toInt() and 0xFF
                 cursor++
                 value
@@ -163,26 +174,30 @@ object NdefParser {
                 0
             }
 
+            // A long record can set the payload MSB, and payloadStart plus
+            // payloadLength can overflow Int: reject both before slicing.
+            if (payloadLength < 0 || typeLength < 0 || idLength < 0) {
+                return NdefContent(records, limit - start, NdefStatus.INVALID)
+            }
             val typeStart = cursor
             val typeEnd = typeStart + typeLength
             val payloadStart = typeEnd + idLength
+            if (typeEnd > limit || payloadStart > limit || payloadLength > limit - payloadStart) {
+                return truncated(limit - position)
+            }
             val payloadEnd = payloadStart + payloadLength
-            if (payloadEnd > end) return truncated(end - position)
 
             val tnf = flags and 0x07
             val type = String(data, typeStart, typeLength, Charsets.UTF_8)
             val payload = data.copyOfRange(payloadStart, payloadEnd)
             val chunked = flags and 0x20 != 0
-            if (payloadLength < 0 || typeLength < 0 || idLength < 0) {
-                return NdefContent(records, end - start, NdefStatus.INVALID)
-            }
 
             val current = chunk
             val merged = if (current == null) {
-                if (tnf == 0x06) return NdefContent(records, end - start, NdefStatus.INVALID)
+                if (tnf == 0x06) return NdefContent(records, limit - start, NdefStatus.INVALID)
                 Chunk(tnf, type, payload)
             } else {
-                if (tnf != 0x06) return NdefContent(records, end - start, NdefStatus.INVALID)
+                if (tnf != 0x06) return NdefContent(records, limit - start, NdefStatus.INVALID)
                 current.appended(payload)
             }
             chunk = merged
@@ -190,17 +205,20 @@ object NdefParser {
             position = payloadEnd
             if (chunked) continue
 
-            records += decode(merged, depth = 0)
+            val decoded = decode(merged, depth)
+                ?: return NdefContent(records, limit - start, NdefStatus.INVALID)
+            records += decoded
             chunk = null
             if (flags and 0x40 != 0) break
         }
 
-        if (chunk != null) return truncated(end - start)
-        if (records.isEmpty()) return NdefContent(records, end - start, NdefStatus.INVALID)
-        return NdefContent(records, end - start, NdefStatus.FOUND)
+        if (chunk != null) return truncated(limit - start)
+        if (records.isEmpty()) return NdefContent(records, limit - start, NdefStatus.INVALID)
+        return NdefContent(records, limit - start, NdefStatus.FOUND)
     }
 
-    private fun decode(chunk: Chunk, depth: Int): NdefRecord {
+    /** Null when a nested smart poster is past [MAX_DEPTH]. */
+    private fun decode(chunk: Chunk, depth: Int): NdefRecord? {
         val payload = chunk.payload
         return when (chunk.tnf) {
             0x00 -> if (chunk.type.isEmpty() && payload.isEmpty()) {
@@ -267,12 +285,11 @@ object NdefParser {
         return NdefRecord(NdefKind.URI, "U", prefix + rest, payload.size)
     }
 
-    private fun decodeSmartPoster(payload: ByteArray, depth: Int): NdefRecord {
-        if (depth >= MAX_DEPTH) {
-            return NdefRecord(NdefKind.SMART_POSTER, "Sp", null, payload.size)
-        }
-        val nested = parseMessage(payload).records
-        val text = nested.mapNotNull { it.text }.joinToString(" · ").ifEmpty { null }
+    private fun decodeSmartPoster(payload: ByteArray, depth: Int): NdefRecord? {
+        if (depth >= MAX_DEPTH) return null
+        val nested = parseMessage(payload, depth = depth + 1)
+        if (nested.status == NdefStatus.INVALID) return null
+        val text = nested.records.mapNotNull { it.text }.joinToString(" · ").ifEmpty { null }
         return NdefRecord(NdefKind.SMART_POSTER, "Sp", text, payload.size)
     }
 

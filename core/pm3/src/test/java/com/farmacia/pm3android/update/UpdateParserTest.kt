@@ -37,7 +37,10 @@ class UpdateParserTest {
         assertEquals("0.7.0", release.versionName)
         assertEquals("New NFC section", release.notes)
         assertEquals("pm3-release.apk", release.asset?.name)
-        assertEquals("https://example.test/pm3-release.apk", release.asset?.downloadUrl)
+        assertEquals(
+            "https://github.com/M35mar/RFIDtools/releases/download/0.7.0/pm3-release.apk",
+            release.asset?.downloadUrl,
+        )
         assertEquals("abc123", release.asset?.sha256)
     }
 
@@ -51,6 +54,30 @@ class UpdateParserTest {
     @Test
     fun releaseBuildHasNoCompatibleAssetWhenOnlyDebugIsPublished() {
         val json = RELEASE_JSON.replace("pm3-release.apk", "pm3-other.apk")
+        val release = UpdateParser.parseRelease(json, "com.farmacia.pm3android")
+
+        assertNull(release.asset)
+    }
+
+    @Test
+    fun acceptsOnlyGithubDownloadUrls() {
+        assertTrue(UpdateParser.isTrustedDownloadUrl("https://github.com/a/b/releases/download/1/x.apk"))
+        assertTrue(
+            UpdateParser.isTrustedDownloadUrl(
+                "https://objects.githubusercontent.com/github-production-release-asset/x",
+            ),
+        )
+        assertFalse(UpdateParser.isTrustedDownloadUrl("http://github.com/a/b/x.apk"))
+        assertFalse(UpdateParser.isTrustedDownloadUrl("https://evil.test/x.apk"))
+        assertFalse(UpdateParser.isTrustedDownloadUrl("https://github.com.evil.test/x.apk"))
+        assertFalse(UpdateParser.isTrustedDownloadUrl(""))
+    }
+
+    @Test
+    fun aReleaseAssetHostedElsewhereIsNotOffered() {
+        // The digest lives in the same JSON document, so an asset on another
+        // host must not be downloaded at all.
+        val json = RELEASE_JSON.replace("https://github.com", "https://example.test")
         val release = UpdateParser.parseRelease(json, "com.farmacia.pm3android")
 
         assertNull(release.asset)
@@ -76,13 +103,13 @@ class UpdateParserTest {
               "assets": [
                 {
                   "name": "pm3-debug.apk",
-                  "browser_download_url": "https://example.test/pm3-debug.apk",
+                  "browser_download_url": "https://github.com/M35mar/RFIDtools/releases/download/0.7.0/pm3-debug.apk",
                   "size": 100,
                   "digest": "sha256:def456"
                 },
                 {
                   "name": "pm3-release.apk",
-                  "browser_download_url": "https://example.test/pm3-release.apk",
+                  "browser_download_url": "https://github.com/M35mar/RFIDtools/releases/download/0.7.0/pm3-release.apk",
                   "size": 200,
                   "digest": "sha256:abc123"
                 }

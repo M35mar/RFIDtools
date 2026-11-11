@@ -45,6 +45,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -75,8 +76,12 @@ fun FilesScreen(
     val context = LocalContext.current
 
     var filter by remember { mutableStateOf<FileCategory?>(null) }
-    var pendingDelete by remember { mutableStateOf<Pm3File?>(null) }
-    var pendingExport by remember { mutableStateOf<Pm3File?>(null) }
+    // Paths, not objects: the SAF picker and the confirm dialog survive a
+    // rotation, and the file is resolved again from the refreshed list.
+    var pendingDeletePath by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingExportPath by rememberSaveable { mutableStateOf<String?>(null) }
+    val pendingDelete = pendingDeletePath?.let { path -> files.firstOrNull { it.relativePath == path } }
+    val pendingExport = pendingExportPath?.let { path -> files.firstOrNull { it.relativePath == path } }
 
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
@@ -86,7 +91,7 @@ fun FilesScreen(
         ActivityResultContracts.CreateDocument("application/octet-stream"),
     ) { uri ->
         val entry = pendingExport
-        pendingExport = null
+        pendingExportPath = null
         if (uri != null && entry != null) {
             viewModel.exportFile(uri, entry)
         }
@@ -210,12 +215,12 @@ fun FilesScreen(
                         onRestore = { onRestore(entry.file) },
                         onShare = { shareFile(context, entry.file) },
                         onExport = {
-                            pendingExport = entry
+                            pendingExportPath = entry.relativePath
                             exportLauncher.launch(entry.file.name)
                         },
                         onDelete = {
                             if (settings.confirmDelete) {
-                                pendingDelete = entry
+                                pendingDeletePath = entry.relativePath
                             } else {
                                 viewModel.deleteFile(entry)
                             }
@@ -232,7 +237,7 @@ fun FilesScreen(
             body = stringResource(R.string.files_delete_body, entry.relativePath),
             confirmLabel = stringResource(R.string.action_delete),
             onConfirm = { viewModel.deleteFile(entry) },
-            onDismiss = { pendingDelete = null },
+            onDismiss = { pendingDeletePath = null },
             destructive = true,
         )
     }
@@ -334,7 +339,10 @@ private fun FileRowContent(
             IconButton(onClick = onRestore, enabled = enabled) {
                 Icon(
                     imageVector = Icons.Filled.Nfc,
-                    contentDescription = stringResource(R.string.nfc_restore_action),
+                    contentDescription = stringResource(
+                        R.string.a11y_restore_file,
+                        entry.file.name,
+                    ),
                     tint = MaterialTheme.colorScheme.primary,
                 )
             }
@@ -342,19 +350,19 @@ private fun FileRowContent(
         IconButton(onClick = onShare, enabled = enabled) {
             Icon(
                 imageVector = Icons.Filled.Share,
-                contentDescription = stringResource(R.string.action_share),
+                contentDescription = stringResource(R.string.a11y_share_file, entry.file.name),
             )
         }
         IconButton(onClick = onExport, enabled = enabled) {
             Icon(
                 imageVector = Icons.Filled.SaveAlt,
-                contentDescription = stringResource(R.string.action_export),
+                contentDescription = stringResource(R.string.a11y_export_file, entry.file.name),
             )
         }
         IconButton(onClick = onDelete, enabled = enabled) {
             Icon(
                 imageVector = Icons.Filled.Delete,
-                contentDescription = stringResource(R.string.action_delete),
+                contentDescription = stringResource(R.string.a11y_delete_file, entry.file.name),
                 tint = MaterialTheme.colorScheme.error,
             )
         }

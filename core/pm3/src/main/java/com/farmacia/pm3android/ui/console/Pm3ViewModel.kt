@@ -51,15 +51,19 @@ import com.farmacia.pm3android.update.UpdateState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
+import java.io.OutputStream
 import java.util.concurrent.ConcurrentHashMap
 
 data class Pm3DeviceInfo(
@@ -83,6 +87,20 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
         const val MAX_HISTORY = 100
 
         private const val BLUETOOTH_SCAN_MS = 15_000L
+
+        /**
+         * How long the UI waits for the embedded client to return after a link
+         * abort. Past this point the native call is considered stuck: the UI is
+         * re-enabled but the exec mutex stays held, so no second command can
+         * run on the client that is still busy.
+         */
+        private const val ABORT_GRACE_MS = 8_000L
+
+        /** Largest file the Data tab imports (dumps, traces, logs). */
+        private const val MAX_IMPORT_BYTES = 64L * 1024 * 1024
+
+        /** A settings backup is a few kilobytes; anything bigger is not one. */
+        private const val MAX_SETTINGS_CHARS = 256 * 1024
         private val NATIVE_BLUETOOTH_CONNECT =
             Regex("^hw\\s+connect\\s+(bt|ble):", RegexOption.IGNORE_CASE)
     }
@@ -136,6 +154,17 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
     private val linesFlow = MutableStateFlow<List<String>>(emptyList())
     val lines: StateFlow<List<String>> = linesFlow
 
+    /**
+     * Monotonic count of the lines ever appended. [lines] stops changing size
+     * once the 5000-line window is full, so the follow effect needs this
+     * counter, not the list size, to keep scrolling.
+     */
+    private val consoleCountFlow = MutableStateFlow(0)
+    val consoleCount: StateFlow<Int> = consoleCountFlow
+
+    /** Chunks arrive on IO threads and the UI appends too: serialise them. */
+    private val linesLock = Any()
+
     private val historyFlow = MutableStateFlow<List<String>>(emptyList())
     val history: StateFlow<List<String>> = historyFlow
 
@@ -143,8 +172,10 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
     private val lastResultFlow = MutableStateFlow<TagInfo?>(null)
     val lastResult: StateFlow<TagInfo?> = lastResultFlow
 
-    private val messagesFlow = MutableSharedFlow<String>(extraBufferCapacity = 16)
-    val messages: SharedFlow<String> = messagesFlow
+    // A buffered channel, not a shared flow: an error emitted while no
+    // collector is active (rotation, screen change) must not disappear.
+    private val messageChannel = Channel<String>(Channel.BUFFERED)
+    val messages: Flow<String> = messageChannel.receiveAsFlow()
 
     private val updateStateFlow = MutableStateFlow<UpdateState>(UpdateState.Idle)
     val updateState: StateFlow<UpdateState> = updateStateFlow
@@ -155,12 +186,26 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
 
     private var updateJob: Job? = null
 
+    /**
+     * Held for the whole native call. The embedded client accepts one command
+     * at a time, so this mutex, not the UI flag, is what prevents a second
+     * command from starting while the previous native call is still running.
+     */
+    private val execMutex = Mutex()
+
     var execJob: Job? = null
         private set
 
     // Streamed output arrives in arbitrary chunks: complete lines are flushed
     // to the log while the tail waits for the next chunk or the command end.
     private val streamBuffer = ConsoleLineBuffer()
+
+    // The command history survives a restart; the dot prefix keeps the file out
+    // of the Data tab. The content is replaced on every command, so a crash can
+    // only lose the lines added since the last command.
+    private val historyFile: File by lazy {
+        File(getApplication<Application>().filesDir, ".console-history")
+    }
 
     private val usbReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -174,10 +219,7 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
                     refreshDevice()
                     if (wasConnected) {
                         notify(getApplication<Application>().getString(R.string.device_detached_message))
-                        viewModelScope.launch(Dispatchers.IO) {
-                            runCatching { client.abortNow() }
-                            busyFlow.value = false
-                        }
+                        abortExecution()
                     }
                 }
             }
@@ -222,6 +264,25 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     init {
+        // Restore the saved history off the main thread; a missing or unreadable
+        // file just means an empty history.
+        viewModelScope.launch(Dispatchers.IO) {
+            val saved = runCatching {
+                historyFile.takeIf { it.isFile }?.readLines()?.takeLast(MAX_HISTORY)
+            }.getOrNull()
+            if (!saved.isNullOrEmpty()) {
+                historyFlow.value = saved
+            }
+        }
+        // BLE and socket losses have no Android broadcast: the client reports
+        // them, and the console has to stop waiting for a command that will
+        // never return.
+        viewModelScope.launch {
+            client.linkLost.collect { reason ->
+                notify(reason)
+                abortExecution()
+            }
+        }
         ContextCompat.registerReceiver(
             application,
             usbReceiver,
@@ -368,10 +429,7 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
         // report it as a lost connection.
         if (busyFlow.value) return
         notify(getApplication<Application>().getString(R.string.device_bt_lost_message))
-        viewModelScope.launch(Dispatchers.IO) {
-            runCatching { client.abortNow() }
-            busyFlow.value = false
-        }
+        abortExecution()
     }
 
     private fun bluetoothKey(info: BluetoothDeviceInfo): String =
@@ -540,6 +598,7 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearHistory() {
         historyFlow.value = emptyList()
+        persistHistory(emptyList())
     }
 
     fun deleteFile(entry: Pm3File) {
@@ -589,11 +648,21 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
                     val home = Pm3Resources.home(app)
                     val displayName = queryDisplayName(uri) ?: "import-${System.currentTimeMillis()}.bin"
                     val safeName = sanitizeFileName(displayName)
-                    val destination = uniqueTarget(home, safeName)
                     val input = app.contentResolver.openInputStream(uri)
                         ?: throw IOException(app.getString(R.string.common_input_unavailable))
-                    input.use { source ->
-                        destination.outputStream().use { sink -> source.copyTo(sink) }
+                    // The destination is created exclusively, so two imports
+                    // with the same name cannot write the same file, and a
+                    // failed copy leaves no partial file behind.
+                    val destination = createExclusiveTarget(home, safeName)
+                    try {
+                        input.use { source ->
+                            destination.outputStream().buffered().use { sink ->
+                                copyLimited(source, sink)
+                            }
+                        }
+                    } catch (t: Throwable) {
+                        destination.delete()
+                        throw t
                     }
                     destination
                 }
@@ -809,7 +878,19 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
                 withContext(Dispatchers.IO) {
                     val input = app.contentResolver.openInputStream(uri)
                         ?: throw IOException(app.getString(R.string.common_input_unavailable))
-                    val text = input.bufferedReader().use { it.readText() }
+                    val text = input.bufferedReader().use { reader ->
+                        val builder = StringBuilder()
+                        val buffer = CharArray(8 * 1024)
+                        while (true) {
+                            val read = reader.read(buffer)
+                            if (read < 0) break
+                            builder.append(buffer, 0, read)
+                            if (builder.length > MAX_SETTINGS_CHARS) {
+                                throw IOException("file di impostazioni troppo grande")
+                            }
+                        }
+                        builder.toString()
+                    }
                     preferences.restoreJson(text)
                 }
                 notify(app.getString(R.string.settings_restore_done))
@@ -893,6 +974,7 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
     fun setConfirmDelete(enabled: Boolean) = preferences.setConfirmDelete(enabled)
     fun setKeepScreenOn(enabled: Boolean) = preferences.setKeepScreenOn(enabled)
     fun setFollowConsole(enabled: Boolean) = preferences.setFollowConsole(enabled)
+    fun setConsoleColors(enabled: Boolean) = preferences.setConsoleColors(enabled)
     fun setAutoCheckUpdates(enabled: Boolean) = preferences.setAutoCheckUpdates(enabled)
 
     // -----------------------------------------------------------------------
@@ -994,6 +1076,19 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
     fun installUpdate() {
         val ready = updateStateFlow.value as? UpdateState.Ready ?: return
         val app = getApplication<Application>()
+        ApkInstaller.check(app, ready.file)?.let { rejection ->
+            val message = app.getString(
+                when (rejection) {
+                    ApkInstaller.Rejection.NOT_OUR_APP -> R.string.update_reject_package
+                    ApkInstaller.Rejection.NOT_NEWER -> R.string.update_reject_older
+                    ApkInstaller.Rejection.SIGNATURE_MISMATCH -> R.string.update_reject_signature
+                },
+            )
+            ready.file.delete()
+            updateStateFlow.value = UpdateState.Error(message)
+            notify(message)
+            return
+        }
         if (!ApkInstaller.canInstall(app)) {
             updateStateFlow.value = ready.copy(needsPermission = true)
             notify(app.getString(R.string.update_permission_message))
@@ -1007,7 +1102,7 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun notify(text: String) {
-        messagesFlow.tryEmit(text)
+        messageChannel.trySend(text)
     }
 
     override fun onCleared() {
@@ -1072,18 +1167,40 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
         return cleaned.ifBlank { "import-${System.currentTimeMillis()}.bin" }
     }
 
-    private fun uniqueTarget(home: File, name: String): File {
-        var candidate = File(home, name)
-        if (!candidate.exists()) return candidate
+    /**
+     * Creates the destination with CREATE_NEW semantics: the name is claimed
+     * atomically, so the exists()/write race of the previous version is gone.
+     */
+    private fun createExclusiveTarget(home: File, name: String): File {
         val dot = name.lastIndexOf('.')
         val stem = if (dot > 0) name.substring(0, dot) else name
         val extension = if (dot > 0) name.substring(dot) else ""
         var counter = 1
-        while (candidate.exists()) {
-            candidate = File(home, "$stem-$counter$extension")
+        while (true) {
+            val candidate = if (counter == 1) {
+                File(home, name)
+            } else {
+                File(home, "$stem-$counter$extension")
+            }
+            if (candidate.createNewFile()) return candidate
             counter++
+            if (counter > 1_000) throw IOException("nessun nome libero per $name")
         }
-        return candidate
+    }
+
+    /** Copies a stream with a hard size limit, so a huge file cannot fill the disk. */
+    private fun copyLimited(source: InputStream, sink: OutputStream) {
+        val buffer = ByteArray(64 * 1024)
+        var total = 0L
+        while (true) {
+            val read = source.read(buffer)
+            if (read < 0) break
+            total += read
+            if (total > MAX_IMPORT_BYTES) {
+                throw IOException("file troppo grande (limite ${MAX_IMPORT_BYTES / (1024 * 1024)} MB)")
+            }
+            sink.write(buffer, 0, read)
+        }
     }
 
     private fun errorText(t: Throwable): String =
@@ -1094,7 +1211,15 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
         foreground: Boolean = false,
         block: suspend () -> Unit,
     ): Boolean {
-        if (busyFlow.value) return false
+        // The mutex is the source of truth, not the UI flag: it is released
+        // only when the previous native call really returns, so a link abort
+        // that unblocks the UI cannot also let a second command start.
+        if (!execMutex.tryLock()) {
+            if (!busyFlow.value) {
+                notify(getApplication<Application>().getString(R.string.console_stuck))
+            }
+            return false
+        }
         busyFlow.value = true
         val app = getApplication<Application>()
         if (foreground) {
@@ -1105,6 +1230,7 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
                 block()
             } finally {
                 busyFlow.value = false
+                execMutex.unlock()
                 if (foreground) {
                     runCatching { Pm3OperationService.stop(app) }
                 }
@@ -1113,14 +1239,47 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
         return true
     }
 
+    /**
+     * Aborts the native call after a link loss and, when it does not return
+     * within [ABORT_GRACE_MS], re-enables the UI. The exec mutex stays held by
+     * the wedged job, so the only way out is a reconnect.
+     */
+    private fun abortExecution() {
+        viewModelScope.launch(Dispatchers.IO) { runCatching { client.abortNow() } }
+        viewModelScope.launch {
+            delay(ABORT_GRACE_MS)
+            if (busyFlow.value) {
+                busyFlow.value = false
+                notify(getApplication<Application>().getString(R.string.console_stuck))
+            }
+        }
+    }
+
     private fun addHistory(command: String) {
         val current = historyFlow.value
         if (current.lastOrNull() == command) return
-        historyFlow.value = (current + command).takeLast(MAX_HISTORY)
+        val updated = (current + command).takeLast(MAX_HISTORY)
+        historyFlow.value = updated
+        persistHistory(updated)
+    }
+
+    private fun persistHistory(history: List<String>) {
+        val file = historyFile
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { file.writeText(history.joinToString("\n")) }
+        }
+    }
+
+    private fun appendLines(added: List<String>) {
+        if (added.isEmpty()) return
+        synchronized(linesLock) {
+            linesFlow.value = (linesFlow.value + added).takeLast(MAX_CONSOLE_LINES)
+            consoleCountFlow.value += added.size
+        }
     }
 
     private fun appendLine(line: String) {
-        linesFlow.value = (linesFlow.value + line).takeLast(MAX_CONSOLE_LINES)
+        appendLines(listOf(line))
     }
 
     /** Adds each non-empty line of a console output chunk. */
@@ -1130,14 +1289,12 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
             .map { it.trimEnd('\r') }
             .dropLastWhile { it.isEmpty() }
         if (toAdd.any { it.isNotEmpty() }) {
-            linesFlow.value = (linesFlow.value + toAdd).takeLast(MAX_CONSOLE_LINES)
+            appendLines(toAdd)
         }
     }
 
     /** Adds the complete lines carried by a streamed chunk. */
     private fun appendChunk(text: String, flush: Boolean = false) {
-        val lines = streamBuffer.append(text, flush)
-        if (lines.isEmpty()) return
-        linesFlow.value = (linesFlow.value + lines).takeLast(MAX_CONSOLE_LINES)
+        appendLines(streamBuffer.append(text, flush))
     }
 }

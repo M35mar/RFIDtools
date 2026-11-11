@@ -53,6 +53,13 @@ class MagicUidVerifyException(cause: Throwable? = null) :
 class MagicUidUnsupportedException(cause: Throwable? = null) :
     IOException("carta non compatibile: serve una magic card Gen2/Gen3 o Ultralight DirectWrite", cause)
 
+/**
+ * The UID was written only in part and the card could not be put back the way
+ * it was: pages 0..2 hold a mix of old and new bytes.
+ */
+class MagicUidInconsistentException(cause: Throwable? = null) :
+    IOException("UID scritto solo in parte: la carta è in stato inconsistente", cause)
+
 /** The presented card does not have the UID length the user typed. */
 class MagicUidLengthException(val cardBytes: Int, val typedBytes: Int) :
     IOException("la carta ha un UID di $cardBytes byte, ne sono stati inseriti $typedBytes")
@@ -288,20 +295,32 @@ object MagicUidAndroid {
             val plan = MagicUidLayout.buildUltralight(newUid, before)
             val pages = plan.ultralightPages ?: throw MagicUidWriteException()
 
-            for ((index, page) in pages.withIndex()) {
-                val command = byteArrayOf(0xA2.toByte(), index.toByte()) + page
-                val response = try {
-                    transport.transceive(command)
-                } catch (lost: TagLostException) {
-                    throw lost
-                } catch (t: IOException) {
-                    throw MagicUidWriteException(t)
+            // Pages 0..2 are written one by one. A failure after the first one
+            // leaves a new BCC0 with the old UID bytes, so the pages already
+            // written are put back from the copy read at the start.
+            var written = 0
+            try {
+                for ((index, page) in pages.withIndex()) {
+                    val command = byteArrayOf(0xA2.toByte(), index.toByte()) + page
+                    val response = try {
+                        transport.transceive(command)
+                    } catch (lost: TagLostException) {
+                        throw lost
+                    } catch (t: IOException) {
+                        throw MagicUidWriteException(t)
+                    }
+                    // Type 2 WRITE answers with ACK 0x0A. A few clones return
+                    // nothing when the Android stack swallows the ACK.
+                    if (response.isNotEmpty() && response[0] != 0x0A.toByte()) {
+                        throw MagicUidWriteException()
+                    }
+                    written = index + 1
                 }
-                // Type 2 WRITE answers with ACK 0x0A. A few clones return
-                // nothing when the Android stack swallows the ACK.
-                if (response.isNotEmpty() && response[0] != 0x0A.toByte()) {
-                    throw MagicUidWriteException()
+            } catch (error: Throwable) {
+                if (!rollbackPages(transport::transceive, before, written)) {
+                    throw MagicUidInconsistentException(error)
                 }
+                throw error
             }
 
             val after = try {
@@ -325,6 +344,32 @@ object MagicUidAndroid {
         } finally {
             transport.close()
         }
+    }
+
+    /**
+     * Rewrites the first [written] pages with [before]. Returns false when the
+     * card refuses, which leaves it in an inconsistent state the user must be
+     * told about.
+     */
+    private fun rollbackPages(
+        transceive: (ByteArray) -> ByteArray,
+        before: ByteArray,
+        written: Int,
+    ): Boolean {
+        if (written <= 0) return true
+        for (index in 0 until written) {
+            val offset = index * 4
+            if (offset + 4 > before.size) return false
+            val command = byteArrayOf(0xA2.toByte(), index.toByte()) +
+                before.copyOfRange(offset, offset + 4)
+            val response = try {
+                transceive(command)
+            } catch (_: Throwable) {
+                return false
+            }
+            if (response.isNotEmpty() && response[0] != 0x0A.toByte()) return false
+        }
+        return true
     }
 
     private fun readPages(transceive: (ByteArray) -> ByteArray): ByteArray {

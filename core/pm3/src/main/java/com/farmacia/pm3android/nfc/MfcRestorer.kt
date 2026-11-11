@@ -28,10 +28,23 @@ import java.io.IOException
 
 class MfcRestorer(private val transport: ClassicTransport) {
 
+    /** Set once [abort] returns true: the report is then marked as partial. */
+    private var aborted = false
+
+    private fun abortNow(abort: () -> Boolean): Boolean {
+        if (!aborted && abort()) aborted = true
+        return aborted
+    }
+
     fun restore(
         dump: MfcDump,
         options: MfcRestoreOptions = MfcRestoreOptions(),
         progress: RestoreProgress? = null,
+        /**
+         * Checked between blocks: true stops the restore and marks the report
+         * as partial. Nothing is rolled back: the blocks already written stay.
+         */
+        abort: () -> Boolean = { false },
     ): RestoreReport {
         val started = System.currentTimeMillis()
         checkGeometry(dump)
@@ -72,6 +85,7 @@ class MfcRestorer(private val transport: ClassicTransport) {
         }
 
         for (sector in 0 until dump.size.sectors) {
+            if (abortNow(abort)) break
             val keys = keyMap.getValue(sector)
             val first = MfcGeometry.firstBlockOfSector(sector)
             val count = MfcGeometry.blocksInSector(sector)
@@ -94,6 +108,7 @@ class MfcRestorer(private val transport: ClassicTransport) {
                 keys = keys,
                 only = null,
                 add = ::add,
+                abort = abort,
             )
             val repairable = results.filter {
                 (it.status == StepStatus.SKIPPED && it.note == StepNote.READ_ONLY) ||
@@ -119,9 +134,7 @@ class MfcRestorer(private val transport: ClassicTransport) {
                 add(trailerStep)
                 trailerDone = true
 
-                if (trailerStep.status == StepStatus.WRITTEN ||
-                    trailerStep.status == StepStatus.VERIFIED
-                ) {
+                if (trailerStep.status == StepStatus.VERIFIED) {
                     val payload = planned.data
                     writeDataBlocks(
                         first = first,
@@ -134,6 +147,7 @@ class MfcRestorer(private val transport: ClassicTransport) {
                         ),
                         only = repairable.map { it.index }.toSet(),
                         add = ::add,
+                        abort = abort,
                     )
                 }
             }
@@ -157,6 +171,7 @@ class MfcRestorer(private val transport: ClassicTransport) {
             tagLabel = dump.size.label,
             steps = steps.filterNotNull().sortedBy { it.index },
             durationMs = System.currentTimeMillis() - started,
+            aborted = aborted,
         )
     }
 
@@ -233,8 +248,12 @@ class MfcRestorer(private val transport: ClassicTransport) {
                 val existing = readWithKeys(sector, block, keys)
                 if (existing != null && existing.contentEquals(payload)) continue
 
+                // A 4K large sector has four access groups over sixteen
+                // blocks: the group index must not be computed with the
+                // 4-block layout, or every data block ends up requiring the
+                // trailer group's key.
                 val requirement = currentAccess?.let {
-                    MfcAccess.writeKeyRequirement(it, offset)
+                    MfcAccess.writeKeyRequirement(it, offset, count)
                 } ?: MfcKeyRequirement.ANY
                 if (requirement != MfcKeyRequirement.NONE &&
                     keys.sessionFor(requirement) != null
@@ -243,13 +262,13 @@ class MfcRestorer(private val transport: ClassicTransport) {
                 }
 
                 val repaired = canRepair &&
-                    MfcAccess.writeKeyRequirement(plannedAccess, offset).let { retry ->
+                    MfcAccess.writeKeyRequirement(plannedAccess, offset, count).let { retry ->
                         retry != MfcKeyRequirement.NONE &&
                             plannedKeys.sessionFor(retry) != null
                     }
                 if (!repaired) {
                     val retry = plannedAccess?.let {
-                        MfcAccess.writeKeyRequirement(it, offset)
+                        MfcAccess.writeKeyRequirement(it, offset, count)
                     }
                     missing += MfcMissingKey(
                         sector = sector,
@@ -278,6 +297,7 @@ class MfcRestorer(private val transport: ClassicTransport) {
         keys: SectorKeys,
         only: Set<Int>?,
         add: (StepResult) -> Unit,
+        abort: () -> Boolean,
     ): List<StepResult> {
         val sector = MfcGeometry.sectorOfBlock(first)
         val results = mutableListOf<StepResult>()
@@ -288,6 +308,7 @@ class MfcRestorer(private val transport: ClassicTransport) {
         }
 
         for (offset in 0 until count - 1) {
+            if (abortNow(abort)) break
             val block = first + offset
             if (only != null && block !in only) continue
             if (block == 0) {
@@ -303,7 +324,7 @@ class MfcRestorer(private val transport: ClassicTransport) {
             }
 
             val requirement = if (MfcAccess.isValid(access)) {
-                MfcAccess.writeKeyRequirement(access, offset)
+                MfcAccess.writeKeyRequirement(access, offset, count)
             } else {
                 MfcKeyRequirement.ANY
             }
@@ -337,16 +358,21 @@ class MfcRestorer(private val transport: ClassicTransport) {
                 continue
             }
 
+            // A write that cannot be read back as the dump is a failure, not
+            // a success: the card may have accepted a different value, or the
+            // read may have failed. Either way the restore is not complete.
             val readBack = tryRead(block)
             emit(
-                StepResult(
-                    block,
-                    if (readBack != null && readBack.contentEquals(payload)) {
-                        StepStatus.VERIFIED
-                    } else {
-                        StepStatus.WRITTEN
-                    },
-                ),
+                when {
+                    readBack == null ->
+                        StepResult(block, StepStatus.FAILED, StepNote.VERIFY_FAILED)
+
+                    readBack.contentEquals(payload) ->
+                        StepResult(block, StepStatus.VERIFIED)
+
+                    else ->
+                        StepResult(block, StepStatus.FAILED, StepNote.VERIFY_FAILED)
+                },
             )
         }
 
@@ -385,13 +411,25 @@ class MfcRestorer(private val transport: ClassicTransport) {
         }
 
         // Re-authenticating with a key we just wrote is the only way to confirm
-        // the trailer took effect.
-        val confirmed = reauthenticate(sector, payload) != null
-        return StepResult(
-            trailerIndex,
-            if (confirmed) StepStatus.VERIFIED else StepStatus.WRITTEN,
-            planned.note,
+        // the trailer took effect. A transient re-auth failure must not hide a
+        // trailer that was in fact written, so fall back to reading it back
+        // with the planned keys before reporting a failure.
+        if (reauthenticate(sector, payload) != null) {
+            return StepResult(trailerIndex, StepStatus.VERIFIED, planned.note)
+        }
+        val newKeys = SectorKeys(
+            payload.copyOfRange(0, 6),
+            payload.copyOfRange(10, 16),
         )
+        val readBack = readWithKeys(sector, trailerIndex, newKeys)
+        val matches = readBack != null &&
+            readBack.copyOfRange(6, 10).contentEquals(payload.copyOfRange(6, 10)) &&
+            readBack.copyOfRange(10, 16).contentEquals(payload.copyOfRange(10, 16))
+        return if (matches) {
+            StepResult(trailerIndex, StepStatus.VERIFIED, planned.note)
+        } else {
+            StepResult(trailerIndex, StepStatus.FAILED, StepNote.VERIFY_FAILED)
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -451,14 +489,20 @@ class MfcRestorer(private val transport: ClassicTransport) {
         return null
     }
 
+    // A tag that was taken away is not an authentication or write error: the
+    // restore has to stop instead of hammering a card that is no longer there.
     private fun tryAuthenticate(sector: Int, session: Session): Boolean = try {
         transport.authenticate(sector, session.key, session.keyA)
+    } catch (unusable: TagUnusableException) {
+        throw unusable
     } catch (_: IOException) {
         false
     }
 
     private fun tryRead(block: Int): ByteArray? = try {
         transport.readBlock(block)
+    } catch (unusable: TagUnusableException) {
+        throw unusable
     } catch (_: IOException) {
         null
     }
@@ -466,6 +510,8 @@ class MfcRestorer(private val transport: ClassicTransport) {
     private fun tryWrite(block: Int, payload: ByteArray): Boolean = try {
         transport.writeBlock(block, payload)
         true
+    } catch (unusable: TagUnusableException) {
+        throw unusable
     } catch (_: IOException) {
         false
     }

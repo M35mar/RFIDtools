@@ -73,15 +73,24 @@ fun Pm3ToolsScreen(viewModel: Pm3ViewModel) {
     val enabled = connectionState == Pm3ConnectionState.CONNECTED && !busy
 
     var pendingCommand by remember { mutableStateOf<LocalizedToolCommand?>(null) }
-    var dangerPending by remember { mutableStateOf<Pair<String, LocalizedToolCommand>?>(null) }
+    var dangerPending by remember { mutableStateOf<Pair<String, DangerLevel>?>(null) }
     var search by rememberSaveable { mutableStateOf("") }
 
-    val execute: (String, LocalizedToolCommand) -> Unit = { commandText, command ->
-        if (command.command.danger == DangerLevel.SAFE) {
+    // Every path that starts a command goes through here: the catalog button,
+    // the dialog confirmation, the "Recent" list and the result re-run. The
+    // policy is computed from the command text so a command typed once in the
+    // console cannot later run with a single tap.
+    val runWithPolicy: (String) -> Unit = { commandText ->
+        val level = dangerFor(commandText)
+        if (level == DangerLevel.SAFE) {
             viewModel.runCommand(commandText)
         } else {
-            dangerPending = commandText to command
+            dangerPending = commandText to level
         }
+    }
+
+    val execute: (String, LocalizedToolCommand) -> Unit = { commandText, _ ->
+        runWithPolicy(commandText)
     }
 
     val launch: (LocalizedToolCommand) -> Unit = { command ->
@@ -138,7 +147,7 @@ fun Pm3ToolsScreen(viewModel: Pm3ViewModel) {
             TagResultCard(
                 info = info,
                 enabled = enabled,
-                onRerun = { command -> viewModel.runCommand(command) },
+                onRerun = runWithPolicy,
             )
         }
 
@@ -167,7 +176,7 @@ fun Pm3ToolsScreen(viewModel: Pm3ViewModel) {
             SectionCard(title = stringResource(R.string.tools_recent)) {
                 recent.forEach { command ->
                     OutlinedButton(
-                        onClick = { viewModel.runCommand(command) },
+                        onClick = { runWithPolicy(command) },
                         enabled = enabled,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
@@ -207,13 +216,13 @@ fun Pm3ToolsScreen(viewModel: Pm3ViewModel) {
             )
         }
 
-        dangerPending?.let { (commandText, command) ->
+        dangerPending?.let { (commandText, level) ->
             AlertDialog(
                 onDismissRequest = { dangerPending = null },
                 title = {
                     Text(
                         stringResource(
-                            if (command.command.danger == DangerLevel.DESTRUCTIVE) {
+                            if (level == DangerLevel.DESTRUCTIVE) {
                                 R.string.danger_destructive_title
                             } else {
                                 R.string.danger_write_title

@@ -281,6 +281,76 @@ val TOOL_SECTIONS = listOf(
     ToolSectionData(R.string.tool_section_desfire, DESFIRE_COMMANDS),
 )
 
+// ---------------------------------------------------------------------------
+// Danger policy for commands that do not come from the catalog
+// ---------------------------------------------------------------------------
+
+/** Irreversible operations: erase, wipe, UID rewrite, counter tearing. */
+private val DESTRUCTIVE_VERBS = setOf(
+    "countertear",
+    "erase",
+    "wipe",
+    "eclr",
+    "setuid",
+    "cload",
+)
+
+/** Operations that write to the card but can be repeated. */
+private val WRITE_VERBS = setOf(
+    "write",
+    "wrbl",
+    "restore",
+    "incr",
+    "increment",
+    "decr",
+    "decrement",
+    "setblk",
+    "load",
+)
+
+/** The subcommand path ("hf mfu restore") without options or placeholders. */
+private fun commandKey(text: String): String = text
+    .trim()
+    .split(Regex("\\s+"))
+    .asSequence()
+    .filter { it.isNotBlank() }
+    .filterNot { it.startsWith("-") || it.contains("{") }
+    .take(3)
+    .joinToString(" ")
+
+private val CATALOG_DANGER: Map<String, DangerLevel> = buildMap {
+    for (section in TOOL_SECTIONS) {
+        for (command in section.commands) {
+            val key = commandKey(command.template)
+            val current = this[key]
+            if (current == null || command.danger.ordinal > current.ordinal) {
+                put(key, command.danger)
+            }
+        }
+    }
+}
+
+/**
+ * How careful the UI must be with a command the user typed: the console
+ * history and the "run again" action of a result card must not skip the
+ * confirmation the catalog asks for.
+ *
+ * A command that is not in the catalog cannot be classified, so it is treated
+ * as a write: one extra confirmation is cheaper than an accidental wipe.
+ */
+fun dangerFor(commandText: String): DangerLevel {
+    if (commandText.isBlank()) return DangerLevel.SAFE
+    CATALOG_DANGER[commandKey(commandText)]?.let { return it }
+    val tokens = commandText.lowercase().split(Regex("\\s+"))
+    return when {
+        tokens.any { it in DESTRUCTIVE_VERBS } -> DangerLevel.DESTRUCTIVE
+        tokens.any { it in WRITE_VERBS } -> DangerLevel.WRITE
+        // A command the catalog does not know: one extra confirmation is
+        // cheaper than an accidental write.
+        else -> DangerLevel.WRITE
+    }
+}
+
 /** Substitutes {name} tokens and appends checked switch literals. */
 fun composeCommand(
     command: ToolCommand,

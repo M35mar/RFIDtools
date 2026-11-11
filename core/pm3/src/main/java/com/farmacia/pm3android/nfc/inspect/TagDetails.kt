@@ -283,7 +283,12 @@ class EmrtdDetails(
     val label: String? = null,
     /** EF.CardAccess, when the document returned it without a session. */
     val cardAccess: ByteArray? = null,
-    val paceSupported: Boolean = false,
+    /**
+     * True when EF.CardAccess advertises a PACE OID, false when the document
+     * has no access file, null when the file could not be read completely:
+     * "unknown" must not be shown as "PACE unsupported".
+     */
+    val paceSupported: Boolean? = null,
     val bacSupported: Boolean = false,
     /** EMRTD for an ICAO 9303 document, EID for a national applet. */
     val family: TagFamily? = null,

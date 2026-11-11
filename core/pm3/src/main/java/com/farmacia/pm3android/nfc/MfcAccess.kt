@@ -120,23 +120,33 @@ object MfcAccess {
      * are read-only, 111 is inaccessible. Key permissions are not considered:
      * the engine authenticates before writing.
      */
-    fun isDataBlockWritable(access: ByteArray, blockInSector: Int): Boolean =
-        when (condition(access, blockInSector)) {
-            0x00, 0x03, 0x04, 0x06 -> true
-            else -> false
-        }
+    fun isDataBlockWritable(
+        access: ByteArray,
+        blockInSector: Int,
+        blocksInSector: Int = 4,
+    ): Boolean = when (condition(access, blockInSector, blocksInSector)) {
+        0x00, 0x03, 0x04, 0x06 -> true
+        else -> false
+    }
 
     /** True for the configurations a plain WRITE can never change. */
-    fun isReadOnly(access: ByteArray, blockInSector: Int): Boolean =
-        !isDataBlockWritable(access, blockInSector)
+    fun isReadOnly(
+        access: ByteArray,
+        blockInSector: Int,
+        blocksInSector: Int = 4,
+    ): Boolean = !isDataBlockWritable(access, blockInSector, blocksInSector)
 
     /**
      * Key type needed to write a data block. Conditions `011`, `100` and `110`
      * only accept Key B; using a Key A session there is the classic reason a
      * differential restore leaves some blocks untouched.
      */
-    fun writeKeyRequirement(access: ByteArray, blockInSector: Int): MfcKeyRequirement =
-        when (condition(access, blockInSector)) {
+    fun writeKeyRequirement(
+        access: ByteArray,
+        blockInSector: Int,
+        blocksInSector: Int = 4,
+    ): MfcKeyRequirement =
+        when (condition(access, blockInSector, blocksInSector)) {
             0x00 -> MfcKeyRequirement.ANY
             0x03, 0x04, 0x06 -> MfcKeyRequirement.B
             else -> MfcKeyRequirement.NONE

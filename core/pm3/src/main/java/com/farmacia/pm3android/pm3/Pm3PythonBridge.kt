@@ -21,7 +21,8 @@ object Pm3PythonBridge {
     fun console(command: String, capture: Boolean, quiet: Boolean): String {
         check(Pm3Native.nativeIsOpen()) { "PM3 is not connected" }
         // Cooperative stop: Python scripts call back here for every PM3
-        // command, so a pending stop unwinds the script at the next one.
+        // command, so a pending stop unwinds the script at the next one. The
+        // instruction hook in pm3_runner.py covers code that never calls back.
         check(!Pm3Native.stopRequested) { "stopped by user" }
         val output = Pm3Native.nativeExec(command)
         check(!Pm3Native.stopRequested) { "stopped by user" }

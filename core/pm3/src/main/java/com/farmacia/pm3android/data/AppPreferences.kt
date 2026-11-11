@@ -31,6 +31,8 @@ data class AppSettings(
     val confirmDelete: Boolean = true,
     val keepScreenOn: Boolean = false,
     val followConsole: Boolean = true,
+    /** Colour the console output like a terminal. */
+    val consoleColors: Boolean = true,
     val autoCheckUpdates: Boolean = true,
     val connectionMode: ConnectionMode = ConnectionMode.USB,
     val bluetoothAddress: String? = null,
@@ -48,6 +50,7 @@ class AppPreferences(context: Context) {
         const val KEY_CONFIRM_DELETE = "confirm_delete"
         const val KEY_KEEP_SCREEN_ON = "keep_screen_on"
         const val KEY_FOLLOW_CONSOLE = "follow_console"
+        const val KEY_CONSOLE_COLORS = "console_colors"
         const val KEY_AUTO_CHECK_UPDATES = "auto_check_updates"
         const val KEY_LAST_NOTIFIED_UPDATE = "last_notified_update"
         const val KEY_CONNECTION_MODE = "connection_mode"
@@ -55,8 +58,11 @@ class AppPreferences(context: Context) {
         const val KEY_BT_NAME = "bluetooth_name"
         const val KEY_BT_LINK = "bluetooth_link"
 
-        const val MIN_FONT_SIZE = 10
+        const val MIN_FONT_SIZE = 8
         const val MAX_FONT_SIZE = 22
+
+        /** Classic Bluetooth address, the only shape a transport can open. */
+        val MAC_ADDRESS = Regex("^([0-9A-F]{2}:){5}[0-9A-F]{2}$")
     }
 
     private val prefs = context.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
@@ -71,6 +77,7 @@ class AppPreferences(context: Context) {
     fun setConfirmDelete(enabled: Boolean) = update { copy(confirmDelete = enabled) }
     fun setKeepScreenOn(enabled: Boolean) = update { copy(keepScreenOn = enabled) }
     fun setFollowConsole(enabled: Boolean) = update { copy(followConsole = enabled) }
+    fun setConsoleColors(enabled: Boolean) = update { copy(consoleColors = enabled) }
     fun setAutoCheckUpdates(enabled: Boolean) = update { copy(autoCheckUpdates = enabled) }
     fun setConnectionMode(mode: ConnectionMode) = update { copy(connectionMode = mode) }
 
@@ -97,6 +104,7 @@ class AppPreferences(context: Context) {
             .put("confirmDelete", value.confirmDelete)
             .put("keepScreenOn", value.keepScreenOn)
             .put("followConsole", value.followConsole)
+            .put("consoleColors", value.consoleColors)
             .put("autoCheckUpdates", value.autoCheckUpdates)
             .put("connectionMode", value.connectionMode.name)
             .put("bluetoothAddress", value.bluetoothAddress ?: JSONObject.NULL)
@@ -118,12 +126,13 @@ class AppPreferences(context: Context) {
             confirmDelete = json.optBoolean("confirmDelete", true),
             keepScreenOn = json.optBoolean("keepScreenOn", false),
             followConsole = json.optBoolean("followConsole", true),
+            consoleColors = json.optBoolean("consoleColors", true),
             autoCheckUpdates = json.optBoolean("autoCheckUpdates", true),
             connectionMode = runCatching {
                 ConnectionMode.valueOf(json.optString("connectionMode", ConnectionMode.USB.name))
             }.getOrDefault(ConnectionMode.USB),
-            bluetoothAddress = json.optString("bluetoothAddress").takeIf { it.isNotBlank() },
-            bluetoothName = json.optString("bluetoothName").takeIf { it.isNotBlank() },
+            bluetoothAddress = validBluetoothAddress(json.optString("bluetoothAddress")),
+            bluetoothName = json.optString("bluetoothName").takeIf { it.isNotBlank() }?.take(64),
             bluetoothLink = runCatching {
                 BluetoothLink.valueOf(json.optString("bluetoothLink", BluetoothLink.CLASSIC.name))
             }.getOrDefault(BluetoothLink.CLASSIC),
@@ -144,13 +153,14 @@ class AppPreferences(context: Context) {
             confirmDelete = prefs.getBoolean(KEY_CONFIRM_DELETE, true),
             keepScreenOn = prefs.getBoolean(KEY_KEEP_SCREEN_ON, false),
             followConsole = prefs.getBoolean(KEY_FOLLOW_CONSOLE, true),
+            consoleColors = prefs.getBoolean(KEY_CONSOLE_COLORS, true),
             autoCheckUpdates = prefs.getBoolean(KEY_AUTO_CHECK_UPDATES, true),
             connectionMode = runCatching {
                 ConnectionMode.valueOf(
                     prefs.getString(KEY_CONNECTION_MODE, null) ?: ConnectionMode.USB.name,
                 )
             }.getOrDefault(ConnectionMode.USB),
-            bluetoothAddress = prefs.getString(KEY_BT_ADDRESS, null),
+            bluetoothAddress = validBluetoothAddress(prefs.getString(KEY_BT_ADDRESS, null)),
             bluetoothName = prefs.getString(KEY_BT_NAME, null),
             bluetoothLink = runCatching {
                 BluetoothLink.valueOf(
@@ -159,6 +169,14 @@ class AppPreferences(context: Context) {
             }.getOrDefault(BluetoothLink.CLASSIC),
         )
     }
+
+    /**
+     * A Bluetooth address from a preference or a backup file is used to open a
+     * connection, so it must look like a MAC address; anything else falls back
+     * to "no remembered device" instead of failing inside the transport.
+     */
+    private fun validBluetoothAddress(raw: String?): String? =
+        raw?.trim()?.uppercase()?.takeIf { MAC_ADDRESS.matches(it) }
 
     private inline fun update(transform: AppSettings.() -> AppSettings) {
         val updated = _settings.value.transform()
@@ -174,6 +192,7 @@ class AppPreferences(context: Context) {
             putBoolean(KEY_CONFIRM_DELETE, value.confirmDelete)
             putBoolean(KEY_KEEP_SCREEN_ON, value.keepScreenOn)
             putBoolean(KEY_FOLLOW_CONSOLE, value.followConsole)
+            putBoolean(KEY_CONSOLE_COLORS, value.consoleColors)
             putBoolean(KEY_AUTO_CHECK_UPDATES, value.autoCheckUpdates)
             putString(KEY_CONNECTION_MODE, value.connectionMode.name)
             putString(KEY_BT_ADDRESS, value.bluetoothAddress)

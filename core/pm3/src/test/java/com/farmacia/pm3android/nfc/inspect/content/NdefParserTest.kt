@@ -226,4 +226,37 @@ class NdefParserTest {
         assertEquals(message.size, content.bytes)
         assertNotNull(content.records.firstOrNull())
     }
+
+    @Test
+    fun `a long record with the msb set is invalid, not an exception`() {
+        // MB | ME | TNF 0x01, type length 1, then a four byte length whose MSB
+        // makes it negative as a signed Int.
+        val message = byteArrayOf(
+            0xC1.toByte(), 0x01,
+            0x80.toByte(), 0x00, 0x00, 0x00,
+            0x54,
+        )
+        val content = NdefParser.parseTlv(tlv(message))
+        assertEquals(NdefStatus.INVALID, content.status)
+        assertFalse(content.found)
+    }
+
+    @Test
+    fun `deeply nested smart posters stop at the depth limit`() {
+        var payload = textPayload("Leaf")
+        repeat(6) {
+            payload = record(type = "Sp", payload = payload)
+        }
+        val content = NdefParser.parseTlv(tlv(payload))
+        assertEquals(NdefStatus.INVALID, content.status)
+        assertFalse(content.found)
+    }
+
+    @Test
+    fun `an end past the buffer is clamped`() {
+        val message = record(payload = textPayload("Clamp"))
+        val content = NdefParser.parseMessage(message, end = message.size + 10)
+        assertEquals(NdefStatus.FOUND, content.status)
+        assertEquals("Clamp", content.records[0].text)
+    }
 }

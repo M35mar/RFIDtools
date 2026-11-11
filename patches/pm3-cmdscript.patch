@@ -1,0 +1,80 @@
+diff --git a/client/src/pm3.c b/client/src/pm3.c
+index 76df67a..a05b3db 100644
+--- a/client/src/pm3.c
++++ b/client/src/pm3.c
+@@ -70,6 +70,8 @@ int pm3_console(pm3_device_t *dev, const char *cmd, bool capture, bool quiet) {
+         g_printAndLog &= ~PRINTANDLOG_PRINT;
+     }
+     int ret = CommandReceived(cmd);
++    // .cmd scripts are queued, not run: this entry point has no main loop.
++    pm3_cmdscript_run_pending();
+     g_printAndLog = prev_printAndLog;
+     return ret;
+ }
+diff --git a/client/src/proxmark3.c b/client/src/proxmark3.c
+index 7e76b94..724fc76 100644
+--- a/client/src/proxmark3.c
++++ b/client/src/proxmark3.c
+@@ -458,6 +458,50 @@ static bool pop_cmdscriptfile(void) {
+         return true;
+ }
+ 
++// A libpm3 caller issues one command per call and never enters main_loop, so
++// the .cmd queue pushed by "script run" has to be drained here.
++int pm3_cmdscript_run_pending(void) {
++    char buf[256] = {0};
++    int ret = PM3_SUCCESS;
++
++    while (current_cmdscriptfile()) {
++        // Stop pressed: leave the rest of the script queued but unrun.
++        if (g_user_interrupt) {
++            break;
++        }
++        if (fgets(buf, sizeof(buf), current_cmdscriptfile()) == NULL) {
++            if (!pop_cmdscriptfile()) {
++                break;
++            }
++            continue;
++        }
++
++        str_cleanrn(buf, sizeof(buf));
++        char *line = buf;
++        while (*line != '\0' && isspace((unsigned char)*line)) {
++            line++;
++        }
++        size_t len = strlen(line);
++        while (len > 0 && isspace((unsigned char)line[len - 1])) {
++            line[--len] = '\0';
++        }
++        if (len == 0) {
++            continue;
++        }
++
++        g_pendingPrompt = false;
++        ret = CommandReceived(line);
++        if (ret == PM3_EFATAL || ret == PM3_SQUIT) {
++            break;
++        }
++    }
++
++    while (current_cmdscriptfile()) {
++        pop_cmdscriptfile();
++    }
++    return ret;
++}
++
+ // Main thread of PM3 Client
+ void
+ #ifdef __has_attribute
+diff --git a/client/src/proxmark3.h b/client/src/proxmark3.h
+index 85ad35d..5e060f9 100644
+--- a/client/src/proxmark3.h
++++ b/client/src/proxmark3.h
+@@ -60,6 +60,7 @@ extern "C" {
+ #endif
+ 
+ int push_cmdscriptfile(char *path, bool stayafter);
++int pm3_cmdscript_run_pending(void);
+ int flash_pm3(char *serial_port_name, uint8_t num_files, const char *filenames[], bool can_write_bl, bool force);
+ const char *get_my_executable_path(void);
+ const char *get_my_executable_directory(void);

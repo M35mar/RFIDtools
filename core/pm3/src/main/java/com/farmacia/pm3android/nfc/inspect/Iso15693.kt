@@ -29,13 +29,25 @@ object Iso15693 {
     const val INFO_MEMORY = 0x04
     const val INFO_IC = 0x08
 
+    /** Standard commands carry a one-byte block number: 0..255. */
+    const val MAX_BLOCK = 0xFF
+
+    /** Highest block count a standard GET SYSTEM INFO can report (count + 1). */
+    const val MAX_BLOCKS = 0x100
+
     fun getSystemInfo(uid: ByteArray? = null): ByteArray = frame(CMD_GET_SYSTEM_INFO, uid)
 
-    fun readBlock(block: Int, uid: ByteArray? = null): ByteArray =
-        frame(CMD_READ_SINGLE_BLOCK, uid, byteArrayOf(block.toByte()))
+    fun readBlock(block: Int, uid: ByteArray? = null): ByteArray {
+        requireBlock(block)
+        return frame(CMD_READ_SINGLE_BLOCK, uid, byteArrayOf(block.toByte()))
+    }
 
     fun readMultipleBlocks(start: Int, count: Int, uid: ByteArray? = null): ByteArray {
-        require(count in 1..256) { "block count out of range" }
+        requireBlock(start)
+        require(count in 1..MAX_BLOCKS) { "block count out of range" }
+        // The extended command is not implemented: a range past block 255
+        // would wrap the one-byte address, so refuse it instead.
+        require(start + count <= MAX_BLOCKS) { "block range out of range" }
         return frame(
             CMD_READ_MULTIPLE_BLOCKS,
             uid,
@@ -43,11 +55,15 @@ object Iso15693 {
         )
     }
 
-    fun writeBlock(block: Int, data: ByteArray, uid: ByteArray? = null): ByteArray =
-        frame(CMD_WRITE_SINGLE_BLOCK, uid, byteArrayOf(block.toByte()) + data)
+    fun writeBlock(block: Int, data: ByteArray, uid: ByteArray? = null): ByteArray {
+        requireBlock(block)
+        return frame(CMD_WRITE_SINGLE_BLOCK, uid, byteArrayOf(block.toByte()) + data)
+    }
 
-    fun lockBlock(block: Int, uid: ByteArray? = null): ByteArray =
-        frame(CMD_LOCK_BLOCK, uid, byteArrayOf(block.toByte()))
+    fun lockBlock(block: Int, uid: ByteArray? = null): ByteArray {
+        requireBlock(block)
+        return frame(CMD_LOCK_BLOCK, uid, byteArrayOf(block.toByte()))
+    }
 
     fun writeAfi(afi: Int, uid: ByteArray? = null): ByteArray =
         frame(0x27, uid, byteArrayOf(afi.toByte()))
@@ -66,6 +82,10 @@ object Iso15693 {
 
     fun readSignature(uid: ByteArray? = null): ByteArray =
         frame(CMD_READ_SIGNATURE, uid)
+
+    private fun requireBlock(block: Int) {
+        require(block in 0..MAX_BLOCK) { "block number out of range" }
+    }
 
     private fun frame(command: Int, uid: ByteArray?, data: ByteArray = ByteArray(0)): ByteArray {
         val out = java.io.ByteArrayOutputStream(2 + (uid?.size ?: 0) + data.size)

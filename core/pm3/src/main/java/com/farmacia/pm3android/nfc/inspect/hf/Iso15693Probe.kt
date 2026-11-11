@@ -94,7 +94,9 @@ object Iso15693Probe : HfProbe {
      * Reads the Type 5 NDEF area. The capability container is the first four
      * bytes of block 0 and the NDEF TLV starts right after it, so the TLV can
      * live inside block 0 when the block is wider than four bytes. Only the
-     * blocks needed by the TLV length are read.
+     * blocks needed by the TLV length are read; the standard one-byte block
+     * address stops the scan at block 255, so a longer tag is reported as
+     * truncated rather than read at the wrong address.
      */
     private fun readNdef(
         transport: com.farmacia.pm3android.nfc.inspect.NfcVTransport,
@@ -112,7 +114,7 @@ object Iso15693Probe : HfProbe {
         val memory = ByteArrayOutputStream()
         memory.write(first)
         var block = 1
-        while (memory.size() < CC_BYTES + 2 && block < MAX_BLOCKS) {
+        while (memory.size() < CC_BYTES + 2 && block < Iso15693.MAX_BLOCKS) {
             val next = Iso15693.parseBlockData(
                 transport.transceive(Iso15693.readBlock(block)),
             ) ?: return NdefContent.absent
@@ -122,9 +124,9 @@ object Iso15693Probe : HfProbe {
 
         val total = tlvLength(memory.toByteArray(), CC_BYTES) ?: return NdefContent.absent
         val needed = CC_BYTES + total
-        if (needed > MAX_BLOCKS * size) return NdefContent.absent
+        if (needed > Iso15693.MAX_BLOCKS * size) return NdefContent.absent
 
-        while (memory.size() < needed && block < MAX_BLOCKS) {
+        while (memory.size() < needed && block < Iso15693.MAX_BLOCKS) {
             val next = Iso15693.parseBlockData(
                 transport.transceive(Iso15693.readBlock(block)),
             ) ?: return NdefContent(
@@ -196,8 +198,6 @@ object Iso15693Probe : HfProbe {
         TagFamily.SLE66R -> "Infineon SLE66R / my-d (ISO 15693)"
         else -> "ISO 15693${manufacturer?.let { " · $it" } ?: ""}"
     }
-
-    private const val MAX_BLOCKS = 512
 
     /** Capability container: magic 0xE1, version, size, access. */
     private const val CC_BYTES = 4

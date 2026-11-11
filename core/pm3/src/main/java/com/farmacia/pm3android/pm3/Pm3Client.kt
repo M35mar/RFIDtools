@@ -19,7 +19,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -70,6 +72,20 @@ class Pm3Client(context: Context) {
     @Volatile
     private var abortRequested = false
 
+    /**
+     * True while a user-initiated disconnect is tearing the link down: the
+     * socket end-of-stream and the BLE disconnect it causes must not be
+     * reported as a lost connection.
+     */
+    @Volatile
+    private var closing = false
+
+    private val linkLostFlow = MutableSharedFlow<String>(extraBufferCapacity = 4)
+
+    /** Emits once when the active link disappears without a user disconnect. */
+    val linkLost: SharedFlow<String>
+        get() = linkLostFlow
+
     val state: StateFlow<Pm3ConnectionState>
         get() = stateFlow
 
@@ -79,6 +95,33 @@ class Pm3Client(context: Context) {
     /** Transport that owns the current connection, null while disconnected. */
     val transport: StateFlow<Pm3Transport?>
         get() = transportFlow
+
+    init {
+        // A GATT link that dies must end the session: otherwise the native
+        // command waits on a socket nobody serves and the UI stays busy.
+        bleBluetooth.onLinkLost = { reason -> onTransportGone(reason, closeBridge = true) }
+    }
+
+    /**
+     * Tears the session down after an unexpected link loss. The BLE path also
+     * stops the bridge; the bridge's own EOF path has already stopped itself
+     * and must not be joined from inside its callback.
+     */
+    private fun onTransportGone(reason: String?, closeBridge: Boolean) {
+        if (closing) return
+        if (stateFlow.value == Pm3ConnectionState.DISCONNECTED) return
+        abortRequested = true
+        linkLostFlow.tryEmit(
+            reason?.takeIf { it.isNotBlank() }
+                ?: applicationContext.getString(R.string.device_bt_lost_message),
+        )
+        if (closeBridge) {
+            runCatching { bridge.getAndSet(null)?.stop() }
+        }
+        runCatching { openedPort.getAndSet(null)?.close() }
+        transportFlow.value = null
+        stateFlow.value = Pm3ConnectionState.DISCONNECTED
+    }
 
     fun foundDevice(): UsbDevice? = usb.findDevice()
 
@@ -107,6 +150,11 @@ class Pm3Client(context: Context) {
             return applicationContext.getString(R.string.connect_already_running)
         }
         abortRequested = false
+        closing = false
+        // The socket name is fixed, so anything left by a previous attempt must
+        // be released before binding it again ("address already in use").
+        bridge.getAndSet(null)?.let { runCatching { it.stop() } }
+        openedPort.getAndSet(null)?.let { runCatching { it.close() } }
         stateFlow.value = Pm3ConnectionState.CONNECTING
         // Remember the transport while connecting too: a USB detach or a
         // Bluetooth ACL drop has to abort only its own link.
@@ -128,6 +176,11 @@ class Pm3Client(context: Context) {
             val (input, output) = freshPort.streams()
             if (abortRequested) error(applicationContext.getString(R.string.connect_cancelled))
             freshBridge = LocalSocketBridge(SOCKET_NAME).also {
+                // A pump that dies means the link is gone: report it instead of
+                // leaving the native client blocked on a dead socket.
+                it.onBridgeLost = { cause ->
+                    onTransportGone(cause?.message, closeBridge = false)
+                }
                 it.start(input, output)
             }
 
@@ -152,6 +205,18 @@ class Pm3Client(context: Context) {
             if (abortRequested) error(applicationContext.getString(R.string.connect_cancelled))
             bridge.set(freshBridge)
             openedPort.set(freshPort)
+            // abortNow() cannot take the lifecycle mutex (this call holds it),
+            // so it may have run while the resources were being published:
+            // close them now instead of leaving a CONNECTED state with no owner.
+            if (abortRequested) {
+                bridge.getAndSet(null)?.stop()
+                openedPort.getAndSet(null)?.close()
+                withContext(Dispatchers.IO) { runCatching { Pm3Native.nativeClose() } }
+                // Cleaned up here: keep the finally block from doing it twice.
+                freshBridge = null
+                freshPort = null
+                error(applicationContext.getString(R.string.connect_cancelled))
+            }
             transportFlow.value = transport
             // Ownership moved to the client; do not clean these up below.
             freshBridge = null
@@ -176,8 +241,12 @@ class Pm3Client(context: Context) {
         } finally {
             if (freshBridge != null || freshPort != null) {
                 // The native open may have succeeded even when we are not
-                // taking ownership (cancellation or detach race).
-                runCatching { Pm3Native.nativeClose() }
+                // taking ownership (cancellation or detach race). nativeClose
+                // takes the native API lock and may close the link: keep it off
+                // the caller's thread, which can be the main thread.
+                withContext(Dispatchers.IO) {
+                    runCatching { Pm3Native.nativeClose() }
+                }
             }
             freshBridge?.stop()
             freshPort?.close()
@@ -185,6 +254,7 @@ class Pm3Client(context: Context) {
     }
 
     suspend fun disconnect() = lifeCycleMutex.withLock {
+        closing = true
         try {
             withContext(Dispatchers.IO) {
                 Pm3Native.nativeClose()
@@ -201,6 +271,7 @@ class Pm3Client(context: Context) {
             openedPort.getAndSet(null)?.close()
             transportFlow.value = null
             stateFlow.value = Pm3ConnectionState.DISCONNECTED
+            closing = false
         }
     }
 
@@ -210,6 +281,7 @@ class Pm3Client(context: Context) {
      * client.
      */
     fun abortNow() {
+        closing = true
         abortRequested = true
         classicBluetooth.cancelConnect()
         bleBluetooth.cancelConnect()
@@ -218,6 +290,7 @@ class Pm3Client(context: Context) {
         runCatching { Pm3Native.nativeClose() }
         transportFlow.value = null
         stateFlow.value = Pm3ConnectionState.DISCONNECTED
+        closing = false
     }
 
     /** Kept for callers that want a simple synchronous close. */

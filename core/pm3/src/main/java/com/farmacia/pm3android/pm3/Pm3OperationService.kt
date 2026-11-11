@@ -30,6 +30,10 @@ class Pm3OperationService : Service() {
         private const val NOTIFICATION_ID = 42
 
         fun start(context: Context) {
+            // The command is accepted at this point: clear a stop left by the
+            // previous one before its stop window opens. Resetting later would
+            // drop a stop pressed while the script was still starting.
+            Pm3PythonRunner.resetStop()
             val intent = Intent(context, Pm3OperationService::class.java)
                 .setAction(ACTION_START)
             ContextCompat.startForegroundService(context, intent)
@@ -61,7 +65,7 @@ class Pm3OperationService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
             // Stop both paths: native commands poll g_user_interrupt, while
-            // Python scripts check Pm3Native.stopRequested between statements.
+            // Python scripts poll Pm3Native.stopRequested between instructions.
             Pm3Native.stopRequested = true
             Pm3Native.nativeAbort()
             stopForeground(STOP_FOREGROUND_REMOVE)

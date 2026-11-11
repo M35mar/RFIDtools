@@ -41,6 +41,46 @@ class MfcRestorerTest {
     }
 
     @Test
+    fun `a 4K large sector uses four access groups over sixteen blocks`() {
+        // Groups: blocks 0-4, 5-9, 10-14 and the trailer (15). The 4-block
+        // layout would clamp every offset above 3 to the trailer group and
+        // report a Key B requirement for blocks that only need Key A.
+        val access = accessBytes(0, 2, 3, 6)
+
+        assertEquals(0x00, MfcAccess.condition(access, 0, 16))
+        assertEquals(0x02, MfcAccess.condition(access, 5, 16))
+        assertEquals(0x02, MfcAccess.condition(access, 9, 16))
+        assertEquals(0x03, MfcAccess.condition(access, 10, 16))
+        assertEquals(0x03, MfcAccess.condition(access, 14, 16))
+        assertEquals(0x06, MfcAccess.condition(access, 15, 16))
+
+        // Group 1 is read-only and group 2 needs Key B. With the 4-block layout
+        // both offsets were clamped to the trailer group, so a 4K card was
+        // refused in the pre-check or failed halfway through the write.
+        assertEquals(MfcKeyRequirement.NONE, MfcAccess.writeKeyRequirement(access, 5, 16))
+        assertFalse(MfcAccess.isDataBlockWritable(access, 5, 16))
+        assertEquals(MfcKeyRequirement.B, MfcAccess.writeKeyRequirement(access, 10, 16))
+        assertTrue(MfcAccess.isDataBlockWritable(access, 10, 16))
+
+        // The 4-block call site keeps its old meaning: offset 5 clamps to
+        // group 3 instead of being rejected.
+        assertEquals(0x06, MfcAccess.condition(access, 5, 4))
+    }
+
+    @Test
+    fun `a write that reads back differently fails the restore`() {
+        val card = FakeClassic(corruptWrites = true)
+        val data = classicData()
+        byteArrayOf(0x11, 0x22, 0x33, 0x44).copyInto(data, 5 * 16)
+
+        val report = MfcRestorer(card).restore(dump(data))
+
+        assertEquals(StepStatus.FAILED, report.step(5).status)
+        assertEquals(StepNote.VERIFY_FAILED, report.step(5).note)
+        assertFalse(report.ok)
+    }
+
+    @Test
     fun `block 0 is never written even when the UID differs`() {
         val card = FakeClassic()
         val dump = dump()
@@ -398,6 +438,8 @@ class MfcRestorerTest {
 private class FakeClassic(
     private val sectors: Int = 16,
     private val failFirstWrite: Boolean = false,
+    /** Accept every write but store a different byte: read-back must catch it. */
+    private val corruptWrites: Boolean = false,
 ) : ClassicTransport {
 
     val data = ByteArray(sectors * 4 * MfcGeometry.BLOCK_SIZE)
@@ -480,6 +522,9 @@ private class FakeClassic(
         }
 
         data.copyInto(this.data, block * 16, 0, 16)
+        if (corruptWrites && !MfcGeometry.isTrailer(block)) {
+            this.data[block * 16] = (this.data[block * 16].toInt() xor 0xFF).toByte()
+        }
         writes += block
         if (MfcGeometry.isTrailer(block)) {
             data.copyOfRange(0, 6).copyInto(keyA[sector])

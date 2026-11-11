@@ -225,6 +225,8 @@ class MagicUidViewModel(application: Application) : AndroidViewModel(application
                 fail(R.string.uid_error_write)
             } catch (t: MagicUidVerifyException) {
                 fail(R.string.uid_error_verify)
+            } catch (t: MagicUidInconsistentException) {
+                fail(R.string.uid_error_inconsistent)
             } catch (t: Throwable) {
                 fail(R.string.uid_error_generic, errorText(t))
             }

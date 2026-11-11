@@ -16,10 +16,15 @@ import java.io.File
  * the console while the script is still running.
  */
 class Pm3StreamSink(private val emit: (String) -> Unit) {
+    /**
+     * Pending stop, polled by the Python tracing hook between script
+     * statements so a loop that never prints can still be interrupted.
+     */
+    fun stopRequested(): Boolean = Pm3Native.stopRequested
+
     fun write(text: String) {
-        // Stopping from a print() is enough to unwind a script stuck in a
-        // loop that never calls back into the native client.
-        check(!Pm3Native.stopRequested) { "stopped by user" }
+        // Backstop for a print() that lands before the hook polls again.
+        check(!stopRequested()) { "stopped by user" }
         emit(text)
     }
 
@@ -30,6 +35,16 @@ class Pm3StreamSink(private val emit: (String) -> Unit) {
 }
 
 object Pm3PythonRunner {
+
+    /**
+     * Clears a stop left by the previous command. Call this when the operation
+     * is submitted, before its stop window opens; clearing the flag inside
+     * [run] would drop a stop pressed while the script was still starting.
+     */
+    @Synchronized
+    fun resetStop() {
+        Pm3Native.stopRequested = false
+    }
 
     /**
      * Executes [script] and returns the output not delivered through
@@ -48,7 +63,6 @@ object Pm3PythonRunner {
         if (!Python.isStarted()) {
             Python.start(AndroidPlatform(context.applicationContext))
         }
-        Pm3Native.stopRequested = false
         val module = Python.getInstance().getModule("pm3_runner")
         val sink = onChunk?.let { Pm3StreamSink(it) }
         return module.callAttr("run_script", script.absolutePath, arguments, sink).toString()

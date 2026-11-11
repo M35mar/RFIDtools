@@ -24,13 +24,20 @@ import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
 import android.os.Build
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
+
+/** Internal: the open() coroutine was cancelled while waiting for the GATT. */
+private class LinkCancelledException : Exception()
 
 class BleSpp(private val context: Context) {
 
@@ -47,6 +54,8 @@ class BleSpp(private val context: Context) {
         private const val MTU_TIMEOUT_MS = 3_000L
         private const val WRITE_TIMEOUT_MS = 3_000L
         private const val WRITE_RETRIES = 200
+        // How often a blocking GATT wait checks for coroutine cancellation.
+        private const val CANCEL_POLL_MS = 50L
     }
 
     private val adapter: BluetoothAdapter? =
@@ -57,6 +66,14 @@ class BleSpp(private val context: Context) {
 
     @Volatile
     private var activeLink: Link? = null
+
+    /**
+     * Fired once when an established link drops (GATT error, remote or adapter
+     * disconnect) or when the transmit pump fails. Never fired for a close()
+     * requested by the app. Runs on a GATT callback thread or the tx thread.
+     */
+    @Volatile
+    var onLinkLost: ((String) -> Unit)? = null
 
     fun isSupported(): Boolean = adapter != null
 
@@ -150,11 +167,30 @@ class BleSpp(private val context: Context) {
             throw IOException("Indirizzo Bluetooth non valido", t)
         }
 
-        val link = Link(context, device)
+        val link = Link(
+            context = context,
+            device = device,
+            onLost = { reason -> onLinkLost?.invoke(reason) },
+            adapterEnabled = { isAdapterEnabled() },
+        )
         activeLink = link
+        // Poll this job inside the blocking GATT waits: a cancelled open()
+        // must drop the connection instead of leaking it until the timeout.
+        val job = coroutineContext[Job]
         try {
-            link.connect()
-            link.port()
+            link.connect { job?.isActive ?: true }
+            val port = link.port()
+            // Last cancellation check before handing the port out: a cancelled
+            // caller must not receive (and forget) an open GATT link.
+            coroutineContext.ensureActive()
+            port
+        } catch (t: LinkCancelledException) {
+            cancelConnect()
+            coroutineContext.ensureActive()
+            throw IOException("Connessione annullata", t)
+        } catch (t: CancellationException) {
+            cancelConnect()
+            throw t
         } catch (t: Throwable) {
             link.close()
             if (t is IOException) throw t
@@ -174,11 +210,17 @@ class BleSpp(private val context: Context) {
         return value.contains("PROXMARK") || value.contains("PM5") || value.contains("PM3")
     }
 
+    /** Adapter state without throwing when BLUETOOTH_CONNECT is gone. */
+    private fun isAdapterEnabled(): Boolean =
+        runCatching { adapter?.isEnabled == true }.getOrDefault(true)
+
     // Every GATT call is gated by the permission check in open().
     @SuppressLint("MissingPermission")
     private class Link(
         private val context: Context,
         private val device: BluetoothDevice,
+        private val onLost: (String) -> Unit,
+        private val adapterEnabled: () -> Boolean,
     ) : BluetoothGattCallback() {
 
         private val connected = CountDownLatch(1)
@@ -207,6 +249,16 @@ class BleSpp(private val context: Context) {
         @Volatile
         private var closed = false
 
+        /** Set once open() completed: only an established link is "lost". */
+        @Volatile
+        private var established = false
+
+        /** close() requested by the app: never reported through [onLost]. */
+        @Volatile
+        private var userClosed = false
+
+        private val linkLostReported = AtomicBoolean(false)
+
         @Volatile
         private var writeLatch: CountDownLatch? = null
 
@@ -217,7 +269,7 @@ class BleSpp(private val context: Context) {
 
         @SuppressLint("MissingPermission")
         @Suppress("DEPRECATION")
-        fun connect() {
+        fun connect(isActive: () -> Boolean) {
             val connection = device.connectGatt(
                 context,
                 false,
@@ -226,18 +278,22 @@ class BleSpp(private val context: Context) {
             ) ?: throw IOException("connectGatt non disponibile")
             gatt = connection
 
-            await(connected, CONNECT_TIMEOUT_MS, "connessione BLE")
+            await(connected, CONNECT_TIMEOUT_MS, "connessione BLE", isActive)
 
             if (!connection.discoverServices()) {
                 throw IOException("Scoperta servizi BLE non avviata")
             }
-            await(services, SERVICES_TIMEOUT_MS, "scoperta servizi BLE")
+            await(services, SERVICES_TIMEOUT_MS, "scoperta servizi BLE", isActive)
 
             val characteristic = characteristic
                 ?: throw IOException("Caratteristica BLE non trovata")
-            requestMtu(connection)
-            subscribe(connection, characteristic)
+            requestMtu(connection, isActive)
+            subscribe(connection, characteristic, isActive)
+            // Mark the link before the tx thread starts: a failure there is a
+            // real link loss and must reach the listener.
+            established = true
             startWriter()
+            if (closed) throw IOException(error ?: "Connessione BLE chiusa")
         }
 
         fun port(): Pm3Port {
@@ -251,11 +307,11 @@ class BleSpp(private val context: Context) {
             }
         }
 
-        private fun requestMtu(connection: BluetoothGatt) {
+        private fun requestMtu(connection: BluetoothGatt, isActive: () -> Boolean) {
             runCatching { connection.requestMtu(PREFERRED_MTU) }
             // A refused or unanswered MTU request is not fatal: the default
             // 23-byte ATT MTU still works, just with smaller chunks.
-            if (mtuDone.await(MTU_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+            if (awaitCountDown(mtuDone, MTU_TIMEOUT_MS, isActive)) {
                 error?.let { throw IOException(it) }
             }
         }
@@ -263,6 +319,7 @@ class BleSpp(private val context: Context) {
         private fun subscribe(
             connection: BluetoothGatt,
             characteristic: BluetoothGattCharacteristic,
+            isActive: () -> Boolean,
         ) {
             if (!connection.setCharacteristicNotification(characteristic, true)) {
                 throw IOException("Notifiche BLE non attivabili")
@@ -282,7 +339,7 @@ class BleSpp(private val context: Context) {
                 connection.writeDescriptor(descriptor)
             }
             if (!started) throw IOException("Attivazione notifiche BLE rifiutata")
-            await(subscribed, SUBSCRIBE_TIMEOUT_MS, "attivazione notifiche BLE")
+            await(subscribed, SUBSCRIBE_TIMEOUT_MS, "attivazione notifiche BLE", isActive)
         }
 
         private fun startWriter() {
@@ -295,10 +352,18 @@ class BleSpp(private val context: Context) {
                         if (read < 0) break
                         if (read > 0) writeChunk(buffer.copyOf(read))
                     }
-                } catch (_: Throwable) {
+                } catch (t: Throwable) {
                     // Closing the link makes the pending read fail, so the
                     // client reports the broken transport instead of hanging.
-                    runCatching { close() }
+                    // Keep the reason and announce it: a silent stop looked
+                    // like a healthy but idle link.
+                    if (!closed) {
+                        val reason = t.message?.takeIf { it.isNotBlank() }
+                            ?: "Trasmissione BLE interrotta"
+                        error = reason
+                        reportLinkLost(reason)
+                        runCatching { closeInternal() }
+                    }
                 }
             }
         }
@@ -348,12 +413,34 @@ class BleSpp(private val context: Context) {
             throw IOException("Scrittura BLE rifiutata")
         }
 
-        private fun await(latch: CountDownLatch, timeoutMs: Long, label: String) {
-            if (!latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
+        private fun await(
+            latch: CountDownLatch,
+            timeoutMs: Long,
+            label: String,
+            isActive: () -> Boolean,
+        ) {
+            if (!awaitCountDown(latch, timeoutMs, isActive)) {
                 throw IOException("Timeout $label")
             }
             error?.let { throw IOException(it) }
             if (closed) throw IOException("Connessione BLE chiusa")
+        }
+
+        /**
+         * Waits for [latch] in short slices so a cancelled open() is noticed
+         * long before the GATT timeout. Returns false on timeout.
+         */
+        private fun awaitCountDown(
+            latch: CountDownLatch,
+            timeoutMs: Long,
+            isActive: () -> Boolean,
+        ): Boolean {
+            val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs)
+            while (!latch.await(CANCEL_POLL_MS, TimeUnit.MILLISECONDS)) {
+                if (!isActive()) throw LinkCancelledException()
+                if (System.nanoTime() >= deadline) return false
+            }
+            return true
         }
 
         override fun onConnectionStateChange(
@@ -364,16 +451,28 @@ class BleSpp(private val context: Context) {
             this.gatt = gatt
             if (closed) return
             if (status != BluetoothGatt.GATT_SUCCESS) {
-                error = "Errore GATT ($status)"
+                val reason = "Errore GATT ($status)"
+                error = reason
                 failAll()
+                // Also release the GATT: the waiting handshake has to fail
+                // and a failed status must not leak the client.
+                reportLinkLost(reason)
+                closeInternal()
                 return
             }
             when (newState) {
                 BluetoothProfile.STATE_CONNECTED -> connected.countDown()
                 BluetoothProfile.STATE_DISCONNECTED -> {
-                    error = "Dispositivo BLE disconnesso"
+                    val adapterOff = runCatching { !adapterEnabled() }.getOrDefault(false)
+                    val reason = if (adapterOff) {
+                        "Bluetooth spento"
+                    } else {
+                        "Dispositivo BLE disconnesso"
+                    }
+                    error = reason
                     failAll()
-                    close()
+                    reportLinkLost(reason)
+                    closeInternal()
                 }
             }
         }
@@ -436,7 +535,9 @@ class BleSpp(private val context: Context) {
             value: ByteArray,
         ) {
             if (characteristic.uuid != CHARACTERISTIC_UUID || closed) return
-            runCatching { rx.write(value) }
+            // The GATT callback must return at once: a full buffer drops the
+            // chunk and the reader reports the overflow.
+            rx.offer(value)
         }
 
         @Deprecated("Deprecated in API 33")
@@ -448,10 +549,16 @@ class BleSpp(private val context: Context) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) return
             if (characteristic.uuid != CHARACTERISTIC_UUID || closed) return
             val value = characteristic.value ?: return
-            runCatching { rx.write(value) }
+            rx.offer(value)
         }
 
+        /** App-initiated teardown: it is not a link loss. */
         fun close() {
+            userClosed = true
+            closeInternal()
+        }
+
+        private fun closeInternal() {
             if (closed) return
             closed = true
             rx.close()
@@ -463,6 +570,14 @@ class BleSpp(private val context: Context) {
             runCatching { connection?.disconnect() }
             runCatching { connection?.close() }
             failAll()
+        }
+
+        /** Announces a dropped established link exactly once. */
+        private fun reportLinkLost(reason: String) {
+            if (userClosed || !established) return
+            if (linkLostReported.compareAndSet(false, true)) {
+                runCatching { onLost(reason) }
+            }
         }
 
         private fun failAll() {

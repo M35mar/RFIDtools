@@ -123,7 +123,10 @@ object Pm3ScriptStore {
                 ?: throw IllegalArgumentException("unsupported script name: $displayName")
 
             val directory = userDirectory(context).apply { mkdirs() }
-            val destination = uniqueTarget(directory, safeName)
+            // A name already shipped with the client cannot be reused: the
+            // mirror would overwrite a built-in script and deleting the user
+            // copy later would remove that built-in command.
+            val destination = uniqueTarget(context, directory, safeName, language)
             try {
                 destination.outputStream().use { sink -> source.copyTo(sink) }
             } catch (t: Throwable) {
@@ -165,18 +168,23 @@ object Pm3ScriptStore {
         return removedMirror && removedSource
     }
 
-    private fun uniqueTarget(directory: File, name: String): File {
-        var candidate = File(directory, name)
-        if (!candidate.exists()) return candidate
-
+    private fun uniqueTarget(
+        context: Context,
+        directory: File,
+        name: String,
+        language: ScriptLanguage,
+    ): File {
         val dot = name.lastIndexOf('.')
         val stem = if (dot > 0) name.substring(0, dot) else name
         val extension = if (dot > 0) name.substring(dot) else ""
-        var counter = 1
-        while (candidate.exists()) {
-            candidate = File(directory, "$stem-$counter$extension")
+        var counter = 0
+        while (true) {
+            val candidateName = if (counter == 0) name else "$stem-$counter$extension"
+            val candidate = File(directory, candidateName)
+            val takenByClient = File(activeDirectory(context, language), candidateName).exists()
+            if (!candidate.exists() && !takenByClient) return candidate
             counter++
+            require(counter <= 1_000) { "no free name for $name" }
         }
-        return candidate
     }
 }

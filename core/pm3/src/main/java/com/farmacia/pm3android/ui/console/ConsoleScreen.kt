@@ -5,6 +5,7 @@
 package com.farmacia.pm3android.ui.console
 
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -54,10 +55,16 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -67,7 +74,9 @@ import com.farmacia.pm3android.ui.components.ConfirmDialog
 import com.farmacia.pm3android.ui.components.EmptyState
 import com.farmacia.pm3android.ui.components.copyText
 import com.farmacia.pm3android.ui.components.shareText
-import com.farmacia.pm3android.ui.results.TagResultCard
+import com.farmacia.pm3android.ui.theme.TerminalPalette
+import com.farmacia.pm3android.ui.theme.ansiColor
+import com.farmacia.pm3android.ui.theme.terminalPalette
 
 @Composable
 fun ConsoleScreen(viewModel: Pm3ViewModel) {
@@ -76,7 +85,6 @@ fun ConsoleScreen(viewModel: Pm3ViewModel) {
     val busy by viewModel.busy.collectAsState()
     val lines by viewModel.lines.collectAsState()
     val history by viewModel.history.collectAsState()
-    val lastResult by viewModel.lastResult.collectAsState()
     val settings by viewModel.settings.collectAsState()
     val context = LocalContext.current
     val consoleTitle = stringResource(R.string.console_title)
@@ -86,10 +94,16 @@ fun ConsoleScreen(viewModel: Pm3ViewModel) {
     var historyOpen by remember { mutableStateOf(false) }
     var showClearDialog by remember { mutableStateOf(false) }
     val scrollState = rememberLazyListState()
+    val appended by viewModel.consoleCount.collectAsState()
+    val palette = terminalPalette()
+    val darkTheme = isSystemInDarkTheme()
+    val colored = settings.consoleColors
 
-    LaunchedEffect(lines.size, follow) {
+    // Keyed on the total number of lines ever appended: lines.size saturates
+    // at the 5000-line window, which used to stop the auto-scroll for good.
+    LaunchedEffect(appended, follow) {
         if (follow && lines.isNotEmpty()) {
-            scrollState.scrollToItem(lines.size - 1)
+            scrollState.scrollToItem(lines.lastIndex)
         }
     }
 
@@ -142,7 +156,8 @@ fun ConsoleScreen(viewModel: Pm3ViewModel) {
                 label = { Text(stringResource(R.string.console_follow)) },
             )
             TextButton(
-                onClick = { copyText(context, lines.joinToString("\n")) },
+                // Copy the visible text, not the colour escapes.
+                onClick = { copyText(context, plainConsoleText(lines)) },
                 enabled = lines.isNotEmpty(),
             ) {
                 Icon(Icons.Filled.ContentCopy, contentDescription = null)
@@ -152,7 +167,7 @@ fun ConsoleScreen(viewModel: Pm3ViewModel) {
                 onClick = {
                     shareText(
                         context,
-                        lines.joinToString("\n"),
+                        plainConsoleText(lines),
                         consoleTitle,
                     )
                 },
@@ -170,14 +185,6 @@ fun ConsoleScreen(viewModel: Pm3ViewModel) {
             }
         }
 
-        lastResult?.let { info ->
-            TagResultCard(
-                info = info,
-                enabled = !busy && connectionState == Pm3ConnectionState.CONNECTED,
-                onRerun = { command -> viewModel.runCommand(command) },
-            )
-        }
-
         Card(modifier = Modifier.weight(1f).fillMaxWidth()) {
             Box(modifier = Modifier.padding(8.dp)) {
                 if (lines.isEmpty()) {
@@ -193,11 +200,23 @@ fun ConsoleScreen(viewModel: Pm3ViewModel) {
                             modifier = Modifier.fillMaxSize(),
                         ) {
                             itemsIndexed(lines) { _, line ->
+                                val text = remember(line, palette, darkTheme, colored) {
+                                    if (colored) {
+                                        consoleText(line, palette, darkTheme)
+                                    } else {
+                                        AnnotatedString(ConsoleAnsi.stripAnsi(line))
+                                    }
+                                }
                                 Text(
-                                    text = line,
+                                    text = text,
                                     fontSize = settings.consoleFontSizeSp.sp,
                                     lineHeight = (settings.consoleFontSizeSp * 1.35).sp,
                                     fontFamily = FontFamily.Monospace,
+                                    color = if (colored) {
+                                        Color.Unspecified
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface
+                                    },
                                 )
                             }
                         }
@@ -310,6 +329,33 @@ fun ConsoleScreen(viewModel: Pm3ViewModel) {
                 onDismiss = { showClearDialog = false },
                 destructive = true,
             )
+        }
+    }
+}
+
+/** Plain text for copy and share: the colour escapes are not part of the log. */
+private fun plainConsoleText(lines: List<String>): String =
+    lines.joinToString("\n") { ConsoleAnsi.stripAnsi(it) }
+
+/**
+ * One console line as a styled string. An explicit ANSI colour (from a script)
+ * wins; every other run of text uses the colour of the line's classification.
+ */
+private fun consoleText(
+    line: String,
+    palette: TerminalPalette,
+    dark: Boolean,
+): AnnotatedString = buildAnnotatedString {
+    for (segment in ConsoleAnsi.parse(line)) {
+        val color = segment.color?.let { ansiColor(it, dark) } ?: palette.colorFor(segment.style)
+        val bold = segment.bold || segment.style == ConsoleStyle.PROMPT
+        withStyle(
+            SpanStyle(
+                color = color,
+                fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal,
+            ),
+        ) {
+            append(segment.text)
         }
     }
 }

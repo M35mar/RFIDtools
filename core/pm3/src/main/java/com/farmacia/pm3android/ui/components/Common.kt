@@ -172,9 +172,17 @@ fun ConfirmDialog(
 }
 
 fun copyText(context: Context, text: String) {
-    val clipboard = context.getSystemService(ClipboardManager::class.java)
-    clipboard?.setPrimaryClip(ClipData.newPlainText("RFIDtools", text))
-    Toast.makeText(context, R.string.common_copied, Toast.LENGTH_SHORT).show()
+    // A very large clip can exceed the binder transaction limit; fall back to
+    // the share sheet instead of crashing the click handler.
+    val copied = runCatching {
+        val clipboard = context.getSystemService(ClipboardManager::class.java)
+        clipboard?.setPrimaryClip(ClipData.newPlainText("RFIDtools", text))
+    }.isSuccess
+    if (copied) {
+        Toast.makeText(context, R.string.common_copied, Toast.LENGTH_SHORT).show()
+    } else {
+        shareText(context, text, "RFIDtools")
+    }
 }
 
 fun shareText(context: Context, text: String, subject: String) {

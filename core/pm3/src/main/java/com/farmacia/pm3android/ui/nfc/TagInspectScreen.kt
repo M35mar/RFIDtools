@@ -58,6 +58,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -635,6 +636,8 @@ private fun DesfireKeyDialog(
                     placeholder = { Text(stringResource(R.string.inspect_desfire_key_hint)) },
                     singleLine = true,
                     isError = invalid,
+                    // A key on screen is a key over the shoulder.
+                    visualTransformation = PasswordVisualTransformation(),
                 )
                 OutlinedTextField(
                     value = keyNo,
@@ -954,6 +957,7 @@ private fun PlusKeyDialog(
                     placeholder = { Text(stringResource(R.string.inspect_desfire_key_hint)) },
                     singleLine = true,
                     isError = invalid,
+                    visualTransformation = PasswordVisualTransformation(),
                 )
                 OutlinedTextField(
                     value = sectorText,
@@ -1188,7 +1192,14 @@ private fun EmrtdCard(details: EmrtdDetails) {
         details.label?.let {
             InfoRow(stringResource(R.string.inspect_calypso_application), it)
         }
-        InfoRow(stringResource(R.string.inspect_emrtd_pace), yesNo(details.paceSupported))
+        InfoRow(
+            stringResource(R.string.inspect_emrtd_pace),
+            when (details.paceSupported) {
+                true -> yesNo(true)
+                false -> yesNo(false)
+                null -> stringResource(R.string.inspect_emrtd_pace_unknown)
+            },
+        )
         InfoRow(stringResource(R.string.inspect_emrtd_bac), yesNo(details.bacSupported))
         details.cardAccess?.let {
             InfoRow(stringResource(R.string.inspect_emrtd_card_access), it.toHexSpaced())

@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 
@@ -195,8 +196,14 @@ class DumpEditorViewModel(application: Application) : AndroidViewModel(applicati
         stateFlow.value = stateFlow.value.copy(message = null)
     }
 
+    // The dump is never overwritten in place: if the atomic rename is not
+    // supported by the storage, a plain rename in the same directory is used.
+    // When even that fails the exception reaches the UI and the original file
+    // is left untouched, instead of a half-written dump.
     private fun writeAtomic(file: File, bytes: ByteArray) {
-        val parent = file.parentFile ?: throw IllegalStateException("cartella non valida")
+        val parent = file.parentFile ?: throw IllegalStateException(
+            getApplication<Application>().getString(R.string.dump_folder_invalid),
+        )
         val temp = File(parent, ".${file.name}.tmp")
         try {
             temp.writeBytes(bytes)
@@ -207,9 +214,12 @@ class DumpEditorViewModel(application: Application) : AndroidViewModel(applicati
                     StandardCopyOption.REPLACE_EXISTING,
                     StandardCopyOption.ATOMIC_MOVE,
                 )
-            } catch (_: Exception) {
-                file.writeBytes(bytes)
-                temp.delete()
+            } catch (_: AtomicMoveNotSupportedException) {
+                Files.move(
+                    temp.toPath(),
+                    file.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING,
+                )
             }
         } finally {
             if (temp.exists()) temp.delete()

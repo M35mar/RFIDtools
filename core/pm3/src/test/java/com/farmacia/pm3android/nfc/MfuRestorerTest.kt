@@ -32,6 +32,30 @@ class MfuRestorerTest {
     }
 
     @Test
+    fun `the configuration is not written when the password write fails`() {
+        val tag = FakeEv1(factoryPages(41), refuseWrites = setOf(39))
+        val dump = ev1Dump {
+            it[5] = byteArrayOf(0x11, 0x22, 0x33, 0x44)
+            it[37] = byteArrayOf(0x04, 0x00, 0x00, 0x00) // AUTH0 = 4
+            it[38] = byteArrayOf(0x00, 0x05, 0x00, 0x00) // VCTID = 5
+            it[39] = byteArrayOf(0x11, 0x22, 0x33, 0x44) // PWD
+            it[40] = byteArrayOf(0xAA.toByte(), 0xBB.toByte(), 0x00, 0x00) // PACK
+        }
+
+        val report = MfuRestorer(tag).restore(dump)
+
+        // AUTH0 and PROT would protect the card with a password it does not
+        // have, so they are left alone and reported.
+        assertFalse(tag.writes.contains(37))
+        assertFalse(tag.writes.contains(38))
+        assertEquals(StepStatus.SKIPPED, report.step(37).status)
+        assertEquals(StepNote.PASSWORD_FAILED, report.step(37).note)
+        assertEquals(StepStatus.SKIPPED, report.step(38).status)
+        assertEquals(StepNote.PASSWORD_FAILED, report.step(38).note)
+        assertEquals(StepStatus.FAILED, report.step(39).status)
+    }
+
+    @Test
     fun `restoring the same dump twice changes nothing the second time`() {
         val tag = FakeEv1(factoryPages(41))
         val dump = ev1Dump { it[5] = byteArrayOf(0x11, 0x22, 0x33, 0x44) }
@@ -227,6 +251,8 @@ private class FakeEv1(
     private var pack: ByteArray = byteArrayOf(0x00, 0x00),
     private val version: ByteArray = byteArrayOf(0x00, 0x04, 0x03, 0x01, 0x01, 0x00, 0x0E, 0x03),
     private val authFrom: Int = Int.MAX_VALUE,
+    /** Pages whose WRITE is refused, to exercise the failure paths. */
+    private val refuseWrites: Set<Int> = emptySet(),
 ) : UltralightTransport {
 
     val writes = mutableListOf<Int>()
@@ -255,6 +281,7 @@ private class FakeEv1(
     }
 
     private fun write(page: Int, data: ByteArray): ByteArray {
+        if (page in refuseWrites) throw IOException("WRITE $page refused")
         if (page >= pages.size) throw IOException("WRITE $page past the last page")
         if (page >= authFrom && !authenticated) throw IOException("WRITE $page needs PWD_AUTH")
         pages[page] = data.copyOf()

@@ -8,6 +8,8 @@ package com.farmacia.pm3android.update
 
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -36,6 +38,11 @@ class UpdateManager(private val context: Context) {
             }
             try {
                 val code = connection.responseCode
+                if (code == HttpURLConnection.HTTP_FORBIDDEN ||
+                    code == 429
+                ) {
+                    throw IOException(rateLimitMessage(connection))
+                }
                 if (code != HttpURLConnection.HTTP_OK) {
                     throw IOException(serverMessage(connection, code))
                 }
@@ -57,6 +64,11 @@ class UpdateManager(private val context: Context) {
         onProgress: (read: Long, total: Long) -> Unit,
     ): File = withContext(Dispatchers.IO) {
         val directory = File(context.cacheDir, "updates").apply { mkdirs() }
+        // Old downloads (including a previous version) are useless: drop them
+        // so a failed attempt never leaves an installable stale APK behind.
+        directory.listFiles()
+            ?.filter { it.name != asset.name }
+            ?.forEach { it.delete() }
         val target = File(directory, asset.name)
         if (target.exists() && !target.delete()) {
             throw IOException("Cannot replace ${target.name}")
@@ -64,6 +76,11 @@ class UpdateManager(private val context: Context) {
 
         val connection = open(asset.downloadUrl).apply {
             setRequestProperty("Accept", "application/octet-stream")
+        }
+        // A blocking read holds the socket for up to READ_TIMEOUT_MS; close it
+        // as soon as the coroutine is cancelled instead of waiting it out.
+        coroutineContext[Job]?.invokeOnCompletion { cause ->
+            if (cause != null) connection.disconnect()
         }
         try {
             val code = connection.responseCode
@@ -86,10 +103,15 @@ class UpdateManager(private val context: Context) {
                 }
             }
             if (read == 0L) throw IOException("Empty download")
-            asset.sha256?.let { expected ->
-                if (!sha256Matches(target, expected)) {
-                    throw IOException("APK checksum mismatch")
-                }
+            // The digest is mandatory: an update without one cannot be tied to
+            // the published binary, so it is never offered to the installer.
+            val expected = asset.sha256
+                ?: throw IOException("Release without SHA-256 digest: refusing to install")
+            if (!sha256Matches(target, expected)) {
+                throw IOException("APK checksum mismatch")
+            }
+            if (asset.sizeBytes > 0 && read != asset.sizeBytes) {
+                throw IOException("APK size mismatch: expected ${asset.sizeBytes} bytes, got $read")
             }
             target
         } catch (t: Throwable) {
@@ -107,6 +129,20 @@ class UpdateManager(private val context: Context) {
             instanceFollowRedirects = true
             setRequestProperty("User-Agent", USER_AGENT)
         }
+
+    /** GitHub answers 403/429 when the anonymous rate limit is exhausted. */
+    private fun rateLimitMessage(connection: HttpURLConnection): String {
+        val reset = connection.getHeaderField("X-RateLimit-Reset")?.toLongOrNull()
+        val minutes = reset?.let {
+            val seconds = it - System.currentTimeMillis() / 1000
+            if (seconds > 0) (seconds / 60) + 1 else 0
+        }
+        return if (minutes != null && minutes > 0) {
+            "GitHub rate limit reached: try again in about $minutes minutes"
+        } else {
+            "GitHub rate limit reached: try again later"
+        }
+    }
 
     private fun serverMessage(connection: HttpURLConnection, code: Int): String {
         val body = runCatching {

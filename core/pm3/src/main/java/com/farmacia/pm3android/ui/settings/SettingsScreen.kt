@@ -158,13 +158,19 @@ fun SettingsScreen(viewModel: Pm3ViewModel) {
             Slider(
                 value = settings.consoleFontSizeSp.toFloat(),
                 onValueChange = { viewModel.setConsoleFontSize(it.roundToInt()) },
-                valueRange = 10f..22f,
-                steps = 11,
+                // 8..22 sp, one step per sp: 15 values, 13 intermediate stops.
+                valueRange = 8f..22f,
+                steps = 13,
             )
             SettingSwitch(
                 title = stringResource(R.string.settings_follow_console),
                 checked = settings.followConsole,
                 onCheckedChange = viewModel::setFollowConsole,
+            )
+            SettingSwitch(
+                title = stringResource(R.string.settings_console_colors),
+                checked = settings.consoleColors,
+                onCheckedChange = viewModel::setConsoleColors,
             )
             SettingSwitch(
                 title = stringResource(R.string.settings_keep_screen_on),

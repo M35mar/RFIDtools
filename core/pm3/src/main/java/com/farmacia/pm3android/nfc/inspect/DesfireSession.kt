@@ -28,8 +28,8 @@ class DesfireSession internal constructor(
     private var iv: ByteArray = initialIv.copyOf()
 
     /**
-     * Sends one authenticated command. The response MAC is verified and
-     * stripped; data of a plain or MACed file comes back as it was written.
+     * Sends one authenticated command. In MACed mode the response MAC is
+     * verified and stripped; data of a plain file comes back as it was written.
      */
     fun command(
         client: DesfireClient,
@@ -40,14 +40,13 @@ class DesfireSession internal constructor(
         require(mode != DesfireCommMode.ENCRYPTED) {
             "i file cifrati non sono ancora supportati"
         }
-        val commandMac = DesfireCrypto.cmac(
-            sessionKey,
-            iv,
-            byteArrayOf(ins.toByte()) + data,
-        )
-        iv = commandMac.iv
-
         val payload = if (mode == DesfireCommMode.MACED) {
+            val commandMac = DesfireCrypto.cmac(
+                sessionKey,
+                iv,
+                byteArrayOf(ins.toByte()) + data,
+            )
+            iv = commandMac.iv
             data + commandMac.mac.copyOf(MAC_LENGTH)
         } else {
             data
@@ -57,7 +56,12 @@ class DesfireSession internal constructor(
         if (!frame.ok) {
             throw DesfireException(frame.status, "DESFire: risposta 0x%02X".format(frame.status and 0xFF))
         }
-        if (frame.data.size < MAC_LENGTH) return frame.data
+        // A plain response carries no MAC and does not advance the CMAC chain:
+        // only a MACed response has eight trailing bytes to verify.
+        if (mode != DesfireCommMode.MACED) return frame.data
+        if (frame.data.size < MAC_LENGTH) {
+            throw DesfireException(0, "DESFire: MAC di risposta di ${frame.data.size} byte")
+        }
 
         val body = frame.data.copyOfRange(0, frame.data.size - MAC_LENGTH)
         val received = frame.data.copyOfRange(frame.data.size - MAC_LENGTH, frame.data.size)

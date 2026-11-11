@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Nfc
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -95,8 +96,12 @@ fun NfcRestoreScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner, session) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                nfcEnabled = session?.isEnabled == true
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> nfcEnabled = session?.isEnabled == true
+                // Backgrounding the app drops the NFC field: stop before the
+                // engine writes another block to a card that is not there.
+                Lifecycle.Event.ON_PAUSE -> viewModel.cancelRestore()
+                else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -299,6 +304,26 @@ private fun PreviewCard(
             Text(stringResource(R.string.nfc_start))
         }
     }
+
+    // Backup on request: read the card and save it before writing anything.
+    OutlinedButton(
+        onClick = viewModel::startBackup,
+        enabled = nfcEnabled && nfcAvailable,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Icon(
+            imageVector = Icons.Filled.Save,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(stringResource(R.string.nfc_backup_action))
+    }
+    Text(
+        text = stringResource(R.string.nfc_backup_hint),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 @Composable
@@ -704,6 +729,7 @@ private fun DoneCard(
 ) {
     val report = state.report
     val partial = report != null && !report.ok
+    val aborted = report?.aborted == true
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -730,13 +756,23 @@ private fun DoneCard(
                 )
                 Text(
                     text = stringResource(
-                        if (partial) R.string.nfc_done_partial else R.string.nfc_done_ok,
+                        when {
+                            aborted -> R.string.nfc_done_aborted_title
+                            partial -> R.string.nfc_done_partial
+                            else -> R.string.nfc_done_ok
+                        },
                     ),
                     style = MaterialTheme.typography.titleMedium,
                 )
             }
             if (report != null) {
                 Text(report.tagLabel, style = MaterialTheme.typography.bodySmall)
+                if (aborted) {
+                    Text(
+                        text = stringResource(R.string.nfc_done_aborted_body),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -852,6 +888,7 @@ private fun noteText(note: StepNote): Int = when (note) {
     StepNote.AUTH_FAILED -> R.string.nfc_note_auth
     StepNote.WRITE_FAILED -> R.string.nfc_note_write
     StepNote.VERIFY_FAILED -> R.string.nfc_note_verify
+    StepNote.PASSWORD_FAILED -> R.string.nfc_note_pwd
 }
 
 /** Read-side failure: only retry or close, nothing to write or preview. */

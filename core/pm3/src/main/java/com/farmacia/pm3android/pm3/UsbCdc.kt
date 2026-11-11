@@ -37,6 +37,12 @@ class UsbCdc(private val context: Context) {
         private const val MAX_TRANSFER_BYTES = 16 * 1024
 
         private const val READ_TIMEOUT_MS = 250
+        // Some Android USB stacks report an IN timeout as -1 instead of 0, so
+        // -1 alone cannot mean "broken". A failure that returns almost at once
+        // is a controller error; one that waited for the timeout is silence.
+        private const val READ_ERROR_BACKOFF_MS = 8L
+        private const val READ_MAX_ERRORS = 20
+        private const val READ_FAST_FAIL_MS = READ_TIMEOUT_MS / 2
         private const val WRITE_TIMEOUT_MS = 1000
         private const val WRITE_MAX_RETRIES = 100
 
@@ -210,6 +216,15 @@ class UsbCdc(private val context: Context) {
 
             private val staging = ByteArray(MAX_TRANSFER_BYTES)
 
+            // Tail of the last USB packet, served before touching the bus
+            // again: a one-byte read must not become a one-byte transfer.
+            @Volatile
+            private var pendingOffset = 0
+
+            @Volatile
+            private var pendingLength = 0
+            private var consecutiveErrors = 0
+
             override fun read(): Int {
                 val one = ByteArray(1)
                 if (read(one, 0, 1) < 0) {
@@ -218,9 +233,17 @@ class UsbCdc(private val context: Context) {
                 return one[0].toInt() and 0xFF
             }
 
+            @Synchronized
             override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
                 if (length == 0) {
                     return 0
+                }
+                if (pendingLength > 0) {
+                    val take = minOf(length, pendingLength)
+                    System.arraycopy(staging, pendingOffset, buffer, offset, take)
+                    pendingOffset += take
+                    pendingLength -= take
+                    return take
                 }
                 while (true) {
                     if (closed) {
@@ -229,23 +252,49 @@ class UsbCdc(private val context: Context) {
                     if (!isAttached()) {
                         throw IOException("USB device detached")
                     }
+                    // Ask for at least one full packet so small reads are
+                    // served from the staging buffer instead of a new transfer.
+                    val request = minOf(
+                        staging.size,
+                        maxOf(length, inputEndpoint.maxPacketSize),
+                    )
+                    val startedAt = System.nanoTime()
                     val result = connection.bulkTransfer(
                         inputEndpoint,
                         staging,
-                        minOf(length, staging.size),
+                        request,
                         READ_TIMEOUT_MS,
                     )
+                    val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
                     if (result > 0) {
-                        System.arraycopy(staging, 0, buffer, offset, result)
-                        return result
+                        consecutiveErrors = 0
+                        val take = minOf(result, length)
+                        System.arraycopy(staging, 0, buffer, offset, take)
+                        pendingOffset = take
+                        pendingLength = result - take
+                        return take
                     }
-                    // result <= 0: silent device (timeout) or a transient
-                    // controller error. Loop, but the attachment check above
-                    // ends the stream as soon as the PM3 is unplugged.
+                    if (result < 0 && elapsedMs < READ_FAST_FAIL_MS) {
+                        // Fast failure: the controller refused the transfer
+                        // (halted endpoint, device gone). A persistent one ends
+                        // the stream; a slow -1 is just an idle read timeout.
+                        consecutiveErrors++
+                        if (consecutiveErrors >= READ_MAX_ERRORS) {
+                            throw IOException("USB read failed ($consecutiveErrors errors)")
+                        }
+                        runCatching { Thread.sleep(READ_ERROR_BACKOFF_MS) }
+                    } else if (result < 0) {
+                        // Timeout reported as -1: the device is silent, which is
+                        // normal between commands. Keep waiting.
+                        consecutiveErrors = 0
+                    }
+                    // result == 0: silent device (timeout), keep waiting; the
+                    // attachment check above ends the stream on unplug.
                 }
             }
 
-            override fun available(): Int = 0
+            // available() must not block: report the queued tail only.
+            override fun available(): Int = pendingLength
 
             override fun close() {
                 closed = true

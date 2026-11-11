@@ -35,7 +35,7 @@ class DesfireReaderTest {
     )
 
     @Test
-    fun `plain file is read and the response mac is verified`() {
+    fun `plain file is read without a response mac`() {
         val card = FakeCard(key, rndB, expected = ByteArray(16) { it.toByte() })
 
         val result = DesfireReader.read(
@@ -53,7 +53,7 @@ class DesfireReaderTest {
     @Test
     fun `maced file sends and verifies both macs`() {
         val content = ByteArray(16) { (0x40 + it).toByte() }
-        val card = FakeCard(key, rndB, expected = content)
+        val card = FakeCard(key, rndB, expected = content, maced = true)
 
         val result = DesfireReader.read(
             DesfireClient(card),
@@ -84,12 +84,18 @@ class DesfireReaderTest {
     }
 
     @Test
-    fun `a wrong response mac is refused`() {
-        val card = FakeCard(key, rndB, expected = ByteArray(16), corruptMac = true)
+    fun `a wrong response mac in a maced file is refused`() {
+        val card = FakeCard(
+            key,
+            rndB,
+            expected = ByteArray(16),
+            corruptMac = true,
+            maced = true,
+        )
 
         val result = DesfireReader.read(
             DesfireClient(card),
-            details(communication = 0),
+            details(communication = 1),
             keyNo = 0,
             key = key,
         )
@@ -99,12 +105,89 @@ class DesfireReaderTest {
         assertNull(application.files?.single()?.data)
     }
 
+    @Test
+    fun `a maced response shorter than the mac is refused`() {
+        val card = FakeCard(
+            key,
+            rndB,
+            expected = ByteArray(16),
+            maced = true,
+            shortResponse = true,
+        )
+
+        val result = DesfireReader.read(
+            DesfireClient(card),
+            details(communication = 1),
+            keyNo = 0,
+            key = key,
+        )
+
+        val application = result.applications?.single()!!
+        assertTrue(application.locked)
+        assertNull(application.files?.single()?.data)
+    }
+
+    @Test
+    fun `a record file with a huge count is refused`() {
+        val card = FakeCard(key, rndB, expected = ByteArray(16))
+
+        val result = DesfireReader.read(
+            DesfireClient(card),
+            recordDetails(count = 0xFFFFFF, size = 16),
+            keyNo = 0,
+            key = key,
+        )
+
+        val application = result.applications?.single()!!
+        assertTrue(application.locked)
+        assertNull(application.files?.single()?.data)
+        assertEquals(0, card.reads)
+    }
+
+    @Test
+    fun `a record file over the byte cap is refused`() {
+        val card = FakeCard(key, rndB, expected = ByteArray(16))
+
+        val result = DesfireReader.read(
+            DesfireClient(card),
+            recordDetails(count = 100, size = 1024),
+            keyNo = 0,
+            key = key,
+        )
+
+        val application = result.applications?.single()!!
+        assertTrue(application.locked)
+        assertNull(application.files?.single()?.data)
+        assertEquals(0, card.reads)
+    }
+
+    private fun recordDetails(count: Int, size: Int) = DesfireDetails(
+        version = DesfireVersion(0x04, 0x01, 0x01, 0x12, 0x34, 0x18, 0x03, 1, 0),
+        applications = listOf(
+            DesfireApplication(
+                id = 0x123456,
+                files = listOf(
+                    DesfireFile(
+                        id = 1,
+                        type = DesfireFileType.LINEAR_RECORD,
+                        communication = 0,
+                        accessRights = 0x0000,
+                        recordSize = size,
+                        recordCount = count,
+                    ),
+                ),
+            ),
+        ),
+    )
+
     private class FakeCard(
         private val key: ByteArray,
         private val rndB: ByteArray,
         private val expected: ByteArray,
         private val refuseAuth: Boolean = false,
         private val corruptMac: Boolean = false,
+        private val maced: Boolean = false,
+        private val shortResponse: Boolean = false,
     ) : IsoDepTransport {
 
         var authenticated = false
@@ -175,6 +258,8 @@ class DesfireReaderTest {
                         ((effective[5].toInt() and 0xFF) shl 8) or
                         ((effective[6].toInt() and 0xFF) shl 16)
                     val body = expected.copyOfRange(offset, minOf(offset + length, expected.size))
+                    if (shortResponse) return frame(ByteArray(4), 0x9100)
+                    if (!maced) return frame(body, 0x9100)
                     val responseMac = DesfireCrypto.cmac(
                         sessionKey!!,
                         iv,

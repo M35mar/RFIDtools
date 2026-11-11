@@ -244,8 +244,11 @@ class MfcReader(private val transport: ClassicTransport) {
             ?: throw TagUnusableException("taglia del tag non riconosciuta ($sectors settori)")
     }
 
+    // A card that left the field must stop the dump, not look like a wrong key.
     private fun tryAuthenticate(sector: Int, session: Session): Boolean = try {
         transport.authenticate(sector, session.key, session.keyA)
+    } catch (unusable: TagUnusableException) {
+        throw unusable
     } catch (_: IOException) {
         false
     }
@@ -274,6 +277,8 @@ class MfcReader(private val transport: ClassicTransport) {
 
     private fun tryRead(block: Int): ByteArray? = try {
         transport.readBlock(block)
+    } catch (unusable: TagUnusableException) {
+        throw unusable
     } catch (_: IOException) {
         null
     }

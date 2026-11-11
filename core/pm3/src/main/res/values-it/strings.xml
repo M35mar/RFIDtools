@@ -53,11 +53,12 @@
     <string name="console_send">Invia</string>
     <string name="console_stop">Ferma</string>
     <string name="console_stopping">Arresto richiesto...</string>
+    <string name="console_stuck">Il comando precedente è ancora in esecuzione e non risponde all\'arresto. Disconnetti il Proxmark3 e ricollegalo.</string>
     <string name="console_clear_confirm_title">Pulire la console?</string>
     <string name="console_clear_confirm_body">L’output corrente verrà rimosso. La cronologia dei comandi resta disponibile.</string>
     <string name="console_follow">Segui log</string>
-    <string name="console_copy_all">Copia tutto</string>
-    <string name="console_share_log">Condividi log</string>
+    <string name="console_copy_all">Copia</string>
+    <string name="console_share_log">Condividi</string>
     <string name="console_history">Cronologia comandi</string>
     <string name="console_clear_history">Svuota cronologia</string>
     <string name="console_history_empty">Nessun comando eseguito.</string>
@@ -246,6 +247,7 @@
     <string name="settings_font_size">Dimensione carattere: %1$d sp</string>
     <string name="settings_confirm_delete">Chiedi conferma prima di eliminare</string>
     <string name="settings_keep_screen_on">Mantieni lo schermo acceso</string>
+    <string name="settings_console_colors">Console colorata</string>
     <string name="settings_follow_console">Segui automaticamente il log</string>
     <string name="settings_data">Dati e backup</string>
     <string name="settings_backup">Backup impostazioni</string>
@@ -305,6 +307,9 @@
     <string name="update_download_started">Download dell’aggiornamento avviato.</string>
     <string name="update_download_failed">Download non riuscito: %1$s</string>
     <string name="update_install_failed">Installazione non avviata. Riprova dalle impostazioni.</string>
+    <string name="update_reject_package">Il file scaricato non è RFIDtools: installazione annullata.</string>
+    <string name="update_reject_older">La versione scaricata non è più recente di quella installata: installazione annullata.</string>
+    <string name="update_reject_signature">Il file scaricato è firmato con un certificato diverso: installazione annullata.</string>
     <string name="update_permission_message">Consenti l’installazione da questa fonte, poi apri Info e premi Installa ora.</string>
     <string name="update_permission_body">Consenti a RFIDtools di installare app sconosciute, poi torna qui e premi Installa ora.</string>
     <string name="update_badge_desc">Aggiornamento disponibile</string>
@@ -401,6 +406,8 @@
     <string name="nfc_option_password_hint">8 caratteri esadecimali</string>
     <string name="nfc_option_password_help">Vuota = usa la password del dump, poi FFFFFFFF.</string>
     <string name="nfc_option_password_invalid">La password deve avere 8 caratteri esadecimali.</string>
+    <string name="nfc_backup_action">Salva prima un backup</string>
+    <string name="nfc_backup_hint">Legge la carta e salva un dump senza scrivere nulla. Dopo il backup avvia di nuovo il ripristino.</string>
     <string name="nfc_start">Avvicina il tag</string>
     <string name="nfc_cancel">Annulla</string>
     <string name="nfc_waiting_title">Avvicina il tag al telefono</string>
@@ -410,6 +417,15 @@
     <string name="nfc_working_hint">Non allontanare il tag fino al termine.</string>
     <string name="nfc_done_ok">Ripristino completato</string>
     <string name="nfc_done_partial">Ripristino completato con errori</string>
+    <string name="nfc_done_aborted_title">Ripristino interrotto</string>
+    <string name="dump_folder_invalid">La cartella del dump non è valida</string>
+    <string name="a11y_share_file">Condividi %1$s</string>
+    <string name="a11y_export_file">Esporta %1$s</string>
+    <string name="a11y_delete_file">Elimina %1$s</string>
+    <string name="a11y_restore_file">Ripristina %1$s</string>
+    <string name="a11y_run_script">Esegui %1$s</string>
+    <string name="a11y_delete_script">Elimina %1$s</string>
+    <string name="nfc_done_aborted_body">La carta può contenere un misto di dati vecchi e nuovi. Tienila sul campo e ripeti il ripristino prima di usarla.</string>
     <string name="nfc_result_written">Scritti</string>
     <string name="nfc_result_unchanged">Già uguali</string>
     <string name="nfc_result_skipped">Saltati</string>
@@ -437,6 +453,7 @@
     <string name="nfc_note_auth">Autenticazione non riuscita</string>
     <string name="nfc_note_write">Scrittura non riuscita</string>
     <string name="nfc_note_verify">Verifica non riuscita</string>
+    <string name="nfc_note_pwd">Configurazione non scritta: la password non è stata applicata</string>
     <string name="nfc_off_title">NFC disattivato</string>
     <string name="nfc_off_body">Attiva l’NFC nelle impostazioni di Android per leggere e scrivere tag con il telefono.</string>
     <string name="nfc_off_settings">Apri impostazioni NFC</string>
@@ -689,6 +706,7 @@
     <string name="inspect_report_error">Salvataggio del report non riuscito.</string>
     <string name="inspect_emrtd_title">Documento eMRTD / eID</string>
     <string name="inspect_emrtd_aid">AID</string>
+    <string name="inspect_emrtd_pace_unknown">Non determinato (file di accesso non leggibile)</string>
     <string name="inspect_emrtd_pace">PACE</string>
     <string name="inspect_emrtd_bac">BAC</string>
     <string name="inspect_emrtd_card_access">EF.CardAccess</string>
@@ -926,6 +944,7 @@
     <string name="uid_error_read">Non sono riuscito a leggere il blocco 0 o le pagine UID della carta.</string>
     <string name="uid_error_write">La carta ha rifiutato la scrittura. Potrebbe non essere una magic card compatibile.</string>
     <string name="uid_error_verify">La carta non ha confermato il nuovo UID: rileggila prima di usarla.</string>
+    <string name="uid_error_inconsistent">L’UID è stato scritto solo in parte e la carta non è stata ripristinata: è in uno stato inconsistente, non usarla finché non viene riscritta con un Proxmark3.</string>
     <string name="uid_error_lost">Comunicazione NFC interrotta: tieni ferma la carta e riprova.</string>
     <string name="uid_error_generic">Operazione non riuscita: %1$s</string>
 </resources>

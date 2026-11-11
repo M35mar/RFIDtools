@@ -376,10 +376,10 @@ object TagIdentifier {
         if (family == TagFamily.EMRTD) {
             notes += TagNote.EMRTD_NEEDS_MRZ
             notes += TagNote.EMRTD_BIOMETRIC
-            if (details.paceSupported) notes += TagNote.EMRTD_PACE
+            if (details.paceSupported == true) notes += TagNote.EMRTD_PACE
         } else {
             notes += TagNote.EID_PROPRIETARY
-            if (details.paceSupported) notes += TagNote.EMRTD_PACE
+            if (details.paceSupported == true) notes += TagNote.EMRTD_PACE
         }
         notes += TagNote.APDU_ONLY
         return TagIdentity(

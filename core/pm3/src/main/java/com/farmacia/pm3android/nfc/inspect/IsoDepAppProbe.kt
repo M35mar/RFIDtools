@@ -18,16 +18,26 @@ object IsoDepAppProbe {
      * secure-element applets that are worth naming without any credential.
      * Returns null when the card refuses all of them, which is the normal
      * answer of a proprietary applet.
+     *
+     * @param abort true for a transport failure that must end the inspection.
+     *   It defaults to rethrowing every failure: this layer cannot tell a lost
+     *   tag from a refused SELECT, so the caller's predicate decides.
      */
-    fun probe(transport: IsoDepTransport): ApplicationDetails? {
-        payment(transport)?.let { return it }
-        ndef(transport)?.let { return it }
-        applet(transport)?.let { return it }
+    fun probe(
+        transport: IsoDepTransport,
+        abort: (Throwable) -> Boolean = { true },
+    ): ApplicationDetails? {
+        payment(transport, abort)?.let { return it }
+        ndef(transport, abort)?.let { return it }
+        applet(transport, abort)?.let { return it }
         return null
     }
 
-    private fun payment(transport: IsoDepTransport): ApplicationDetails? {
-        val response = select(transport, PPSE) ?: return null
+    private fun payment(
+        transport: IsoDepTransport,
+        abort: (Throwable) -> Boolean,
+    ): ApplicationDetails? {
+        val response = select(transport, PPSE, abort) ?: return null
         if (response.sw != SW_OK) return null
         val aid = BerTlv.find(response.data, 0x4F)?.takeIf { it.isNotEmpty() } ?: return null
         val label = BerTlv.find(response.data, 0x50)
@@ -43,8 +53,11 @@ object IsoDepAppProbe {
         )
     }
 
-    private fun ndef(transport: IsoDepTransport): ApplicationDetails? {
-        val response = select(transport, NDEF_AID) ?: return null
+    private fun ndef(
+        transport: IsoDepTransport,
+        abort: (Throwable) -> Boolean,
+    ): ApplicationDetails? {
+        val response = select(transport, NDEF_AID, abort) ?: return null
         if (response.sw != SW_OK) return null
         val base = AidCatalog.application(NDEF_AID)
         return ApplicationDetails(
@@ -56,9 +69,12 @@ object IsoDepAppProbe {
     }
 
     /** CIPURSE and PIV: both answer SELECT by DF name with a plain FCI. */
-    private fun applet(transport: IsoDepTransport): ApplicationDetails? {
+    private fun applet(
+        transport: IsoDepTransport,
+        abort: (Throwable) -> Boolean,
+    ): ApplicationDetails? {
         for (aid in KNOWN_APPLETS) {
-            val response = select(transport, aid) ?: continue
+            val response = select(transport, aid, abort) ?: continue
             if (response.sw != SW_OK) continue
             return AidCatalog.application(aid)
         }
@@ -67,7 +83,11 @@ object IsoDepAppProbe {
 
     private class Response(val data: ByteArray, val sw: Int)
 
-    private fun select(transport: IsoDepTransport, name: ByteArray): Response? = try {
+    private fun select(
+        transport: IsoDepTransport,
+        name: ByteArray,
+        abort: (Throwable) -> Boolean,
+    ): Response? = try {
         val body = ByteArrayOutputStream()
         body.write(0x00)
         body.write(0xA4)
@@ -85,7 +105,10 @@ object IsoDepAppProbe {
             if (sw == SW_FILE_NOT_FOUND) Response(ByteArray(0), sw)
             else Response(answer.copyOfRange(0, answer.size - 2), sw)
         }
-    } catch (_: Throwable) {
+    } catch (error: Throwable) {
+        // A SELECT that throws is not a refusal: hand the failure to the caller,
+        // which knows whether it is tag loss.
+        if (abort(error)) throw error
         null
     }
 

@@ -16,6 +16,9 @@ object DesfireReader {
     /** Upper bound for a corrupt or hostile file size. */
     private const val MAX_READ = 64 * 1024
 
+    /** Record count is a card-controlled field: one byte each fits MAX_READ. */
+    private const val MAX_RECORDS = MAX_READ
+
     private const val CMD_READ_DATA = 0xBD
     private const val CMD_READ_RECORDS = 0xBB
     private const val CMD_GET_VALUE = 0x6C
@@ -151,6 +154,14 @@ object DesfireReader {
         val size = file.recordSize ?: return ByteArray(0)
         val count = file.recordCount ?: return ByteArray(0)
         if (size <= 0 || count <= 0) return ByteArray(0)
+        // Both fields come from GetFileSettings, so bound them before the loop
+        // can grow the buffer without end.
+        if (count > MAX_RECORDS || size.toLong() * count > MAX_READ) {
+            throw DesfireException(
+                0,
+                "DESFire: file a record fuori limite ($count record da $size byte)",
+            )
+        }
 
         val perChunk = maxOf(1, CHUNK / size)
         val out = ByteArrayOutputStream()
@@ -160,6 +171,9 @@ object DesfireReader {
             val request = byteArrayOf(file.id.toByte()) + le24(index) + le24(take)
             val chunk = session.command(client, CMD_READ_RECORDS, request, mode)
             out.write(chunk)
+            if (out.size() > MAX_READ) {
+                throw DesfireException(0, "DESFire: risposta a record oltre il limite")
+            }
             if (chunk.size < take * size) break
             index += take
         }

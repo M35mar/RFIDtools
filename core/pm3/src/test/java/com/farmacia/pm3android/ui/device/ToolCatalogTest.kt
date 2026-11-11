@@ -13,6 +13,29 @@ import org.junit.Test
 class ToolCatalogTest {
 
     @Test
+    fun `a destructive command typed in the console keeps its warning`() {
+        // The "Recent" list and the result re-run go through dangerFor, so a
+        // destructive command must never come back as SAFE.
+        assertEquals(DangerLevel.DESTRUCTIVE, dangerFor("hf mfu countertear -c 0"))
+        assertEquals(
+            DangerLevel.DESTRUCTIVE,
+            dangerFor("script run mfuev1_counter_reset.lua -c 1 -f"),
+        )
+        assertEquals(DangerLevel.WRITE, dangerFor("hf mfu restore -f hf-mfu-04A1B29F-dump.bin"))
+        assertEquals(DangerLevel.WRITE, dangerFor("hf mfu incr -c 0 -v 1"))
+        assertEquals(DangerLevel.SAFE, dangerFor("hf search"))
+        assertEquals(DangerLevel.SAFE, dangerFor("hf mfu dump -f out"))
+    }
+
+    @Test
+    fun `an unknown command asks for confirmation`() {
+        // A command outside the catalog cannot be classified: one extra
+        // confirmation is cheaper than an accidental write.
+        assertEquals(DangerLevel.WRITE, dangerFor("hf mfdes changekey -t 1"))
+        assertEquals(DangerLevel.DESTRUCTIVE, dangerFor("hf mf eclr"))
+    }
+
+    @Test
     fun `values and switches are substituted`() {
         val command = ToolCommand(
             label = R.string.tool_mfuev1_incr_label,

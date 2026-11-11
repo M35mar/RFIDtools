@@ -22,6 +22,14 @@ import java.io.IOException
 
 class MfuRestorer(private val transport: UltralightTransport) {
 
+    /** Set once [abort] returns true: the report is then marked as partial. */
+    private var aborted = false
+
+    private fun abortNow(abort: () -> Boolean): Boolean {
+        if (!aborted && abort()) aborted = true
+        return aborted
+    }
+
     private companion object {
         const val CMD_READ = 0x30
         const val CMD_WRITE = 0xA2
@@ -37,6 +45,8 @@ class MfuRestorer(private val transport: UltralightTransport) {
     fun readVersion(): ByteArray? = try {
         transport.transceive(byteArrayOf(CMD_GET_VERSION.toByte()))
             .takeIf { it.size >= 8 }
+    } catch (unusable: TagUnusableException) {
+        throw unusable
     } catch (_: IOException) {
         null
     }
@@ -59,6 +69,11 @@ class MfuRestorer(private val transport: UltralightTransport) {
         options: MfuRestoreOptions = MfuRestoreOptions(),
         snapshot: MfuSnapshot? = null,
         progress: RestoreProgress? = null,
+        /**
+         * Checked between pages: true stops the restore and marks the report
+         * as partial. The configuration pages are then left untouched.
+         */
+        abort: () -> Boolean = { false },
     ): RestoreReport {
         validate(dump)
         val started = System.currentTimeMillis()
@@ -83,6 +98,7 @@ class MfuRestorer(private val transport: UltralightTransport) {
         add(StepResult(3, StepStatus.SKIPPED, StepNote.OTP))
 
         for (page in layout.userFirst..layout.userLast) {
+            if (abortNow(abort)) break
             add(writePageIfNeeded(page, dump.page(page), current.pages[page]))
         }
         if (layout.lockPage >= 0) {
@@ -103,8 +119,17 @@ class MfuRestorer(private val transport: UltralightTransport) {
         val targetLocked = (current.pages[layout.cfg1][0].toInt() and ACCESS_CFGLCK) != 0
 
         var finalPassword = auth.password
+        // Set when the password page cannot be written: AUTH0/PROT must then
+        // stay as they are, or the card would be protected by a password that
+        // differs from the dump.
+        var configBlocked = false
 
         when {
+            // An interrupted restore must not touch the configuration: the card
+            // would be left protected with a password that does not match the
+            // data actually written.
+            aborted -> Unit
+
             !options.writeConfig -> {
                 // User pages only: data restored, protection left as it is.
                 add(StepResult(layout.packPage, StepStatus.SKIPPED))
@@ -145,45 +170,68 @@ class MfuRestorer(private val transport: UltralightTransport) {
                     } else {
                         val step = writePage(layout.pwdPage, dumpPwd)
                         add(step)
-                        if (step.status == StepStatus.WRITTEN) finalPassword = dumpPwd
+                        if (step.status == StepStatus.WRITTEN ||
+                            step.status == StepStatus.VERIFIED
+                        ) {
+                            finalPassword = dumpPwd
+                        } else {
+                            configBlocked = true
+                        }
                     }
                 }
 
-                add(writePageIfNeeded(layout.cfg0, dumpCfg0, current.pages[layout.cfg0]))
-                val cfg1Step = writePageIfNeeded(
-                    layout.cfg1,
-                    desiredCfg1,
-                    current.pages[layout.cfg1],
-                )
-                add(
-                    if (locksConfig) {
-                        cfg1Step.copy(note = StepNote.CONFIG_LOCKED)
-                    } else {
-                        cfg1Step
-                    },
-                )
+                if (configBlocked) {
+                    add(StepResult(layout.cfg0, StepStatus.SKIPPED, StepNote.PASSWORD_FAILED))
+                    add(StepResult(layout.cfg1, StepStatus.SKIPPED, StepNote.PASSWORD_FAILED))
+                } else {
+                    add(writePageIfNeeded(layout.cfg0, dumpCfg0, current.pages[layout.cfg0]))
+                    val cfg1Step = writePageIfNeeded(
+                        layout.cfg1,
+                        desiredCfg1,
+                        current.pages[layout.cfg1],
+                    )
+                    add(
+                        if (locksConfig) {
+                            cfg1Step.copy(note = StepNote.CONFIG_LOCKED)
+                        } else {
+                            cfg1Step
+                        },
+                    )
+                }
             }
         }
 
-        // Read the tag back once: a WRITTEN step becomes VERIFIED only if the
-        // tag returns exactly what the dump asked for.
         val verifiable = (layout.userFirst..layout.userLast).toSet() +
             setOf(layout.cfg0, layout.cfg1)
-        if (steps.any { it.status == StepStatus.WRITTEN && it.index in verifiable }) {
+        // Read the tag back once: every page that was written must come back
+        // exactly as the dump asked for. A page that cannot be read back, or
+        // returns something else, is a failure: it is not reported as written.
+        if (!aborted && steps.any { it.status == StepStatus.WRITTEN && it.index in verifiable }) {
             finalPassword?.let { authenticate(it) }
-            val readBack = runCatching { readAllPages(total, null) }.getOrNull()
-            if (readBack != null) {
-                for (index in steps.indices) {
-                    val step = steps[index]
-                    if (step.status != StepStatus.WRITTEN || step.index !in verifiable) continue
-                    val desired = if (step.index == layout.cfg1) {
-                        desiredCfg1
-                    } else {
-                        dump.page(step.index)
-                    }
-                    if (readBack[step.index].contentEquals(desired)) {
-                        steps[index] = step.copy(status = StepStatus.VERIFIED)
-                    }
+            val readBack = try {
+                readAllPages(total, null)
+            } catch (unusable: TagUnusableException) {
+                throw unusable
+            } catch (_: IOException) {
+                null
+            }
+            for (index in steps.indices) {
+                val step = steps[index]
+                if (step.status != StepStatus.WRITTEN || step.index !in verifiable) continue
+                val desired = if (step.index == layout.cfg1) {
+                    desiredCfg1
+                } else {
+                    dump.page(step.index)
+                }
+                steps[index] = when {
+                    readBack == null ->
+                        step.copy(status = StepStatus.FAILED, note = StepNote.VERIFY_FAILED)
+
+                    readBack[step.index].contentEquals(desired) ->
+                        step.copy(status = StepStatus.VERIFIED)
+
+                    else ->
+                        step.copy(status = StepStatus.FAILED, note = StepNote.VERIFY_FAILED)
                 }
             }
         }
@@ -193,6 +241,7 @@ class MfuRestorer(private val transport: UltralightTransport) {
             tagLabel = layout.variant,
             steps = steps.sortedBy { it.index },
             durationMs = System.currentTimeMillis() - started,
+            aborted = aborted,
         )
     }
 
@@ -253,6 +302,8 @@ class MfuRestorer(private val transport: UltralightTransport) {
         val command = byteArrayOf(CMD_PWD_AUTH.toByte()) + password
         val response = try {
             transport.transceive(command)
+        } catch (unusable: TagUnusableException) {
+            throw unusable
         } catch (_: IOException) {
             return null
         }
@@ -267,6 +318,8 @@ class MfuRestorer(private val transport: UltralightTransport) {
     ): MfuSnapshot {
         val pages = try {
             readAllPages(dump.pages.size, progress)
+        } catch (unusable: TagUnusableException) {
+            throw unusable
         } catch (e: IOException) {
             if (auth.password == null) {
                 throw TagAuthException("il tag richiede una password")
