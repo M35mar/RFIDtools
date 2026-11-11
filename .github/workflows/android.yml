@@ -124,25 +124,19 @@ jobs:
           APK="core/pm3/build/outputs/apk/release/pm3-release.apk"
           NOTES="$(mktemp)"
 
-          # Release body: only the "### Highlights" bullets of the matching
-          # CHANGELOG section, so the release stays short. The full history
-          # stays in CHANGELOG.md, linked below.
+          # Release body: the whole CHANGELOG section of the tagged version.
+          # Printing every line (not just those starting with "- ") keeps the
+          # continuation lines of a wrapped bullet and the subsection headings,
+          # which the previous filter cut mid-sentence.
           HIGHLIGHTS="$(awk -v ver="## ${VERSION}" '
             substr($0, 1, length(ver)) == ver { in_section = 1; next }
             in_section && /^## / { exit }
-            in_section && /^### Highlights[[:space:]]*$/ { in_highlights = 1; next }
-            in_highlights && /^### / { exit }
-            in_highlights { print }
-          ' CHANGELOG.md)"
+            in_section { print }
+          ' CHANGELOG.md | sed -e '/./,$!d')"
 
-          # Older tags have no Highlights subsection: fall back to the section
-          # bullets instead of publishing an empty body.
+          # A tag without a CHANGELOG section still gets a usable body.
           if [ -z "${HIGHLIGHTS}" ]; then
-            HIGHLIGHTS="$(awk -v ver="## ${VERSION}" '
-              substr($0, 1, length(ver)) == ver { in_section = 1; next }
-              in_section && /^## / { exit }
-              in_section && /^- / { print }
-            ' CHANGELOG.md)"
+            HIGHLIGHTS="See CHANGELOG.md for the changes in this release."
           fi
 
           {
