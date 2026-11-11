@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import java.util.Properties
+import java.util.zip.ZipFile
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -106,6 +107,8 @@ val buildPm3Native = tasks.register<Exec>("buildPm3Native") {
         rootProject.file("scripts/build-native.sh"),
         rootProject.file("scripts/prepare-pm3.sh"),
         rootProject.file("patches/pm3-console.patch"),
+        rootProject.file("patches/pm3-help-grab.patch"),
+        rootProject.file("patches/pm3-cmdscript.patch"),
         project.file("src/main/lua-extra"),
     )
     outputs.file(project.file("src/main/jniLibs/arm64-v8a/libpm3android.so"))
@@ -120,8 +123,8 @@ android {
         applicationId = "com.farmacia.pm3android"
         minSdk = 26
         targetSdk = 37
-        versionCode = 20000
-        versionName = "2.0.0"
+        versionCode = 23002
+        versionName = "2.3.2"
 
         ndk {
             // The only device flavour this project targets.
@@ -150,7 +153,14 @@ android {
             versionNameSuffix = "-debug"
         }
         release {
-            isMinifyEnabled = false
+            // R8 shrinks the APK and, more importantly, catches dead code and
+            // missing keep rules at build time instead of at runtime.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
             if (keystorePropertiesFile.isFile) {
                 signingConfig = signingConfigs.getByName("release")
             }
@@ -168,7 +178,9 @@ android {
     }
 
     testOptions {
-        unitTests.isReturnDefaultValues = true
+        // Fail loudly instead of returning silent default values: a test that
+        // reaches an Android API must be noticed, not quietly pass.
+        unitTests.isReturnDefaultValues = false
     }
 
     lint {
@@ -208,6 +220,66 @@ tasks.named("preBuild") {
     }
     if (!skipSync) {
         dependsOn(syncPm3ClientResources)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Release package guard
+//
+// An unsigned release APK cannot be installed ("the package appears to be
+// invalid"), and an APK built with -PskipNative/-PskipSync contains no
+// libpm3android.so and no client resources, so the Proxmark3 features fail at
+// runtime. Both mistakes are cheap to make and expensive to discover on a
+// phone, so the release build refuses to finish.
+//
+// CI checks R8 on every push with the skip flags: that step sets
+// -PallowIncompleteRelease=true explicitly, because it only compiles.
+// ---------------------------------------------------------------------------
+val allowIncompleteRelease = providers.gradleProperty("allowIncompleteRelease")
+    .map { it.toBoolean() }
+    .getOrElse(false)
+
+// The signing configuration is checked before anything is packaged, so a
+// unsigned build cannot replace a good APK with a useless one.
+gradle.taskGraph.whenReady {
+    val releaseRequested = allTasks.any { it.name == "assembleRelease" }
+    if (releaseRequested && !allowIncompleteRelease && !keystorePropertiesFile.isFile) {
+        throw GradleException(
+            "Release APK would be unsigned: create keystore.properties from " +
+                "keystore.properties.example (and release.jks), or pass " +
+                "-PallowIncompleteRelease=true for a compile-only build.",
+        )
+    }
+}
+
+// AGP creates the assemble task after evaluation: match it lazily instead of
+// looking it up by name at configuration time.
+tasks.matching { it.name == "assembleRelease" }.configureEach {
+    doLast {
+        if (allowIncompleteRelease) {
+            logger.lifecycle("assembleRelease: package checks skipped (allowIncompleteRelease).")
+            return@doLast
+        }
+        val apkDir = layout.buildDirectory.dir("outputs/apk/release").get().asFile
+        val apk = apkDir.listFiles { file -> file.extension == "apk" }
+            ?.maxByOrNull { it.lastModified() }
+            ?: throw GradleException("assembleRelease produced no APK in $apkDir")
+        val entries = ZipFile(apk).use { zip ->
+            zip.entries().asSequence().map { it.name }.toList()
+        }
+        if (entries.none { it.endsWith("lib/arm64-v8a/libpm3android.so") }) {
+            throw GradleException(
+                "Release APK has no lib/arm64-v8a/libpm3android.so: build without " +
+                    "-PskipNative (scripts/build-native.sh) before packaging.",
+            )
+        }
+        if (entries.none { it.startsWith("assets/luascripts/") }) {
+            throw GradleException(
+                "Release APK has no client resources under assets/: build without " +
+                    "-PskipSync (the proxmark3 submodule must be checked out).",
+            )
+        }
+        logger.lifecycle("assembleRelease: ${apk.name} is signed and complete.")
     }
 }
 

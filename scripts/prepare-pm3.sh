@@ -171,6 +171,39 @@ if [ -f "$CONSOLE_PATCH" ]; then
     fi
 fi
 
+# Command group help (bare "hf", "hf mfu --help", "help") is printed with the
+# grabber forced off upstream, so a libpm3 caller with no terminal loses it.
+# The patch keeps the grab bit; see patches/pm3-help-grab.patch.
+HELP_PATCH="$(cd "$(dirname "$0")/.." && pwd)/patches/pm3-help-grab.patch"
+if [ -f "$HELP_PATCH" ]; then
+    if grep -q "PRINTANDLOG_GRAB) | PRINTANDLOG_PRINT" "$PM3_ROOT/client/src/cmdparser.c"; then
+        echo ">> help capture patch already applied"
+    elif git -C "$PM3_ROOT" apply --ignore-whitespace "$HELP_PATCH" 2>/dev/null; then
+        echo ">> help capture patch applied"
+    elif command -v patch >/dev/null 2>&1 && (cd "$PM3_ROOT" && patch -p1 --forward < "$HELP_PATCH" >/dev/null 2>&1); then
+        echo ">> help capture patch applied (patch)"
+    else
+        echo "help capture patch did not apply" >&2
+        exit 1
+    fi
+fi
+
+# "script run foo.cmd" only queues the file; the interactive loop runs it, and a
+# libpm3 caller has none. The patch drains the queue after each command.
+CMDSCRIPT_PATCH="$(cd "$(dirname "$0")/.." && pwd)/patches/pm3-cmdscript.patch"
+if [ -f "$CMDSCRIPT_PATCH" ]; then
+    if grep -q "pm3_cmdscript_run_pending" "$PM3_ROOT/client/src/pm3.c"; then
+        echo ">> cmdscript queue patch already applied"
+    elif git -C "$PM3_ROOT" apply --ignore-whitespace "$CMDSCRIPT_PATCH" 2>/dev/null; then
+        echo ">> cmdscript queue patch applied"
+    elif command -v patch >/dev/null 2>&1 && (cd "$PM3_ROOT" && patch -p1 --forward < "$CMDSCRIPT_PATCH" >/dev/null 2>&1); then
+        echo ">> cmdscript queue patch applied (patch)"
+    else
+        echo "cmdscript queue patch did not apply" >&2
+        exit 1
+    fi
+fi
+
 # Ninja hands custom commands to cmd.exe on Windows, where the upstream
 # `mkdir -p` in the bzip2/lz4 configure steps is a syntax error. Use CMake's
 # portable equivalent and read the archive from stdin (`-f -`): bsdtar, the

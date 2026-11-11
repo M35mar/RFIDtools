@@ -92,10 +92,12 @@ else
 fi
 
 echo ">> configure (ndk=$NDK)"
-rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
-# Configure every time: CMake is incremental and this makes flag changes
-# (NDK version, 16 KB page support, ...) take effect on existing build dirs.
+# Configure on every run: CMake keeps the cache (so the build stays
+# incremental) and flag changes such as the NDK version or 16 KB page support
+# still take effect on an existing build directory. Do not delete BUILD_DIR:
+# that would turn every build into a full rebuild of the client and its
+# external projects.
 "$CMAKE" -S "$SRC_DIR" -B "$BUILD_DIR" -G Ninja \
     -DCMAKE_MAKE_PROGRAM="$NINJA" \
     -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
