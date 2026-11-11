@@ -78,13 +78,13 @@ Everything here runs on the phone alone.
 | Tool | What it does |
 | --- | --- |
 | **Read tag** | Identifies the tag and reads its memory in one tap; save the result as a dump. |
-| **Restore tag** | Writes Ultralight/NTAG and MIFARE Classic dumps. Classic needs `hf-mf-<UID>-key.bin`. |
+| **Restore tag** | Writes Ultralight/NTAG and MIFARE Classic dumps. Classic needs `hf-mf-<UID>-key.bin`. **Save a backup first** reads the card without writing it; every write is read back and a block that does not match is reported as failed. |
 | **APDU console** | Sends raw ISO-DEP commands and shows the response with its status word. |
 | **Set counter** | Brings an Ultralight EV1 counter to a target value. Increment only. |
 | **Credit** | Increments or decrements a MIFARE Classic value block with a key file. |
 | **Change UID** | Rewrites the UID of Gen2/CUID, Gen3/APDU and Ultralight EV1 DirectWrite magic cards. |
 
-- Keys are kept in memory only, never written to disk or to a report.
+- Keys never appear in a report. A MIFARE Classic dump keeps the keys that opened each sector in its trailers, as MIFARE Classic Tool does, so the `.bin` can be restored on its own, and the matching `hf-mf-<UID>-key.bin` is written next to it. A key file chosen for a restore and a password typed for a read are used in memory only.
 - Gen1a, Gen1b and backdoor cards cannot be written through Android NFC: use a Proxmark3.
 - Calypso secure sessions need a SAM and the licensed spec, so only free data is shown.
 
@@ -122,6 +122,8 @@ For quick Kotlin-only checks after a full build, skip those two steps:
 <summary><b>Release signing</b></summary>
 
 Release builds are signed when `keystore.properties` exists. Back up `release.jks` and the properties file: losing them means no future APK can update an installed release.
+
+`assembleRelease` now refuses to finish when the APK is unsigned, when `libpm3android.so` is missing or when the client resources are not in `assets/`. Both mistakes produce an APK that either cannot be installed or cannot talk to the Proxmark3. CI keeps checking R8 with `-PskipNative -PskipSync` by passing `-PallowIncompleteRelease=true`.
 
 ```bash
 cp keystore.properties.example keystore.properties
@@ -179,6 +181,8 @@ The firmware must match the pinned client commit: reflash from a PC. Check **Dev
 <summary><b>The update check or install fails</b></summary>
 
 The check uses the public GitHub API, so rate limits or an outage can make it fail. Retry from **Info → Links → Check for updates**. Allow **Install unknown apps** for RFIDtools if Android blocks the install.
+
+An update is downloaded only from a GitHub release URL and only when the release publishes its SHA-256 digest; before the installer opens, the APK must have the same package id, a higher version code and the same signing certificate as the installed app. A file that fails any of these checks is deleted and never offered.
 
 </details>
 

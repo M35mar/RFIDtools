@@ -1,5 +1,164 @@
 # Changelog
 
+## 2.3.2 – 2026-11-11
+
+### Fixed
+- **`.cmd` scripts now actually run.** `script run foo.cmd` only pushes the
+  file onto a queue that the client's interactive loop consumes; the embedded
+  client has no such loop, so nothing happened. The queue is now drained after
+  every command (`patches/pm3-cmdscript.patch`), nested scripts included, and
+  the Stop button interrupts the remaining lines.
+
+### Changed
+- Console buttons are now **Copia**/**Copy** and **Condividi**/**Share**,
+  without the redundant "tutto"/"log".
+- The console font size can go down to **8 sp** (was 10), useful with long
+  identifiers on small screens.
+
+## 2.3.1 – 2026-11-11
+
+### Fixed
+- **Command help now appears in the console.** The embedded client forces its
+  grabber off while printing a command tree's help (`hf`, `lf`,
+  `hf mfu --help`, `help`), so the text went to stdout, which does not exist
+  on Android: the console stayed empty. A new client patch
+  (`patches/pm3-help-grab.patch`, applied by `scripts/prepare-pm3.sh`) keeps
+  the grab bit set, so the help is captured like any other output.
+
+## 2.3.0 – 2026-11-11
+
+### Added
+- **Coloured console**, in the spirit of a terminal: the command prompt is
+  green and bold, errors red, warnings amber, successes green, tag facts
+  (UID/ATQA/SAK/type) cyan, separators purple and hex dumps dim. ANSI colour
+  codes emitted by Lua or cmd scripts are parsed and rendered instead of
+  appearing as control bytes. A new **Coloured console** switch in Settings
+  turns it off. Copy and Share always export plain text.
+
+### Changed
+- The **last result** card is gone from the Console: the same information is in
+  the coloured log, so the log gets the space back. The card remains on
+  **Device → PM3 tools**.
+
+## 2.2.1 – 2026-11-11
+
+### Fixed
+- **The USB link no longer drops after about five seconds.** Some Android USB
+  stacks report a read timeout as `-1` instead of 0; the driver counted every
+  silent read as a controller error and aborted after twenty of them
+  (20 x 250 ms = 5 s). A slow `-1` is now treated as silence, and only fast
+  failures count towards the error limit.
+- **Reconnecting no longer fails with "address already in use".** The abstract
+  socket name is fixed, so the bridge now releases any previous listener before
+  binding, retries the bind briefly while an old socket is closing, and the
+  client drops a stale bridge and port before every new attempt.
+
+## 2.2.0 – 2026-11-11
+
+### Fixed — safety of tag writes
+- **A restore can no longer report an unverified write as a success.** A block
+  whose read-back is missing or different is `FAILED` with a verification note,
+  on both MIFARE Classic and Ultralight/NTAG, and the sector trailer is
+  confirmed by reading it back when the re-authentication right after the write
+  does not answer. A restore that cannot be verified is shown as partial.
+- **MIFARE Classic 4K restore uses the sixteen-block access layout.** The
+  access-group index is computed from the real sector size, so blocks 5-14 of a
+  large sector no longer inherit the trailer group's Key B requirement.
+- **Change UID is rolled back when a page write fails.** The pages already
+  written are restored from the copy read at the start; when that fails too, the
+  app says the card is inconsistent.
+- **Ultralight configuration is written only after the password took effect.**
+  A refused password write no longer leaves AUTH0/PROT set with a password that
+  does not match the dump.
+- **A card taken away mid-operation is reported as such**, and the restore stops
+  instead of sending commands to a card that is gone.
+- **A restore stops when the screen is left or the app goes to the background**
+  and reports "restore interrupted".
+- **The "Recent" list and the result re-run ask for confirmation again**: the
+  destructive-command policy is computed from the command text.
+- **The dump editor never overwrites a dump in place.** If the atomic rename is
+  not supported, a plain rename is used; a failure leaves the original file
+  untouched.
+
+### Fixed — connection and console stability
+- **One native command at a time, enforced by a mutex.** A USB detach or a
+  Bluetooth drop no longer clears the busy flag while the previous native call
+  is still running; if the call does not answer the abort within eight seconds
+  the UI is re-enabled but no second command can start until a reconnect.
+- **Lost links are reported by the transport itself.** A BLE GATT disconnect
+  and a socket pump failure now tear the session down and unblock the console
+  instead of leaving a command waiting forever.
+- **Python scripts can be stopped between statements**, including `while True`
+  loops, and modules loaded by one script no longer leak into the next run.
+- **USB reads back off on controller errors** and never request less than one
+  packet from the bulk endpoint, so single-byte reads cannot drop the rest of a
+  packet.
+- **BLE**: a failed GATT connection is closed (no leaked client), `open()` is
+  cancellable, the GATT callback never blocks on a full buffer, and a buffer
+  overflow is reported instead of silently corrupting the stream.
+- **Bluetooth Classic**: cancelling a connection attempt no longer swallows the
+  cancellation and retries.
+- **Client resources install with a staged swap**: files added by the user
+  survive a version bump, and a failed copy leaves the previous tree intact.
+- Console output is appended under a lock and the auto-scroll follows a
+  monotonic counter, so long sessions keep scrolling.
+- The command history is persisted and survives a restart.
+- Error messages are delivered through a buffered channel: an error raised
+  while the screen is being recreated is no longer lost.
+
+### Fixed — NFC inspector
+- **DESFire plain-communication files are read again**: the response CMAC is
+  verified only in MACed mode, and a short response in MACed mode is an error.
+- DESFire record reads are capped, so a card cannot make the app allocate an
+  unbounded buffer.
+- **NDEF**: lengths and offsets are validated before slicing, and the nesting
+  depth limit actually applies to nested smart posters.
+- A tag lost during the ISO-DEP application probe is reported instead of
+  producing an identity from partial data.
+- A DESFire identity requires the DESFire hardware type, not just a successful
+  `GetVersion`.
+- eMRTD: PACE is detected from the full id-PACE OID and the whole
+  `EF.CardAccess` is read.
+- ISO 15693 block numbers are capped at 255 instead of wrapping to the wrong
+  address (extended commands are not implemented yet).
+
+### Fixed — updater, files and settings
+- **An update without a SHA-256 digest is refused**, the download URL must be
+  HTTPS on a GitHub host, and the APK size is checked against the release.
+- **The downloaded APK is verified before install**: package id, a higher
+  version code and the same signing certificate as the installed app.
+- GitHub rate limits are reported with a wait time, a cancelled download closes
+  its socket, and stale downloads are deleted.
+- File imports are created exclusively (no name race), capped at 64 MB, and a
+  failed copy leaves no partial file.
+- A script import never overwrites a script shipped with the client.
+- Restoring a settings backup is capped in size and the Bluetooth address must
+  look like a MAC address.
+- Dialogs and pickers survive a rotation (export, delete, run script).
+
+### Added
+- **Backup on request** in the restore preview: reads the card and saves a dump
+  without writing anything.
+- The DESFire and Plus key fields are masked, file and script rows have
+  accessible labels, and copying a very large console excerpt falls back to the
+  share sheet instead of failing.
+
+### Changed — build and quality
+- Release builds run R8 (shrinking + resource shrinking) with keep rules for
+  JNI and Chaquopy; CI builds a release APK on every push so a missing keep rule
+  fails before a tag.
+- Unit tests no longer get silent default values from Android APIs
+  (`isReturnDefaultValues = false`).
+- The native build is incremental again: the CMake build directory is no longer
+  deleted on every run.
+- Italian and English string resources are at parity (918 keys each).
+- `assembleRelease` fails when the APK would be unsigned or would miss
+  `libpm3android.so`/`assets/`: a compile-only build can no longer be mistaken
+  for a release (CI passes `-PallowIncompleteRelease=true` for its R8 check).
+- README: a MIFARE Classic dump keeps the proven sector keys in its trailers
+  (and writes the matching `-key.bin`); the previous text claimed keys never
+  reach the disk.
+
 ## 2.0.0 – 2026-11-05
 
 ### Highlights
