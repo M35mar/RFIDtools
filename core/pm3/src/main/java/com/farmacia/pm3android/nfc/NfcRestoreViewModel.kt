@@ -228,6 +228,12 @@ class NfcRestoreViewModel(application: Application) : AndroidViewModel(applicati
         viewModelScope.launch {
             try {
                 val bytes = withContext(Dispatchers.IO) {
+                    val maxKeyBytes = 2L * 1024 * 1024
+                    if (file.length() > maxKeyBytes) {
+                        throw IllegalArgumentException(
+                            "Key file too large (${file.length()} bytes)",
+                        )
+                    }
                     val read = file.readBytes()
                     // Reject a file that is not a key list right away: the
                     // sector layout depends on the tag size, but a document

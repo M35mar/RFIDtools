@@ -19,11 +19,15 @@ class ConsoleLineBuffer {
             pending.append(text)
         }
         val lines = ArrayList<String>()
-        var newline = pending.indexOf("\n")
+        var start = 0
+        var newline = pending.indexOf("\n", start)
         while (newline >= 0) {
-            lines.add(pending.substring(0, newline).trimEnd('\r'))
-            pending.delete(0, newline + 1)
-            newline = pending.indexOf("\n")
+            lines.add(pending.substring(start, newline).trimEnd('\r'))
+            start = newline + 1
+            newline = pending.indexOf("\n", start)
+        }
+        if (start > 0) {
+            pending.delete(0, start)
         }
         if (flush && pending.isNotEmpty()) {
             lines.add(pending.toString().trimEnd('\r'))

@@ -226,9 +226,11 @@ class MfuLayout(val totalPages: Int) {
 
     val variant: String
         get() = when (totalPages) {
+            16 -> "MIFARE Ultralight (64 B)"
             20 -> "MF0UL11 (48 B)"
             41 -> "MF0UL21 (128 B)"
             45 -> "NTAG213 (144 B)"
+            48 -> "MIFARE Ultralight C (192 B)"
             135 -> "NTAG215 (504 B)"
             231 -> "NTAG216 (888 B)"
             else -> "Ultralight/NTAG ($totalPages pagine)"

@@ -1,5 +1,29 @@
 # Changelog
 
+## 2.4.0 – 2026-11-21
+
+### Added
+- **Interactive Lua script I/O**: scripts that show prompts or menus (`io.read` / `print` / `core.console`) now stream output live and let you reply directly from the Console with a dedicated waiting-input banner.
+- **Phone NFC NDEF Writer & Formatter**: write URL/URI, UTF-8 Text, Wi-Fi (WSC) credentials or erase any NFC Forum Type 1–5 tag, with automatic `NdefFormatable` formatting, capacity checks and mandatory read-back verification.
+- **Deep Type 2 inspection (`Type2InspectProbe`)**: automatic first-tap inspection of MIFARE Ultralight EV1/AES and NTAG21x chips — 32-byte NXP ECC Originality Signature (`READ_SIG 0x3C`), monotonic counters + tearing flags (`0x39`/`0x3E`), static locks, NDEF CC, and `CFG0`/`CFG1` security decoding (`AUTH0`, `PROT`, `CFGLCK`, `AUTHLIM`, `NFC_CNT_EN`).
+- **Expanded NFC chip & protocol coverage**:
+  - Full Type 2 dumping (`MfuReader`) across MF0UL11/21, Ultralight AES, NTAG210/212/213/213F/213TT/215/216/216F (using `FAST_READ 0x3A` for large tags) plus legacy Ultralight / Ultralight C fallback.
+  - ISO 15693 extended commands (`0x30`–`0x33`, `0x3B`, `0x2C`) for >256-block tags (e.g. ST25DV16K/64K), 8-byte Type 5 CC (`0xE2`), and IC model identification (ICODE SLIX/SLIX2, ST25TV/DV, TI Tag-it HF-I).
+  - Extended ISO-DEP AID catalog: PagoBANCOMAT, V Pay, RuPay, MIR, FIDO2/WebAuthn, OpenPGP Card, Italian CIE 3.0, and Calypso Italia / BIP.
+- **Upgraded APDU Console**: 7 one-tap APDU presets, color-coded status words (`9000`/`9100`, `61xx`/`91AF`, errors) and 1-tap log copy.
+
+### Changed
+- **PC-fidelity Console & maximized terminal space**:
+  - Real Proxmark3 PC ANSI colors preserved in the native grabber, full SGR parser (16/256/TrueColor) + token highlighter, Wrap/Wide toggle, live search and ↑/↓ command history.
+  - Default console font size set to **8 sp**; `CMD` and **PM3 Tools** (with Quick Commands) unified inside the Console tab.
+  - Compact **Connect / Disconnect** pill moved into the top bar next to the USB/BT status badge; removed the duplicate `CMD` header and line counter inside the terminal for maximum output visibility.
+- **Theme & Navigation redesign**: crisp Deep Dark default (`dynamicColor = false`), new **Nordic Ocean Petrol** Light theme, distinct high-contrast TopBar & BottomBar with dividers, and **Dump** as the default filter in the Data tab.
+
+### Fixed
+- **Native JNI & Coroutine hardening**: UTF-8 sanitization before `NewStringUTF`, thread-safe grabber/close locking, atomic interrupt flag, `NonCancellable` cleanup in `Pm3Client`, Bluetooth disconnect abort during active commands, and `pm3.grabbed_output` in the embedded Python bridge.
+- **FeliCa Type 3 protocol**: proper 2-byte Block List Element (`0x80`), Attribute Information Block (block 0) parsing and NDEF read starting from block 1.
+- **Performance & Safety**: USB Binder IPC only on timeout/error, O(N) console line buffer, inline SHA-256 + streaming cap + HTTPS redirect check in `UpdateManager`, large-log sharing via `FileProvider`, 2 MB cap on imported key files, lazy IO license loading, and accurate 7-byte UID inspection notes.
+
 ## 2.3.2 – 2026-11-11
 
 ### Fixed

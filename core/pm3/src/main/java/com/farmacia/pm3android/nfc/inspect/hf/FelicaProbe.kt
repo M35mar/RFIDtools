@@ -93,8 +93,12 @@ object FelicaProbe : HfProbe {
     }
 
     /**
-     * Type 3 NDEF: service 0x000B, block 0 carries the NDEF TLV. The length in
-     * the first block says how many more 16-byte blocks to read.
+     * Type 3 NDEF (NFC Forum Type 3 Tag specification):
+     *   - service 0x000B (read-only NDEF);
+     *   - block 0 is the 16-byte Attribute Information Block (AIB), carrying the
+     *     3-byte big-endian NDEF length (Ln) at bytes 11..13 and a 16-bit
+     *     checksum at bytes 14..15;
+     *   - blocks 1..N hold the raw NDEF message (no Type 2 TLV wrapper).
      */
     private fun readNdef(transport: NfcFTransport, idm: ByteArray): NdefContent {
         val service = byteArrayOf(0x0B, 0x00)
@@ -106,20 +110,19 @@ object FelicaProbe : HfProbe {
         if ((serviceResponse[1].toInt() and 0xFF) != 0x03) return NdefContent.absent
         if (serviceResponse[10].toInt() == 0) return NdefContent.absent
 
-        val first = readBlock(transport, idm, service, 0) ?: return NdefContent.absent
-        val total = tlvLength(first) ?: return NdefContent.absent
-        if (total <= 0 || total > MAX_BLOCKS * BLOCK_SIZE) return NdefContent.absent
+        val aib = readBlock(transport, idm, service, 0) ?: return NdefContent.absent
+        val ndefLength = attributeNdefLength(aib) ?: return NdefContent.absent
+        if (ndefLength <= 0 || ndefLength > MAX_BLOCKS * BLOCK_SIZE) return NdefContent.absent
 
-        val data = ByteArrayOutputStream()
-        data.write(first)
+        val data = ByteArrayOutputStream(ndefLength)
         var block = 1
-        while (data.size() < total && block < MAX_BLOCKS) {
+        while (data.size() < ndefLength && block <= MAX_BLOCKS) {
             val next = readBlock(transport, idm, service, block)
                 ?: return NdefContent(emptyList(), data.size(), NdefStatus.TRUNCATED)
             data.write(next)
             block++
         }
-        return NdefParser.parseTlv(data.toByteArray())
+        return NdefParser.parseMessage(data.toByteArray(), 0, ndefLength)
     }
 
     private fun readBlock(
@@ -128,16 +131,23 @@ object FelicaProbe : HfProbe {
         service: ByteArray,
         block: Int,
     ): ByteArray? {
+        // NFC Forum Type 3 Tag / FeliCa Block List Element:
+        //   - 2-byte format (block < 256): [0x80 | serviceOrder(0), blockNumber]
+        //   - 3-byte format (block >= 256): [0x00 | serviceOrder(0), lo, hi]
+        val blockElement = if (block < 256) {
+            byteArrayOf(0x80.toByte(), block.toByte())
+        } else {
+            byteArrayOf(0x00, (block and 0xFF).toByte(), ((block ushr 8) and 0xFF).toByte())
+        }
+        val length = (2 + idm.size + 1 + service.size + 1 + blockElement.size).toByte()
         val command = byteArrayOf(
-            0x10,
+            length,
             0x06,
         ) + idm + byteArrayOf(
             0x01,
         ) + service + byteArrayOf(
             0x01,
-            (block ushr 8).toByte(),
-            block.toByte(),
-        )
+        ) + blockElement
         val response = transport.transceive(command)
         if (response.size < 13 + BLOCK_SIZE) return null
         if ((response[1].toInt() and 0xFF) != 0x07) return null
@@ -145,31 +155,21 @@ object FelicaProbe : HfProbe {
         return response.copyOfRange(13, 13 + BLOCK_SIZE)
     }
 
-    /** Length of the NDEF TLV (header included), null when absent. */
-    private fun tlvLength(block: ByteArray): Int? {
-        var position = 0
-        while (position + 1 < block.size) {
-            val type = block[position].toInt() and 0xFF
-            if (type == 0x00) {
-                position++
-                continue
-            }
-            if (type == 0xFE) return null
-            if (type == 0x03) {
-                var length = block[position + 1].toInt() and 0xFF
-                var header = 2
-                if (length == 0xFF) {
-                    if (position + 3 >= block.size) return null
-                    length = ((block[position + 2].toInt() and 0xFF) shl 8) or
-                        (block[position + 3].toInt() and 0xFF)
-                    header = 4
-                }
-                return header + length
-            }
-            val length = block[position + 1].toInt() and 0xFF
-            position += 2 + length
+    /**
+     * Validates the Type 3 Attribute Information Block (16 bytes) and returns
+     * the 24-bit big-endian NDEF length (Ln), or null when invalid/empty.
+     */
+    private fun attributeNdefLength(aib: ByteArray): Int? {
+        if (aib.size < BLOCK_SIZE) return null
+        var sum = 0
+        for (i in 0 until 14) {
+            sum += aib[i].toInt() and 0xFF
         }
-        return null
+        val expectedChecksum = ((aib[14].toInt() and 0xFF) shl 8) or (aib[15].toInt() and 0xFF)
+        if ((sum and 0xFFFF) != expectedChecksum) return null
+        return ((aib[11].toInt() and 0xFF) shl 16) or
+            ((aib[12].toInt() and 0xFF) shl 8) or
+            (aib[13].toInt() and 0xFF)
     }
 
     /** LEN, command, IDm. LEN counts the whole frame including itself. */

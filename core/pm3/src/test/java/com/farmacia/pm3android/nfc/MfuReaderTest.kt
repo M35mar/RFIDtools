@@ -109,20 +109,43 @@ class MfuReaderTest {
     }
 
     @Test
-    fun `a non EV1 variant is rejected`() {
-        val tag = FakeTag(pages(45), version = version(0x0F))
+    fun `ntag213 and ntag215 are captured with full page counts`() {
+        val ntag213 = FakeTag(pages(45), version = version(0x0F, type = 0x04))
+        val cap213 = MfuReader(ntag213).read()
+        assertEquals(45, cap213.pages.size)
+        assertEquals("NTAG213 (144 B)", cap213.layout.variant)
+
+        val ntag215 = FakeTag(pages(135), version = version(0x11, type = 0x04))
+        val cap215 = MfuReader(ntag215).read()
+        assertEquals(135, cap215.pages.size)
+        assertEquals("NTAG215 (504 B)", cap215.layout.variant)
+    }
+
+    @Test
+    fun `an unknown storage code is rejected`() {
+        val tag = FakeTag(pages(45), version = version(0x99))
 
         try {
             MfuReader(tag).read()
             fail("expected TagUnusableException")
         } catch (expected: TagUnusableException) {
-            assertTrue(expected.message.orEmpty().contains("MF0UL11"))
+            assertTrue(expected.message.orEmpty().contains("0x99"))
         }
     }
 
+    @Test
+    fun `a legacy ultralight without GET_VERSION falls back to page probing`() {
+        val tag = FakeTag(pages(16), version = version(0x0B), answerVersion = false)
+
+        val capture = MfuReader(tag).read()
+
+        assertEquals(16, capture.pages.size)
+        assertEquals("MIFARE Ultralight (64 B)", capture.layout.variant)
+    }
+
     @Test(expected = TagUnusableException::class)
-    fun `a tag without GET_VERSION is rejected`() {
-        val tag = FakeTag(pages(20), version = version(0x0B), answerVersion = false)
+    fun `an unreadable tag without GET_VERSION is rejected`() {
+        val tag = FakeTag(pages(8), version = version(0x0B), answerVersion = false)
 
         MfuReader(tag).read()
     }
@@ -140,8 +163,8 @@ class MfuReaderTest {
 
     // -----------------------------------------------------------------------
 
-    private fun version(size: Int): ByteArray =
-        byteArrayOf(0x00, 0x04, 0x03, 0x01, 0x01, 0x00, size.toByte(), 0x03)
+    private fun version(size: Int, type: Int = 0x03): ByteArray =
+        byteArrayOf(0x00, 0x04, type.toByte(), 0x01, 0x01, 0x00, size.toByte(), 0x03)
 
     private fun pages(count: Int): MutableList<ByteArray> =
         MutableList(count) { index ->

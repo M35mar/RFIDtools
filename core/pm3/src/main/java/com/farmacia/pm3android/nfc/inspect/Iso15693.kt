@@ -14,7 +14,15 @@ object Iso15693 {
     const val CMD_READ_MULTIPLE_BLOCKS = 0x23
     const val CMD_WRITE_MULTIPLE_BLOCKS = 0x24
     const val CMD_GET_SYSTEM_INFO = 0x2B
+    const val CMD_GET_MULTI_BLOCK_SECURITY = 0x2C
     const val CMD_READ_SIGNATURE = 0x2D
+
+    /** ISO 15693-3 extended commands (2-byte block addressing for >256 blocks, e.g. ST25DV16K/64K). */
+    const val CMD_EXT_READ_SINGLE_BLOCK = 0x30
+    const val CMD_EXT_WRITE_SINGLE_BLOCK = 0x31
+    const val CMD_EXT_LOCK_BLOCK = 0x32
+    const val CMD_EXT_READ_MULTIPLE_BLOCKS = 0x33
+    const val CMD_EXT_GET_SYSTEM_INFO = 0x3B
 
     /** ICODE SLIX/SLIX2 password commands. */
     const val CMD_SET_PASSWORD = 0x02
@@ -35,11 +43,40 @@ object Iso15693 {
     /** Highest block count a standard GET SYSTEM INFO can report (count + 1). */
     const val MAX_BLOCKS = 0x100
 
+    /** Extended commands carry a 16-bit little-endian block number: 0..65535. */
+    const val MAX_EXT_BLOCK = 0xFFFF
+
     fun getSystemInfo(uid: ByteArray? = null): ByteArray = frame(CMD_GET_SYSTEM_INFO, uid)
+
+    fun getExtendedSystemInfo(uid: ByteArray? = null): ByteArray =
+        frame(CMD_EXT_GET_SYSTEM_INFO, uid, byteArrayOf(0x0F))
 
     fun readBlock(block: Int, uid: ByteArray? = null): ByteArray {
         requireBlock(block)
         return frame(CMD_READ_SINGLE_BLOCK, uid, byteArrayOf(block.toByte()))
+    }
+
+    fun readExtendedBlock(block: Int, uid: ByteArray? = null): ByteArray {
+        require(block in 0..MAX_EXT_BLOCK) { "extended block number out of range" }
+        return frame(
+            CMD_EXT_READ_SINGLE_BLOCK,
+            uid,
+            byteArrayOf((block and 0xFF).toByte(), ((block ushr 8) and 0xFF).toByte()),
+        )
+    }
+
+    /** Automatically selects standard (<=255) or extended (>255) block read. */
+    fun readAnyBlock(block: Int, uid: ByteArray? = null): ByteArray =
+        if (block <= MAX_BLOCK) readBlock(block, uid) else readExtendedBlock(block, uid)
+
+    fun readBlockSecurityStatus(start: Int, count: Int, uid: ByteArray? = null): ByteArray {
+        requireBlock(start)
+        require(count in 1..MAX_BLOCKS && start + count <= MAX_BLOCKS) { "block range out of range" }
+        return frame(
+            CMD_GET_MULTI_BLOCK_SECURITY,
+            uid,
+            byteArrayOf(start.toByte(), (count - 1).toByte()),
+        )
     }
 
     fun readMultipleBlocks(start: Int, count: Int, uid: ByteArray? = null): ByteArray {
@@ -112,11 +149,12 @@ object Iso15693 {
     }
 
     /**
-     * Parses the answer to GET SYSTEM INFO. Layout: flags, info flags, UID
-     * (8 bytes), then the optional DSFID, AFI, memory size and IC reference.
+     * Parses the answer to GET SYSTEM INFO (standard 0x2B or extended 0x3B).
+     * Extended responses encode the block count in 16-bit little-endian.
      */
-    fun parseSystemInfo(response: ByteArray): SystemInfo? {
+    fun parseSystemInfo(response: ByteArray, extended: Boolean = false): SystemInfo? {
         if (response.size < 10) return null
+        if ((response[0].toInt() and 0x01) != 0) return null
         val infoFlags = response[1].toInt() and 0xFF
         val uid = response.copyOfRange(2, 10)
         var cursor = 10
@@ -133,11 +171,21 @@ object Iso15693 {
         var blocks: Int? = null
         var blockSize: Int? = null
         if (infoFlags and INFO_MEMORY != 0) {
-            val count = response.getOrNull(cursor++)
-            val sizeCode = response.getOrNull(cursor++)
-            if (count != null && sizeCode != null) {
-                blocks = (count.toInt() and 0xFF) + 1
-                blockSize = (sizeCode.toInt() and 0x1F) + 1
+            if (extended) {
+                val lo = response.getOrNull(cursor++)?.toInt()?.and(0xFF)
+                val hi = response.getOrNull(cursor++)?.toInt()?.and(0xFF)
+                val sizeCode = response.getOrNull(cursor++)?.toInt()?.and(0xFF)
+                if (lo != null && hi != null && sizeCode != null) {
+                    blocks = ((hi shl 8) or lo) + 1
+                    blockSize = (sizeCode and 0x1F) + 1
+                }
+            } else {
+                val count = response.getOrNull(cursor++)
+                val sizeCode = response.getOrNull(cursor++)
+                if (count != null && sizeCode != null) {
+                    blocks = (count.toInt() and 0xFF) + 1
+                    blockSize = (sizeCode.toInt() and 0x1F) + 1
+                }
             }
         }
         val icReference = if (infoFlags and INFO_IC != 0) {

@@ -25,9 +25,9 @@ enum class ConnectionMode {
 }
 
 data class AppSettings(
-    val themeMode: ThemeMode = ThemeMode.SYSTEM,
-    val dynamicColor: Boolean = true,
-    val consoleFontSizeSp: Int = 12,
+    val themeMode: ThemeMode = ThemeMode.DARK,
+    val dynamicColor: Boolean = false,
+    val consoleFontSizeSp: Int = 8,
     val confirmDelete: Boolean = true,
     val keepScreenOn: Boolean = false,
     val followConsole: Boolean = true,
@@ -118,10 +118,10 @@ class AppPreferences(context: Context) {
         val json = JSONObject(text)
         val restored = AppSettings(
             themeMode = runCatching {
-                ThemeMode.valueOf(json.optString("themeMode", ThemeMode.SYSTEM.name))
-            }.getOrDefault(ThemeMode.SYSTEM),
-            dynamicColor = json.optBoolean("dynamicColor", true),
-            consoleFontSizeSp = json.optInt("consoleFontSizeSp", 12)
+                ThemeMode.valueOf(json.optString("themeMode", ThemeMode.DARK.name))
+            }.getOrDefault(ThemeMode.DARK),
+            dynamicColor = json.optBoolean("dynamicColor", false),
+            consoleFontSizeSp = json.optInt("consoleFontSizeSp", 8)
                 .coerceIn(MIN_FONT_SIZE, MAX_FONT_SIZE),
             confirmDelete = json.optBoolean("confirmDelete", true),
             keepScreenOn = json.optBoolean("keepScreenOn", false),
@@ -143,12 +143,12 @@ class AppPreferences(context: Context) {
 
     private fun load(): AppSettings {
         val mode = runCatching {
-            ThemeMode.valueOf(prefs.getString(KEY_THEME, null) ?: ThemeMode.SYSTEM.name)
-        }.getOrDefault(ThemeMode.SYSTEM)
+            ThemeMode.valueOf(prefs.getString(KEY_THEME, null) ?: ThemeMode.DARK.name)
+        }.getOrDefault(ThemeMode.DARK)
         return AppSettings(
             themeMode = mode,
-            dynamicColor = prefs.getBoolean(KEY_DYNAMIC, true),
-            consoleFontSizeSp = prefs.getInt(KEY_FONT_SIZE, 12)
+            dynamicColor = prefs.getBoolean(KEY_DYNAMIC, false),
+            consoleFontSizeSp = prefs.getInt(KEY_FONT_SIZE, 8)
                 .coerceIn(MIN_FONT_SIZE, MAX_FONT_SIZE),
             confirmDelete = prefs.getBoolean(KEY_CONFIRM_DELETE, true),
             keepScreenOn = prefs.getBoolean(KEY_KEEP_SCREEN_ON, false),

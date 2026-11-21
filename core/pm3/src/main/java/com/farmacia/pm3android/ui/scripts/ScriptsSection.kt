@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
@@ -45,10 +46,14 @@ import com.farmacia.pm3android.pm3.Pm3ConnectionState
 import com.farmacia.pm3android.ui.components.ConfirmDialog
 import com.farmacia.pm3android.ui.components.SectionCard
 import com.farmacia.pm3android.ui.console.Pm3ViewModel
+import com.farmacia.pm3android.ui.theme.pm3Accents
 import com.farmacia.pm3android.util.formatBytes
 
 @Composable
-fun ScriptsSection(viewModel: Pm3ViewModel) {
+fun ScriptsSection(
+    viewModel: Pm3ViewModel,
+    onScriptStarted: () -> Unit = {},
+) {
     val scripts by viewModel.scripts.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
     val busy by viewModel.busy.collectAsState()
@@ -71,7 +76,11 @@ fun ScriptsSection(viewModel: Pm3ViewModel) {
 
     val canRun = connectionState == Pm3ConnectionState.CONNECTED && !busy && !fileOpBusy
 
-    SectionCard(title = stringResource(R.string.scripts_title)) {
+    SectionCard(
+        title = stringResource(R.string.scripts_title),
+        icon = Icons.Filled.Code,
+        accent = MaterialTheme.pm3Accents.script,
+    ) {
         Text(
             text = stringResource(R.string.scripts_description),
             style = MaterialTheme.typography.bodySmall,
@@ -143,8 +152,9 @@ fun ScriptsSection(viewModel: Pm3ViewModel) {
             confirmButton = {
                 Button(
                     onClick = {
-                        viewModel.runScript(script, runArguments)
+                        val started = viewModel.runScript(script, runArguments)
                         pendingRunPath = null
+                        if (started) onScriptStarted()
                     },
                 ) {
                     Text(stringResource(R.string.action_execute))

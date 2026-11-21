@@ -38,6 +38,12 @@ object Pm3Native {
      */
     external fun nativeGrab(): String
 
+    /** True while a running Lua script is blocked inside io.read() awaiting input. */
+    external fun nativeIsWaitingInput(): Boolean
+
+    /** Delivers one line of console input to a waiting Lua script. */
+    external fun nativeSendInput(input: String)
+
     /** Asks the command in progress to stop (cooperative, best effort). */
     external fun nativeAbort()
 

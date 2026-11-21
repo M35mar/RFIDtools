@@ -6,6 +6,8 @@
 
 package com.farmacia.pm3android.pm3
 
+import com.farmacia.pm3android.ui.console.ConsoleAnsi
+
 object Pm3PythonBridge {
 
     /**
@@ -13,8 +15,8 @@ object Pm3PythonBridge {
      * serialises calls, so this is safe from the Python worker thread.
      *
      * `capture` and `quiet` mirror the upstream SWIG API. The Android client
-     * always captures and suppresses console echo; the returned text is what
-     * the Python script consumes.
+     * always captures and suppresses console echo; ANSI colour escapes are
+     * stripped before returning so upstream Python parsers see plain text.
      */
     @JvmStatic
     @Suppress("UNUSED_PARAMETER")
@@ -24,7 +26,7 @@ object Pm3PythonBridge {
         // command, so a pending stop unwinds the script at the next one. The
         // instruction hook in pm3_runner.py covers code that never calls back.
         check(!Pm3Native.stopRequested) { "stopped by user" }
-        val output = Pm3Native.nativeExec(command)
+        val output = ConsoleAnsi.stripAnsi(Pm3Native.nativeExec(command))
         check(!Pm3Native.stopRequested) { "stopped by user" }
         return output
     }

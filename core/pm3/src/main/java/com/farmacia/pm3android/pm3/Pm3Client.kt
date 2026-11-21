@@ -16,6 +16,7 @@ import android.hardware.usb.UsbDevice
 import com.farmacia.pm3android.R
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -63,6 +64,7 @@ class Pm3Client(context: Context) {
     private val stateFlow = MutableStateFlow(Pm3ConnectionState.DISCONNECTED)
     private val connectLogFlow = MutableStateFlow("")
     private val transportFlow = MutableStateFlow<Pm3Transport?>(null)
+    private val waitingInputFlow = MutableStateFlow(false)
 
     private val bridge = AtomicReference<LocalSocketBridge?>(null)
     private val openedPort = AtomicReference<Pm3Port?>(null)
@@ -95,6 +97,10 @@ class Pm3Client(context: Context) {
     /** Transport that owns the current connection, null while disconnected. */
     val transport: StateFlow<Pm3Transport?>
         get() = transportFlow
+
+    /** True while a running Lua script is waiting for interactive user input. */
+    val waitingInput: StateFlow<Boolean>
+        get() = waitingInputFlow
 
     init {
         // A GATT link that dies must end the session: otherwise the native
@@ -243,8 +249,9 @@ class Pm3Client(context: Context) {
                 // The native open may have succeeded even when we are not
                 // taking ownership (cancellation or detach race). nativeClose
                 // takes the native API lock and may close the link: keep it off
-                // the caller's thread, which can be the main thread.
-                withContext(Dispatchers.IO) {
+                // the caller's thread and NonCancellable so cancellation never
+                // skips native teardown.
+                withContext(NonCancellable + Dispatchers.IO) {
                     runCatching { Pm3Native.nativeClose() }
                 }
             }
@@ -283,6 +290,8 @@ class Pm3Client(context: Context) {
     fun abortNow() {
         closing = true
         abortRequested = true
+        Pm3Native.stopRequested = true
+        runCatching { Pm3Native.nativeAbort() }
         classicBluetooth.cancelConnect()
         bleBluetooth.cancelConnect()
         bridge.getAndSet(null)?.stop()
@@ -324,21 +333,37 @@ class Pm3Client(context: Context) {
                     while (isActive) {
                         val chunk = Pm3Native.nativeGrab()
                         if (chunk.isNotEmpty()) onChunk(chunk)
+                        val waiting = Pm3Native.nativeIsWaitingInput()
+                        if (waitingInputFlow.value != waiting) {
+                            waitingInputFlow.value = waiting
+                        }
                         delay(STREAM_POLL_MS)
                     }
                 }
                 try {
                     Pm3Native.nativeExec(cmd)
                 } finally {
+                    waitingInputFlow.value = false
                     // The tail of the output is returned by nativeExec itself.
-                    poller.cancelAndJoin()
+                    // NonCancellable ensures we always wait for the poller to
+                    // exit before teardown can touch nativeClose().
+                    withContext(NonCancellable) {
+                        poller.cancelAndJoin()
+                    }
                 }
             }
         }
     }
 
+    /** Delivers interactive input to a waiting Lua script (menu / prompt). */
+    fun sendInput(line: String) {
+        waitingInputFlow.value = false
+        runCatching { Pm3Native.nativeSendInput(line) }
+    }
+
     /** Asks the command in progress to stop; it completes on its own. */
     fun requestStop() {
+        waitingInputFlow.value = false
         Pm3Native.stopRequested = true
         Pm3Native.nativeAbort()
     }

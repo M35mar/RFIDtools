@@ -47,7 +47,7 @@
     <string name="device_disconnected_message">Device disconnected.</string>
     <string name="device_detached_message">PM3 detached: connection closed.</string>
 
-    <string name="console_title">Proxmark3 console</string>
+    <string name="console_title">CMD</string>
     <string name="console_empty">No output yet. Connect the PM3 and send a command.</string>
     <string name="console_placeholder">e.g. hw version</string>
     <string name="console_send">Send</string>
@@ -499,7 +499,7 @@
     <string name="inspect_confidence_medium">Likely</string>
     <string name="inspect_confidence_low">Uncertain</string>
     <string name="inspect_notes">Notes</string>
-    <string name="inspect_note_uid7">Seven-byte UID (double size): typical of Plus, my-d move or clones. Android exposes no MifareClassic for this tag, so the memory is readable only when it answers the page commands.</string>
+    <string name="inspect_note_uid7">Seven-byte UID (ISO 14443-3A double size): standard on Ultralight, NTAG, DESFire and Plus. The first byte identifies the manufacturer.</string>
     <string name="inspect_note_uid10">Ten-byte UID: ISO 15693 layout.</string>
     <string name="inspect_note_classic_no_tech">The tag reports a MIFARE Classic SAK but Android does not expose MifareClassic: the memory cannot be read.</string>
     <string name="inspect_note_version">The tag did not answer GET_VERSION: the variant is inferred from SAK and technologies.</string>
@@ -947,4 +947,52 @@
     <string name="uid_error_inconsistent">The UID was written only in part and the card could not be restored: the card is in an inconsistent state, do not use it until it has been rewritten with a Proxmark3.</string>
     <string name="uid_error_lost">NFC communication interrupted: hold the card still and try again.</string>
     <string name="uid_error_generic">Operation failed: %1$s</string>
+
+    <!-- Console upgrades & localised IO errors -->
+    <string name="console_wrap">Wrap</string>
+    <string name="console_wide">Wide</string>
+    <string name="console_search">Search</string>
+    <string name="console_search_placeholder">Filter console output…</string>
+    <string name="console_history_prev">Previous command</string>
+    <string name="console_history_next">Next command</string>
+    <string name="tools_open_console">Open console</string>
+    <string name="tools_badge_write">WRITE</string>
+    <string name="tools_badge_destructive">DANGER</string>
+    <string name="error_settings_too_large">Settings file is too large.</string>
+    <string name="error_no_free_filename">No free filename available for %1$s.</string>
+    <string name="error_file_too_large">File too large (limit %1$d MB).</string>
+    <string name="console_waiting_input">Script waiting for input — type a reply or press Send</string>
+    <string name="console_input_reply_placeholder">Reply to script (e.g. 1, y, Enter)…</string>
+
+    <!-- Phone NFC: NDEF Writer & APDU presets -->
+    <string name="nfc_ndef_title">Write NDEF</string>
+    <string name="nfc_ndef_desc">Write URL, text, Wi-Fi or erase any NFC tag.</string>
+    <string name="ndef_writer_title">Write NDEF</string>
+    <string name="ndef_writer_type_title">NDEF record</string>
+    <string name="ndef_kind_uri">URL / Link</string>
+    <string name="ndef_kind_text">Text</string>
+    <string name="ndef_kind_wifi">Wi-Fi</string>
+    <string name="ndef_kind_erase">Erase</string>
+    <string name="ndef_uri_label">URL or URI</string>
+    <string name="ndef_text_label">Text content</string>
+    <string name="ndef_wifi_ssid">Network name (SSID)</string>
+    <string name="ndef_wifi_open">Open</string>
+    <string name="ndef_wifi_password">Password</string>
+    <string name="ndef_erase_hint">Writes an empty NDEF record to clear the tag without locking or formatting away its capability container.</string>
+    <string name="ndef_writer_arm">Tap tag to write</string>
+    <string name="ndef_writer_waiting_title">Present the tag</string>
+    <string name="ndef_writer_waiting_body">Hold the tag steady against the phone NFC antenna. Unformatted tags are formatted automatically.</string>
+    <string name="ndef_writer_writing">Writing and verifying…</string>
+    <string name="ndef_writer_done_title">NDEF written</string>
+    <string name="ndef_writer_bytes_label">Payload size</string>
+    <string name="ndef_writer_again">Write another tag</string>
+    <string name="ndef_writer_edit">Edit record</string>
+    <string name="ndef_writer_error_title">Write failed</string>
+    <string name="ndef_writer_retry">Try again</string>
+    <string name="ndef_error_read_only">The tag is locked (read-only) and cannot be written.</string>
+    <string name="ndef_error_not_supported">This tag does not support NDEF or NDEF formatting.</string>
+    <string name="ndef_error_too_large">Message (%1$d B) exceeds tag capacity (%2$d B).</string>
+    <string name="ndef_error_verify">Read-back verification failed: the tag data did not match what was sent.</string>
+    <string name="ndef_error_generic">Could not write NDEF message to the tag.</string>
+    <string name="apdu_presets_title">Quick APDUs</string>
 </resources>

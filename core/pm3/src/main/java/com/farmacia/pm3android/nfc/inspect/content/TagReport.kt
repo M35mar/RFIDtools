@@ -534,7 +534,7 @@ object TagReport {
 
     private fun noteText(note: TagNote): String = when (note) {
         TagNote.UID_7_BYTE ->
-            "7-byte UID: Plus, my-d move or a clone. Readable only through the page commands."
+            "7-byte UID (double size): standard on Ultralight, NTAG, DESFire, Plus and modern ISO 14443-3A chips."
         TagNote.UID_10_BYTE ->
             "10-byte UID: ISO 15693 tag, not a MIFARE memory."
         TagNote.CLASSIC_WITHOUT_TECH ->

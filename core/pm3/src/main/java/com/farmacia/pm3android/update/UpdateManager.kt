@@ -28,6 +28,8 @@ class UpdateManager(private val context: Context) {
         private const val USER_AGENT = "RFIDtools-Android"
         private const val CONNECT_TIMEOUT_MS = 10_000
         private const val READ_TIMEOUT_MS = 30_000
+        private const val MAX_APK_BYTES = 256L * 1024 * 1024
+        private const val PROGRESS_INTERVAL_MS = 80L
     }
 
     suspend fun check(currentVersion: String, applicationId: String): ReleaseCheck =
@@ -87,8 +89,21 @@ class UpdateManager(private val context: Context) {
             if (code != HttpURLConnection.HTTP_OK) {
                 throw IOException(serverMessage(connection, code))
             }
+            if (!connection.url.protocol.equals("https", ignoreCase = true)) {
+                throw IOException("Refusing non-HTTPS update redirect")
+            }
+            // The digest is mandatory: fail before writing anything to disk.
+            val expected = asset.sha256
+                ?: throw IOException("Release without SHA-256 digest: refusing to install")
             val total = connection.contentLengthLong.takeIf { it > 0 } ?: asset.sizeBytes
+            val maxBytes = if (asset.sizeBytes > 0) {
+                minOf(asset.sizeBytes, MAX_APK_BYTES)
+            } else {
+                MAX_APK_BYTES
+            }
+            val digest = MessageDigest.getInstance("SHA-256")
             var read = 0L
+            var lastReportMs = 0L
             connection.inputStream.use { input ->
                 target.outputStream().buffered().use { output ->
                     val buffer = ByteArray(64 * 1024)
@@ -96,22 +111,31 @@ class UpdateManager(private val context: Context) {
                         coroutineContext.ensureActive()
                         val count = input.read(buffer)
                         if (count < 0) break
-                        output.write(buffer, 0, count)
                         read += count
-                        onProgress(read, total)
+                        if (read > maxBytes) {
+                            throw IOException("APK exceeds maximum allowed size")
+                        }
+                        digest.update(buffer, 0, count)
+                        output.write(buffer, 0, count)
+                        val now = System.currentTimeMillis()
+                        if (now - lastReportMs >= PROGRESS_INTERVAL_MS ||
+                            (total > 0 && read >= total)
+                        ) {
+                            lastReportMs = now
+                            onProgress(read, total)
+                        }
                     }
                 }
             }
             if (read == 0L) throw IOException("Empty download")
-            // The digest is mandatory: an update without one cannot be tied to
-            // the published binary, so it is never offered to the installer.
-            val expected = asset.sha256
-                ?: throw IOException("Release without SHA-256 digest: refusing to install")
-            if (!sha256Matches(target, expected)) {
-                throw IOException("APK checksum mismatch")
-            }
             if (asset.sizeBytes > 0 && read != asset.sizeBytes) {
                 throw IOException("APK size mismatch: expected ${asset.sizeBytes} bytes, got $read")
+            }
+            val actual = digest.digest().joinToString("") {
+                "%02x".format(Locale.ROOT, it.toInt() and 0xFF)
+            }
+            if (!actual.equals(expected, ignoreCase = true)) {
+                throw IOException("APK checksum mismatch")
             }
             target
         } catch (t: Throwable) {
@@ -153,21 +177,5 @@ class UpdateManager(private val context: Context) {
         }.getOrNull().orEmpty()
         val detail = body.takeIf { it.isNotBlank() }?.let { " — $it" }.orEmpty()
         return "HTTP $code$detail"
-    }
-
-    private fun sha256Matches(file: File, expectedHex: String): Boolean {
-        val digest = MessageDigest.getInstance("SHA-256")
-        file.inputStream().buffered().use { input ->
-            val buffer = ByteArray(64 * 1024)
-            while (true) {
-                val count = input.read(buffer)
-                if (count < 0) break
-                digest.update(buffer, 0, count)
-            }
-        }
-        val actual = digest.digest().joinToString("") {
-            "%02x".format(Locale.ROOT, it.toInt() and 0xFF)
-        }
-        return actual.equals(expectedHex, ignoreCase = true)
     }
 }

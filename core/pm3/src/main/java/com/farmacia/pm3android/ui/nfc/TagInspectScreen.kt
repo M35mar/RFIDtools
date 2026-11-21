@@ -1146,8 +1146,13 @@ private fun Iso15693Card(details: Iso15693Details) {
         details.afi?.let {
             InfoRow(stringResource(R.string.inspect_iso15693_afi), "0x%02X".format(it))
         }
-        details.blockSize?.let {
-            InfoRow(stringResource(R.string.inspect_iso15693_block_size), "$it")
+        details.blockSize?.let { size ->
+            val count = details.blocks
+            val geometry = if (count != null) "$count × $size B (${count * size} B)" else "$size B"
+            InfoRow(stringResource(R.string.inspect_iso15693_block_size), geometry)
+        }
+        details.icReference?.let {
+            InfoRow("IC Ref", "0x%02X".format(it))
         }
         details.firstBlock?.let {
             InfoRow(stringResource(R.string.inspect_iso15693_block0), it.toHexSpaced())

@@ -249,9 +249,6 @@ class UsbCdc(private val context: Context) {
                     if (closed) {
                         throw IOException("USB port closed")
                     }
-                    if (!isAttached()) {
-                        throw IOException("USB device detached")
-                    }
                     // Ask for at least one full packet so small reads are
                     // served from the staging buffer instead of a new transfer.
                     val request = minOf(
@@ -273,6 +270,11 @@ class UsbCdc(private val context: Context) {
                         pendingOffset = take
                         pendingLength = result - take
                         return take
+                    }
+                    // Only incur the UsbManager.deviceList Binder IPC when the
+                    // transfer timed out or failed, not on every healthy packet.
+                    if (!isAttached()) {
+                        throw IOException("USB device detached")
                     }
                     if (result < 0 && elapsedMs < READ_FAST_FAIL_MS) {
                         // Fast failure: the controller refused the transfer

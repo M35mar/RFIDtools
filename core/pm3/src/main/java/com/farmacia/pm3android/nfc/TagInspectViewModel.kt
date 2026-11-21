@@ -12,6 +12,7 @@ import android.nfc.Tag
 import android.nfc.TagLostException
 import android.nfc.tech.MifareClassic
 import android.nfc.tech.MifareUltralight
+import android.nfc.tech.NfcA
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.farmacia.pm3android.nfc.inspect.AndroidTagProbe
@@ -496,7 +497,9 @@ class TagInspectViewModel(application: Application) : AndroidViewModel(applicati
                 val latest = stateFlow.value
                 if (!latest.visible) return@launch
                 val pages = result.details as? PageMemoryDetails
-                val ultralight = MifareUltralight.get(tag) != null
+                val ultralight = MifareUltralight.get(tag) != null ||
+                    ((result.identity.family == TagFamily.MIFARE_ULTRALIGHT ||
+                        result.identity.family == TagFamily.NTAG) && NfcA.get(tag) != null)
                 // A page memory only produces a dump when it is a known chip
                 // (my-d move); an unidentified Type 2 keeps the memory on
                 // screen without offering a file that could not be restored.

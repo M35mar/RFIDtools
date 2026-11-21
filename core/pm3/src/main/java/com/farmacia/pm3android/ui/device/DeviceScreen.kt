@@ -5,6 +5,8 @@
 
 package com.farmacia.pm3android.ui.device
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,25 +18,26 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
-import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.DeveloperBoard
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SettingsBluetooth
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
@@ -43,12 +46,11 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -68,37 +70,18 @@ import com.farmacia.pm3android.pm3.BluetoothDeviceInfo
 import com.farmacia.pm3android.pm3.BluetoothLink
 import com.farmacia.pm3android.pm3.BluetoothPermissions
 import com.farmacia.pm3android.pm3.Pm3ConnectionState
+import com.farmacia.pm3android.ui.components.AccentBadge
 import com.farmacia.pm3android.ui.components.InfoRow
 import com.farmacia.pm3android.ui.components.SectionCard
 import com.farmacia.pm3android.ui.components.copyText
 import com.farmacia.pm3android.ui.components.shareText
 import com.farmacia.pm3android.ui.console.Pm3DeviceInfo
 import com.farmacia.pm3android.ui.console.Pm3ViewModel
+import com.farmacia.pm3android.ui.theme.pm3Accents
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DeviceScreen(viewModel: Pm3ViewModel) {
-    var tab by rememberSaveable { mutableIntStateOf(0) }
-    Column(modifier = Modifier.fillMaxSize()) {
-        PrimaryTabRow(selectedTabIndex = tab) {
-            Tab(
-                selected = tab == 0,
-                onClick = { tab = 0 },
-                text = { Text(stringResource(R.string.device_tab_device)) },
-                icon = { Icon(Icons.Filled.Usb, contentDescription = null) },
-            )
-            Tab(
-                selected = tab == 1,
-                onClick = { tab = 1 },
-                text = { Text(stringResource(R.string.device_tab_tools)) },
-                icon = { Icon(Icons.Filled.Build, contentDescription = null) },
-            )
-        }
-        when (tab) {
-            0 -> DeviceOverview(viewModel)
-            else -> Pm3ToolsScreen(viewModel)
-        }
-    }
+    DeviceOverview(viewModel)
 }
 
 @Composable
@@ -205,6 +188,13 @@ private fun DeviceOverview(viewModel: Pm3ViewModel) {
             settings.bluetoothAddress != null
         }
 
+    val accents = MaterialTheme.pm3Accents
+    val heroAccent = when {
+        connectionState == Pm3ConnectionState.CONNECTED -> accents.success
+        mode == ConnectionMode.BLUETOOTH -> accents.bluetooth
+        else -> accents.usb
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -212,70 +202,120 @@ private fun DeviceOverview(viewModel: Pm3ViewModel) {
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        SectionCard {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.extraLarge,
+            border = BorderStroke(1.25.dp, heroAccent.copy(alpha = 0.35f)),
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+        ) {
+            Column(
+                modifier = Modifier
+                    .background(
+                        Brush.linearGradient(
+                            colors = listOf(
+                                heroAccent.copy(alpha = 0.16f),
+                                accents.info.copy(alpha = 0.05f),
+                            ),
+                        ),
+                    )
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(stringResource(R.string.device_title), style = MaterialTheme.typography.titleLarge)
-                    Text(statusText, style = MaterialTheme.typography.bodySmall)
-                }
-                if (busy) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                }
-                OutlinedButton(
-                    onClick = {
-                        viewModel.refreshDevice()
-                        viewModel.refreshBluetooth()
-                    },
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.Refresh,
-                        contentDescription = stringResource(R.string.action_refresh),
+                    Surface(
+                        shape = CircleShape,
+                        color = heroAccent.copy(alpha = 0.18f),
+                    ) {
+                        Icon(
+                            imageVector = if (mode == ConnectionMode.BLUETOOTH) {
+                                Icons.Filled.Bluetooth
+                            } else {
+                                Icons.Filled.Usb
+                            },
+                            contentDescription = null,
+                            tint = heroAccent,
+                            modifier = Modifier
+                                .padding(10.dp)
+                                .size(26.dp),
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(stringResource(R.string.device_title), style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            statusText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (busy) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            strokeWidth = 2.5.dp,
+                            color = heroAccent,
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            viewModel.refreshDevice()
+                            viewModel.refreshBluetooth()
+                        },
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Refresh,
+                            contentDescription = stringResource(R.string.action_refresh),
+                        )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    TransportButton(
+                        label = stringResource(R.string.device_transport_usb),
+                        icon = Icons.Filled.Usb,
+                        selected = mode == ConnectionMode.USB,
+                        accent = accents.usb,
+                        enabled = idle,
+                        onClick = { viewModel.setConnectionMode(ConnectionMode.USB) },
+                        modifier = Modifier.weight(1f),
+                    )
+                    TransportButton(
+                        label = stringResource(R.string.device_transport_bluetooth),
+                        icon = Icons.Filled.Bluetooth,
+                        selected = mode == ConnectionMode.BLUETOOTH,
+                        accent = accents.bluetooth,
+                        enabled = idle,
+                        onClick = { viewModel.setConnectionMode(ConnectionMode.BLUETOOTH) },
+                        modifier = Modifier.weight(1f),
                     )
                 }
-            }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                TransportButton(
-                    label = stringResource(R.string.device_transport_usb),
-                    icon = Icons.Filled.Usb,
-                    selected = mode == ConnectionMode.USB,
-                    enabled = idle,
-                    onClick = { viewModel.setConnectionMode(ConnectionMode.USB) },
-                    modifier = Modifier.weight(1f),
-                )
-                TransportButton(
-                    label = stringResource(R.string.device_transport_bluetooth),
-                    icon = Icons.Filled.Bluetooth,
-                    selected = mode == ConnectionMode.BLUETOOTH,
-                    enabled = idle,
-                    onClick = { viewModel.setConnectionMode(ConnectionMode.BLUETOOTH) },
-                    modifier = Modifier.weight(1f),
-                )
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Button(
-                    onClick = viewModel::connect,
-                    enabled = canConnect,
-                    modifier = Modifier.weight(1f),
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Text(stringResource(R.string.action_connect))
-                }
-                OutlinedButton(
-                    onClick = viewModel::disconnect,
-                    enabled = !busy && connectionState == Pm3ConnectionState.CONNECTED,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text(stringResource(R.string.action_disconnect))
+                    Button(
+                        onClick = viewModel::connect,
+                        enabled = canConnect,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = heroAccent,
+                            contentColor = Color.White,
+                        ),
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(stringResource(R.string.action_connect))
+                    }
+                    OutlinedButton(
+                        onClick = viewModel::disconnect,
+                        enabled = !busy && connectionState == Pm3ConnectionState.CONNECTED,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(stringResource(R.string.action_disconnect))
+                    }
                 }
             }
         }
@@ -298,39 +338,12 @@ private fun DeviceOverview(viewModel: Pm3ViewModel) {
             }
         }
 
-        SectionCard(title = stringResource(R.string.device_quick_commands)) {
-            val commands = listOf(
-                "hw version",
-                "hw status",
-                "hw ping",
-                "hw tune",
-                "mem info",
-                "mem spiffs info",
-                "hf search",
-                "lf search",
-            )
-            commands.chunked(2).forEach { pair ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    pair.forEach { command ->
-                        QuickCommand(
-                            viewModel = viewModel,
-                            command = command,
-                            enabled = connectionState == Pm3ConnectionState.CONNECTED && !busy,
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                    if (pair.size == 1) {
-                        Spacer(modifier = Modifier.weight(1f))
-                    }
-                }
-            }
-        }
-
         if (connectLog.isNotBlank()) {
-            SectionCard(title = stringResource(R.string.device_connection_log)) {
+            SectionCard(
+                title = stringResource(R.string.device_connection_log),
+                icon = Icons.Filled.Terminal,
+                accent = accents.info,
+            ) {
                 SelectionContainer {
                     Text(
                         text = connectLog.trim(),
@@ -361,7 +374,11 @@ private fun DeviceOverview(viewModel: Pm3ViewModel) {
             }
         }
 
-        SectionCard(title = stringResource(R.string.device_diagnostics)) {
+        SectionCard(
+            title = stringResource(R.string.device_diagnostics),
+            icon = Icons.Filled.BugReport,
+            accent = accents.script,
+        ) {
             val diagnostics = viewModel.diagnostics()
             SelectionContainer {
                 Text(
@@ -406,7 +423,11 @@ private fun BluetoothCard(
     onSelect: (BluetoothDeviceInfo) -> Unit,
     onOpenSettings: () -> Unit,
 ) {
-    SectionCard(title = stringResource(R.string.device_bt_card_title)) {
+    SectionCard(
+        title = stringResource(R.string.device_bt_card_title),
+        icon = Icons.Filled.Bluetooth,
+        accent = MaterialTheme.pm3Accents.bluetooth,
+    ) {
         when (adapterState) {
             BluetoothAdapterState.UNSUPPORTED ->
                 Text(
@@ -549,7 +570,7 @@ private fun BluetoothDeviceRow(
                         text = info.displayName,
                         style = MaterialTheme.typography.titleSmall,
                     )
-                    Text(
+                    AccentBadge(
                         text = stringResource(
                             if (info.link == BluetoothLink.LE) {
                                 R.string.device_bt_badge_ble
@@ -557,8 +578,11 @@ private fun BluetoothDeviceRow(
                                 R.string.device_bt_badge_spp
                             },
                         ),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
+                        color = if (info.link == BluetoothLink.LE) {
+                            MaterialTheme.pm3Accents.info
+                        } else {
+                            MaterialTheme.pm3Accents.bluetooth
+                        },
                     )
                 }
                 Text(
@@ -586,7 +610,11 @@ private fun BluetoothDeviceRow(
 
 @Composable
 private fun DeviceDetails(info: Pm3DeviceInfo) {
-    SectionCard(title = stringResource(R.string.device_details)) {
+    SectionCard(
+        title = stringResource(R.string.device_details),
+        icon = Icons.Filled.DeveloperBoard,
+        accent = MaterialTheme.pm3Accents.usb,
+    ) {
         InfoRow(
             stringResource(R.string.device_manufacturer),
             info.manufacturer ?: stringResource(R.string.device_unknown_value),
@@ -626,6 +654,7 @@ private fun TransportButton(
     label: String,
     icon: ImageVector,
     selected: Boolean,
+    accent: Color,
     enabled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -640,24 +669,21 @@ private fun TransportButton(
         Text(label)
     }
     if (selected) {
-        Button(onClick = onClick, enabled = enabled, modifier = modifier) { content() }
+        Button(
+            onClick = onClick,
+            enabled = enabled,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = accent,
+                contentColor = Color.White,
+            ),
+            modifier = modifier,
+        ) { content() }
     } else {
-        OutlinedButton(onClick = onClick, enabled = enabled, modifier = modifier) { content() }
-    }
-}
-
-@Composable
-private fun QuickCommand(
-    viewModel: Pm3ViewModel,
-    command: String,
-    enabled: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    OutlinedButton(
-        onClick = { viewModel.runCommand(command) },
-        enabled = enabled,
-        modifier = modifier,
-    ) {
-        Text(command, style = MaterialTheme.typography.bodySmall)
+        OutlinedButton(
+            onClick = onClick,
+            enabled = enabled,
+            border = BorderStroke(1.dp, accent.copy(alpha = 0.4f)),
+            modifier = modifier,
+        ) { content() }
     }
 }

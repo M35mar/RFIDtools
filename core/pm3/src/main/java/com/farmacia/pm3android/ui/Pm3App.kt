@@ -13,19 +13,30 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Nfc
-import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -34,12 +45,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -77,16 +90,20 @@ import com.farmacia.pm3android.ui.nfc.ApduConsoleScreen
 import com.farmacia.pm3android.ui.nfc.MfcValueScreen
 import com.farmacia.pm3android.ui.nfc.MfuCounterScreen
 import com.farmacia.pm3android.ui.nfc.MagicUidScreen
+import com.farmacia.pm3android.ui.nfc.NdefWriterScreen
 import com.farmacia.pm3android.ui.nfc.NfcRestoreScreen
 import com.farmacia.pm3android.ui.nfc.NfcScreen
 import com.farmacia.pm3android.ui.nfc.TagInspectScreen
 import com.farmacia.pm3android.ui.settings.SettingsScreen
 import com.farmacia.pm3android.ui.theme.Pm3Theme
+import com.farmacia.pm3android.ui.theme.pm3Accents
+import com.farmacia.pm3android.ui.theme.pm3Chrome
 import com.farmacia.pm3android.ui.update.UpdatePromptDialog
 import com.farmacia.pm3android.nfc.ApduConsoleViewModel
 import com.farmacia.pm3android.nfc.MfcValueViewModel
 import com.farmacia.pm3android.nfc.MfuCounterViewModel
 import com.farmacia.pm3android.nfc.MagicUidViewModel
+import com.farmacia.pm3android.nfc.NdefWriterViewModel
 import com.farmacia.pm3android.nfc.NfcRestoreViewModel
 import com.farmacia.pm3android.nfc.TagInspectViewModel
 import com.farmacia.pm3android.update.UpdateState
@@ -94,46 +111,14 @@ import com.farmacia.pm3android.update.UpdateState
 private data class Tab(
     @StringRes val labelRes: Int,
     val icon: ImageVector,
-    val content: @Composable (
-        Pm3ViewModel,
-        NfcRestoreViewModel,
-        DumpEditorViewModel,
-        TagInspectViewModel,
-        ApduConsoleViewModel,
-        MfuCounterViewModel,
-        MfcValueViewModel,
-        MagicUidViewModel,
-    ) -> Unit,
 )
 
 private val TABS = listOf(
-    Tab(R.string.nav_device, Icons.Filled.Usb) { viewModel, _, _, _, _, _, _, _ ->
-        DeviceScreen(viewModel)
-    },
-    Tab(R.string.nav_console, Icons.AutoMirrored.Filled.List) { viewModel, _, _, _, _, _, _, _ ->
-        ConsoleScreen(viewModel = viewModel)
-    },
-    Tab(R.string.nav_nfc, Icons.Filled.Nfc) { viewModel, restore, _, inspect, apdu, counter, value, uid ->
-        NfcScreen(
-            viewModel = viewModel,
-            restoreViewModel = restore,
-            onIdentify = inspect::start,
-            onOpenApduConsole = apdu::start,
-            onOpenCounterTool = counter::start,
-            onOpenValueTool = value::start,
-            onOpenUidTool = uid::start,
-        )
-    },
-    Tab(R.string.nav_files, Icons.Filled.Share) { viewModel, restore, editor, _, _, _, _, _ ->
-        FilesScreen(
-            viewModel,
-            onRestore = restore::open,
-            onEditDump = editor::open,
-        )
-    },
-    Tab(R.string.nav_settings, Icons.Filled.Info) { viewModel, _, _, _, _, _, _, _ ->
-        SettingsScreen(viewModel)
-    },
+    Tab(R.string.nav_device, Icons.Filled.Usb),
+    Tab(R.string.nav_console, Icons.Filled.Terminal),
+    Tab(R.string.nav_nfc, Icons.Filled.Nfc),
+    Tab(R.string.nav_files, Icons.Filled.Folder),
+    Tab(R.string.nav_settings, Icons.Filled.Info),
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -150,6 +135,7 @@ fun Pm3App(
     val counterViewModel: MfuCounterViewModel = viewModel()
     val valueViewModel: MfcValueViewModel = viewModel()
     val uidViewModel: MagicUidViewModel = viewModel()
+    val ndefWriterViewModel: NdefWriterViewModel = viewModel()
     val settings by viewModel.settings.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
     val busy by viewModel.busy.collectAsState()
@@ -163,6 +149,7 @@ fun Pm3App(
     val counterState by counterViewModel.state.collectAsState()
     val valueState by valueViewModel.state.collectAsState()
     val uidState by uidViewModel.state.collectAsState()
+    val ndefWriterState by ndefWriterViewModel.state.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var selected by rememberSaveable { mutableIntStateOf(0) }
     val context = LocalContext.current
@@ -209,8 +196,10 @@ fun Pm3App(
     SideEffect {
         val window = activity?.window ?: return@SideEffect
         WindowCompat.getInsetsController(window, view).apply {
-            isAppearanceLightStatusBars = !darkTheme
-            isAppearanceLightNavigationBars = !darkTheme
+            // TopAppBar and Bottom NavigationBar use dark high-contrast chrome
+            // in both themes so system icons stay crisp and readable.
+            isAppearanceLightStatusBars = false
+            isAppearanceLightNavigationBars = false
         }
     }
     DisposableEffect(settings.keepScreenOn) {
@@ -244,55 +233,149 @@ fun Pm3App(
             Box(modifier = Modifier.fillMaxSize()) {
                 Scaffold(
                     topBar = {
-                        TopAppBar(
-                            title = { Text(stringResource(TABS[selected].labelRes)) },
-                            actions = {
-                                if (selected == 0 || selected == 1) {
-                                    ConnectionPill(
-                                        state = connectionState,
-                                        deviceAttached = device != null,
-                                        mode = settings.connectionMode,
-                                        bluetoothConfigured = settings.bluetoothAddress != null,
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                }
-                            },
-                        )
-                    },
-                    bottomBar = {
-                        NavigationBar {
-                            TABS.forEachIndexed { index, tab ->
-                                val showUpdateBadge = index == TABS.lastIndex &&
-                                    (updateState is UpdateState.Available ||
-                                        updateState is UpdateState.Downloading ||
-                                        updateState is UpdateState.Ready)
-                                val updateBadgeDescription =
-                                    stringResource(R.string.update_badge_desc)
-                                NavigationBarItem(
-                                    selected = selected == index,
-                                    onClick = { selected = index },
-                                    icon = {
-                                        if (showUpdateBadge) {
-                                            BadgedBox(
-                                                badge = { Badge() },
-                                                modifier = Modifier.semantics {
-                                                    contentDescription = updateBadgeDescription
-                                                },
-                                            ) {
-                                                Icon(
-                                                    imageVector = tab.icon,
-                                                    contentDescription = null,
-                                                )
-                                            }
-                                        } else {
+                        val accents = MaterialTheme.pm3Accents
+                        val chrome = MaterialTheme.pm3Chrome
+                        val tabAccent = when (selected) {
+                            0 -> accents.usb
+                            1 -> accents.info
+                            2 -> accents.hf
+                            3 -> accents.lf
+                            else -> accents.script
+                        }
+                        Column {
+                            TopAppBar(
+                                colors = TopAppBarDefaults.topAppBarColors(
+                                    containerColor = chrome.topBarBg,
+                                    titleContentColor = Color(0xFFF8FAFC),
+                                    actionIconContentColor = Color(0xFFF8FAFC),
+                                ),
+                                title = {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        Surface(
+                                            shape = MaterialTheme.shapes.small,
+                                            color = tabAccent.copy(alpha = 0.22f),
+                                        ) {
                                             Icon(
-                                                imageVector = tab.icon,
-                                                contentDescription = stringResource(tab.labelRes),
+                                                imageVector = TABS[selected].icon,
+                                                contentDescription = null,
+                                                tint = tabAccent,
+                                                modifier = Modifier
+                                                    .padding(5.dp)
+                                                    .size(20.dp),
                                             )
                                         }
-                                    },
-                                    label = { Text(stringResource(tab.labelRes)) },
-                                )
+                                        Text(
+                                            text = stringResource(TABS[selected].labelRes),
+                                            color = Color(0xFFF8FAFC),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                },
+                                actions = {
+                                    if (selected == 0 || selected == 1 ||
+                                        connectionState != Pm3ConnectionState.DISCONNECTED
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        ) {
+                                            ConnectionPill(
+                                                state = connectionState,
+                                                deviceAttached = device != null,
+                                                mode = settings.connectionMode,
+                                                bluetoothConfigured = settings.bluetoothAddress != null,
+                                            )
+                                            if (selected == 1) {
+                                                val canConnect = !busy &&
+                                                    connectionState != Pm3ConnectionState.CONNECTED &&
+                                                    if (settings.connectionMode == ConnectionMode.USB) {
+                                                        device != null
+                                                    } else {
+                                                        settings.bluetoothAddress != null
+                                                    }
+                                                CompactConnectPill(
+                                                    state = connectionState,
+                                                    busy = busy,
+                                                    canConnect = canConnect,
+                                                    mode = settings.connectionMode,
+                                                    onConnect = viewModel::connect,
+                                                    onDisconnect = viewModel::disconnect,
+                                                )
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                    }
+                                },
+                            )
+                            HorizontalDivider(
+                                thickness = 1.dp,
+                                color = chrome.chromeDivider,
+                            )
+                        }
+                    },
+                    bottomBar = {
+                        val accents = MaterialTheme.pm3Accents
+                        val chrome = MaterialTheme.pm3Chrome
+                        Column {
+                            HorizontalDivider(
+                                thickness = 1.5.dp,
+                                color = chrome.chromeDivider,
+                            )
+                            NavigationBar(
+                                containerColor = chrome.bottomBarBg,
+                                tonalElevation = 0.dp,
+                            ) {
+                                TABS.forEachIndexed { index, tab ->
+                                    val itemAccent = when (index) {
+                                        0 -> accents.usb
+                                        1 -> accents.info
+                                        2 -> accents.hf
+                                        3 -> accents.lf
+                                        else -> accents.script
+                                    }
+                                    val showUpdateBadge = index == TABS.lastIndex &&
+                                        (updateState is UpdateState.Available ||
+                                            updateState is UpdateState.Downloading ||
+                                            updateState is UpdateState.Ready)
+                                    val updateBadgeDescription =
+                                        stringResource(R.string.update_badge_desc)
+                                    NavigationBarItem(
+                                        selected = selected == index,
+                                        onClick = { selected = index },
+                                        colors = NavigationBarItemDefaults.colors(
+                                            selectedIconColor = itemAccent,
+                                            selectedTextColor = itemAccent,
+                                            unselectedIconColor = chrome.bottomBarUnselected,
+                                            unselectedTextColor = chrome.bottomBarUnselected,
+                                            indicatorColor = itemAccent.copy(alpha = 0.22f),
+                                        ),
+                                        icon = {
+                                            if (showUpdateBadge) {
+                                                BadgedBox(
+                                                    badge = { Badge(containerColor = accents.danger) },
+                                                    modifier = Modifier.semantics {
+                                                        contentDescription = updateBadgeDescription
+                                                    },
+                                                ) {
+                                                    Icon(
+                                                        imageVector = tab.icon,
+                                                        contentDescription = null,
+                                                    )
+                                                }
+                                            } else {
+                                                Icon(
+                                                    imageVector = tab.icon,
+                                                    contentDescription = stringResource(tab.labelRes),
+                                                )
+                                            }
+                                        },
+                                        label = { Text(stringResource(tab.labelRes)) },
+                                    )
+                                }
                             }
                         }
                     },
@@ -307,16 +390,26 @@ fun Pm3App(
                             .padding(padding)
                             .consumeWindowInsets(padding),
                     ) {
-                        TABS[selected].content(
-                            viewModel,
-                            restoreViewModel,
-                            editorViewModel,
-                            inspectViewModel,
-                            apduViewModel,
-                            counterViewModel,
-                            valueViewModel,
-                            uidViewModel,
-                        )
+                        when (selected) {
+                            0 -> DeviceScreen(viewModel)
+                            1 -> ConsoleScreen(viewModel = viewModel)
+                            2 -> NfcScreen(
+                                viewModel = viewModel,
+                                restoreViewModel = restoreViewModel,
+                                onIdentify = inspectViewModel::start,
+                                onOpenApduConsole = apduViewModel::start,
+                                onOpenCounterTool = counterViewModel::start,
+                                onOpenValueTool = valueViewModel::start,
+                                onOpenUidTool = uidViewModel::start,
+                                onOpenNdefWriter = ndefWriterViewModel::start,
+                            )
+                            3 -> FilesScreen(
+                                viewModel,
+                                onRestore = restoreViewModel::open,
+                                onEditDump = editorViewModel::open,
+                            )
+                            else -> SettingsScreen(viewModel)
+                        }
                     }
                 }
 
@@ -397,6 +490,14 @@ fun Pm3App(
                     )
                 }
 
+                if (ndefWriterState.visible) {
+                    NdefWriterScreen(
+                        state = ndefWriterState,
+                        viewModel = ndefWriterViewModel,
+                        onClose = ndefWriterViewModel::close,
+                    )
+                }
+
                 // The APDU console is the manual escape hatch: same overlay
                 // level, its own ISO-DEP connection.
                 if (apduState.visible) {
@@ -418,19 +519,92 @@ private fun ConnectionPill(
     mode: ConnectionMode,
     bluetoothConfigured: Boolean,
 ) {
+    val accents = MaterialTheme.pm3Accents
     val (text, color) = when {
         state == Pm3ConnectionState.CONNECTED ->
-            stringResource(R.string.status_connected) to MaterialTheme.colorScheme.primary
+            stringResource(R.string.status_connected) to accents.success
         state == Pm3ConnectionState.CONNECTING ->
-            stringResource(R.string.status_connecting) to MaterialTheme.colorScheme.tertiary
+            stringResource(R.string.status_connecting) to accents.lf
         mode == ConnectionMode.BLUETOOTH && bluetoothConfigured ->
-            stringResource(R.string.status_bluetooth_ready) to MaterialTheme.colorScheme.secondary
+            stringResource(R.string.status_bluetooth_ready) to accents.bluetooth
         mode == ConnectionMode.BLUETOOTH ->
             stringResource(R.string.status_bluetooth_not_configured) to MaterialTheme.colorScheme.outline
         deviceAttached ->
-            stringResource(R.string.status_usb_attached) to MaterialTheme.colorScheme.secondary
+            stringResource(R.string.status_usb_attached) to accents.usb
         else ->
             stringResource(R.string.status_usb_not_attached) to MaterialTheme.colorScheme.outline
     }
     StatusPill(text = text, color = color)
 }
+
+@Composable
+private fun CompactConnectPill(
+    state: Pm3ConnectionState,
+    busy: Boolean,
+    canConnect: Boolean,
+    mode: ConnectionMode,
+    onConnect: () -> Unit,
+    onDisconnect: () -> Unit,
+) {
+    val accents = MaterialTheme.pm3Accents
+    val connectAccent = if (mode == ConnectionMode.BLUETOOTH) accents.bluetooth else accents.usb
+    val (label, accent, enabled, onClick) = when (state) {
+        Pm3ConnectionState.CONNECTED -> Quad(
+            stringResource(R.string.action_disconnect),
+            if (busy) accents.lf else accents.danger,
+            !busy,
+            onDisconnect,
+        )
+        Pm3ConnectionState.CONNECTING -> Quad(
+            "…",
+            accents.lf,
+            false,
+            {},
+        )
+        Pm3ConnectionState.DISCONNECTED -> Quad(
+            stringResource(R.string.action_connect),
+            if (canConnect) connectAccent else MaterialTheme.colorScheme.outline,
+            canConnect,
+            onConnect,
+        )
+    }
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        color = if (state == Pm3ConnectionState.DISCONNECTED && canConnect) {
+            accent.copy(alpha = 0.30f)
+        } else {
+            accent.copy(alpha = 0.20f)
+        },
+        shape = MaterialTheme.shapes.extraLarge,
+        border = BorderStroke(1.dp, accent.copy(alpha = if (enabled) 0.70f else 0.35f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            if (busy || state == Pm3ConnectionState.CONNECTING) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(11.dp),
+                    strokeWidth = 1.8.dp,
+                    color = accents.lf,
+                )
+            }
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = if (enabled || busy || state == Pm3ConnectionState.CONNECTING) {
+                    Color(0xFFF8FAFC)
+                } else {
+                    Color(0xFF94A3B8)
+                },
+                maxLines = 1,
+                softWrap = false,
+            )
+        }
+    }
+}
+
+private data class Quad<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)

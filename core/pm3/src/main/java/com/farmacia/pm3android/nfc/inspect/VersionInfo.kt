@@ -64,7 +64,17 @@ class VersionInfo(
         }
 
     /** Total pages of an Ultralight/NTAG memory map, when the size is known. */
-    val pageCount: Int? get() = PAGE_COUNTS[storageCode]
+    val pageCount: Int?
+        get() = when (productType) {
+            TYPE_ULTRALIGHT -> when (storageCode) {
+                0x0B -> 20
+                0x0E -> 41
+                0x0F -> 41 // MIFARE Ultralight AES (MF0AES(H)20)
+                else -> null
+            }
+            TYPE_NTAG -> PAGE_COUNTS[storageCode]
+            else -> PAGE_COUNTS[storageCode]
+        }
 
     /**
      * Product name for the families whose map is known exactly. Unknown codes
@@ -73,7 +83,13 @@ class VersionInfo(
     val productName: String
         get() = when (productType) {
             TYPE_ULTRALIGHT -> when (storageCode) {
-                0x0B -> "MIFARE Ultralight EV1 (48 B)"
+                0x0B -> if (productSubtype == 0x01 && major == 0x01 && minor == 0x00) {
+                    "MIFARE Ultralight EV1 (48 B)"
+                } else if (productSubtype == 0x02) {
+                    "MIFARE Ultralight Nano (48 B)"
+                } else {
+                    "MIFARE Ultralight EV1 (48 B)"
+                }
                 0x0E -> "MIFARE Ultralight EV1 (128 B)"
                 0x0F -> "MIFARE Ultralight AES"
                 else -> "MIFARE Ultralight"
@@ -82,9 +98,18 @@ class VersionInfo(
             TYPE_NTAG -> when (storageCode) {
                 0x0B -> if (productSubtype == 0x02) "NTAG210u" else "NTAG210"
                 0x0E -> "NTAG212"
-                0x0F -> "NTAG213"
-                0x11 -> "NTAG215"
-                0x13 -> "NTAG216"
+                0x0F -> when (productSubtype) {
+                    0x04 -> "NTAG213F"
+                    0x05 -> "NTAG213 TT"
+                    else -> "NTAG213"
+                }
+                0x11 -> if (productSubtype == 0x02 && major >= 0x30) "NTAG 424 DNA" else "NTAG215"
+                0x13 -> when {
+                    productSubtype == 0x04 -> "NTAG216F"
+                    productSubtype == 0x05 -> "NTAG I2C 1K"
+                    else -> "NTAG216"
+                }
+                0x15 -> "NTAG I2C 2K"
                 else -> "NTAG"
             }
 
@@ -162,10 +187,14 @@ class VersionInfo(
         }
 
         fun vendorNameOf(vendorId: Int): String = when (vendorId) {
-            VENDOR_NXP -> "NXP"
+            0x02 -> "STMicroelectronics"
             0x03 -> "Hitachi"
+            VENDOR_NXP -> "NXP"
             0x05 -> "Infineon"
+            0x07 -> "Texas Instruments"
+            0x08 -> "Fujitsu"
             0x16 -> "EM Microelectronic"
+            0x1D -> "Fudan Microelectronics"
             0x34 -> "Mikron"
             0x53 -> "Feiju"
             else -> "0x%02X".format(vendorId)

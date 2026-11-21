@@ -33,7 +33,9 @@ object Iso15693Probe : HfProbe {
         context.session.withNfcV { transport ->
             val abort = context.abort
             val systemInfo = attempt(abort) {
-                Iso15693.parseSystemInfo(transport.transceive(Iso15693.getSystemInfo()))
+                Iso15693.parseSystemInfo(transport.transceive(Iso15693.getSystemInfo()), extended = false)
+            } ?: attempt(abort) {
+                Iso15693.parseSystemInfo(transport.transceive(Iso15693.getExtendedSystemInfo()), extended = true)
             }
 
             val firstBlock = attempt(abort) {
@@ -42,13 +44,13 @@ object Iso15693Probe : HfProbe {
 
             val blockSize = systemInfo?.blockSize ?: firstBlock?.size
             val ndef = attempt(abort) {
-                readNdef(transport, blockSize, firstBlock)
+                readNdef(transport, blockSize, firstBlock, systemInfo?.blockCount)
             } ?: NdefContent.absent
 
             val uid = context.snapshot.uid
             val manufacturer = Iso15693Info.manufacturer(uid)
             val family = familyOf(manufacturer)
-            val label = labelOf(family, manufacturer)
+            val label = labelOf(family, manufacturer, systemInfo?.icReference, systemInfo?.blockCount)
             val details = Iso15693Info.details(
                 tagId = uid,
                 dsfid = systemInfo?.dsfid,
@@ -102,6 +104,7 @@ object Iso15693Probe : HfProbe {
         transport: com.farmacia.pm3android.nfc.inspect.NfcVTransport,
         blockSize: Int?,
         block0: ByteArray?,
+        totalBlocks: Int?,
     ): NdefContent {
         val first = block0 ?: Iso15693.parseBlockData(transport.transceive(Iso15693.readBlock(0)))
             ?: return NdefContent.absent
@@ -109,29 +112,34 @@ object Iso15693Probe : HfProbe {
             ?: first.size.takeIf { it in 1..64 }
             ?: 4
         if (first.size < CC_BYTES) return NdefContent.absent
-        if ((first[0].toInt() and 0xFF) != CC_MAGIC) return NdefContent.absent
+        val magic = first[0].toInt() and 0xFF
+        if (magic != CC_MAGIC && magic != CC_MAGIC_EXTENDED) return NdefContent.absent
+
+        // NFC Forum Type 5: 8-byte CC when magic is 0xE2 or MLEN (byte 2) is 0x00.
+        val ccLen = if (magic == CC_MAGIC_EXTENDED || first[2].toInt() == 0) 8 else CC_BYTES
+        val maxBlocks = (totalBlocks ?: Iso15693.MAX_BLOCKS).coerceIn(1, 512)
 
         val memory = ByteArrayOutputStream()
         memory.write(first)
         var block = 1
-        while (memory.size() < CC_BYTES + 2 && block < Iso15693.MAX_BLOCKS) {
+        while (memory.size() < ccLen + 4 && block < maxBlocks) {
             val next = Iso15693.parseBlockData(
-                transport.transceive(Iso15693.readBlock(block)),
+                transport.transceive(Iso15693.readAnyBlock(block)),
             ) ?: return NdefContent.absent
             memory.write(next)
             block++
         }
 
-        val total = tlvLength(memory.toByteArray(), CC_BYTES) ?: return NdefContent.absent
-        val needed = CC_BYTES + total
-        if (needed > Iso15693.MAX_BLOCKS * size) return NdefContent.absent
+        val total = tlvLength(memory.toByteArray(), ccLen) ?: return NdefContent.absent
+        val needed = ccLen + total
+        if (needed > maxBlocks * size) return NdefContent.absent
 
-        while (memory.size() < needed && block < Iso15693.MAX_BLOCKS) {
+        while (memory.size() < needed && block < maxBlocks) {
             val next = Iso15693.parseBlockData(
-                transport.transceive(Iso15693.readBlock(block)),
+                transport.transceive(Iso15693.readAnyBlock(block)),
             ) ?: return NdefContent(
                 emptyList(),
-                (memory.size() - CC_BYTES).coerceAtLeast(0),
+                (memory.size() - ccLen).coerceAtLeast(0),
                 NdefStatus.TRUNCATED,
             )
             memory.write(next)
@@ -141,11 +149,11 @@ object Iso15693Probe : HfProbe {
         if (data.size < needed) {
             return NdefContent(
                 emptyList(),
-                (data.size - CC_BYTES).coerceAtLeast(0),
+                (data.size - ccLen).coerceAtLeast(0),
                 NdefStatus.TRUNCATED,
             )
         }
-        return NdefParser.parseTlv(data.copyOfRange(CC_BYTES, needed))
+        return NdefParser.parseTlv(data.copyOfRange(ccLen, needed))
     }
 
     /** Total bytes of the NDEF TLV (header included), or null when absent. */
@@ -191,15 +199,36 @@ object Iso15693Probe : HfProbe {
         else -> TagFamily.ISO_15693
     }
 
-    private fun labelOf(family: TagFamily, manufacturer: String?): String = when (family) {
-        TagFamily.ICODE -> "NXP ICODE (ISO 15693)"
-        TagFamily.ST25 -> "ST25TV / ST25DV (ISO 15693)"
+    private fun labelOf(
+        family: TagFamily,
+        manufacturer: String?,
+        icRef: Int?,
+        blocks: Int?,
+    ): String = when (family) {
+        TagFamily.ICODE -> when {
+            icRef == 0x01 && blocks != null && blocks >= 75 -> "NXP ICODE SLIX2 (ISO 15693)"
+            icRef == 0x01 && blocks != null && blocks in 28..36 -> "NXP ICODE SLIX (ISO 15693)"
+            icRef == 0x02 -> "NXP ICODE SLIX-S (ISO 15693)"
+            icRef == 0x03 -> "NXP ICODE SLIX-L (ISO 15693)"
+            else -> "NXP ICODE (ISO 15693)"
+        }
+        TagFamily.ST25 -> when (icRef) {
+            0x23 -> "ST25TV512 / ST25TV02K (ISO 15693)"
+            0x24 -> "ST25DV04K (ISO 15693)"
+            0x25 -> "ST25DV16K (ISO 15693)"
+            0x26 -> "ST25DV64K (ISO 15693)"
+            else -> "ST25TV / ST25DV (ISO 15693)"
+        }
         TagFamily.EM_MICROELECTRONIC -> "EM Microelectronic (ISO 15693)"
         TagFamily.SLE66R -> "Infineon SLE66R / my-d (ISO 15693)"
-        else -> "ISO 15693${manufacturer?.let { " · $it" } ?: ""}"
+        else -> when (manufacturer) {
+            "Texas Instruments" -> "TI Tag-it HF-I (ISO 15693)"
+            else -> "ISO 15693${manufacturer?.let { " · $it" } ?: ""}"
+        }
     }
 
-    /** Capability container: magic 0xE1, version, size, access. */
+    /** Capability container: magic 0xE1 (4-byte) or 0xE2 (8-byte extended). */
     private const val CC_BYTES = 4
     private const val CC_MAGIC = 0xE1
+    private const val CC_MAGIC_EXTENDED = 0xE2
 }

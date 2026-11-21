@@ -81,5 +81,37 @@ class ConsoleAnsiTest {
     fun `strip removes every sequence and keeps normal text`() {
         assertEquals("plain text", ConsoleAnsi.stripAnsi("\u001B[32mplain\u001B[0m text"))
         assertEquals("no escapes", ConsoleAnsi.stripAnsi("no escapes"))
+        assertEquals("progress", ConsoleAnsi.stripAnsi("\u001B[2K\u001B[Gprogress"))
+    }
+
+    @Test
+    fun `zero errors is not classified as error`() {
+        assertEquals(ConsoleStyle.SUCCESS, ConsoleAnsi.classify("[+] 0 failed, 16 succeeded"))
+        assertEquals(ConsoleStyle.NORMAL, ConsoleAnsi.classify("Finished with 0 errors"))
+    }
+
+    @Test
+    fun `256-color and truecolor sgr codes set rgbColor and background`() {
+        val seg256 = ConsoleAnsi.parse("\u001B[38;5;196;44malert\u001B[0m").single()
+        assertEquals("alert", seg256.text)
+        assertEquals(0xFF0000, seg256.rgbColor)
+        assertEquals(AnsiColor.BLUE, seg256.background)
+
+        val segRgb = ConsoleAnsi.parse("\u001B[38;2;16;185;129;4;3memerald\u001B[0m").single()
+        assertEquals("emerald", segRgb.text)
+        assertEquals(0x10B981, segRgb.rgbColor)
+        assertTrue(segRgb.underline)
+        assertTrue(segRgb.italic)
+    }
+
+    @Test
+    fun `highlight tokenises plain pm3 lines into multi-colour segments`() {
+        val segments = ConsoleAnsi.highlight("[+] UID: 04 A1 B2 C3")
+        assertTrue(segments.size >= 4)
+        assertEquals("[+]", segments[0].text)
+        assertEquals(AnsiColor.BRIGHT_GREEN, segments[0].color)
+        assertTrue(segments[0].bold)
+        assertTrue(segments.any { it.text == "UID" && it.color == AnsiColor.CYAN })
+        assertTrue(segments.any { it.text == "04" })
     }
 }

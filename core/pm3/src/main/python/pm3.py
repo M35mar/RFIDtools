@@ -19,9 +19,11 @@ class pm3:
         # The upstream constructor accepts options for the native wrapper. The
         # Android bridge uses the already-open client session instead.
         _ = args, kwargs
+        self._grabbed_output = ""
 
     def console(self, cmd, capture=True, quiet=True):
         output = _Bridge.console(str(cmd), bool(capture), bool(quiet))
+        self._grabbed_output = output if capture else ""
         # The Android bridge always captures. Emulate the upstream quiet=False
         # and capture=False behaviour by writing the output to stdout, which
         # pm3_runner redirects into the app console.
@@ -35,4 +37,4 @@ class pm3:
 
     @property
     def grabbed_output(self):
-        return ""
+        return self._grabbed_output

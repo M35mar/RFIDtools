@@ -8,6 +8,8 @@ package com.farmacia.pm3android.ui.nfc
 
 import android.nfc.NfcAdapter
 import androidx.activity.compose.LocalActivity
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -23,9 +25,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.CreditCard
+import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Nfc
 import androidx.compose.material.icons.filled.SaveAlt
@@ -48,6 +52,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -63,6 +69,7 @@ import com.farmacia.pm3android.nfc.NfcRestoreViewModel
 import com.farmacia.pm3android.nfc.NfcSession
 import com.farmacia.pm3android.ui.components.StatusPill
 import com.farmacia.pm3android.ui.console.Pm3ViewModel
+import com.farmacia.pm3android.ui.theme.pm3Accents
 
 @Composable
 fun NfcScreen(
@@ -73,6 +80,7 @@ fun NfcScreen(
     onOpenCounterTool: () -> Unit,
     onOpenValueTool: () -> Unit,
     onOpenUidTool: () -> Unit,
+    onOpenNdefWriter: () -> Unit,
 ) {
     val files by viewModel.files.collectAsState()
     val context = LocalContext.current
@@ -113,6 +121,7 @@ fun NfcScreen(
         )
 
         if (available) {
+            val accents = MaterialTheme.pm3Accents
             Text(
                 text = stringResource(R.string.nfc_screen_desc),
                 style = MaterialTheme.typography.bodyMedium,
@@ -129,6 +138,7 @@ fun NfcScreen(
                     icon = Icons.Filled.Nfc,
                     title = stringResource(R.string.nfc_read_title),
                     description = stringResource(R.string.nfc_read_desc),
+                    accent = accents.usb,
                     enabled = nfcEnabled,
                     modifier = Modifier.weight(1f),
                     onClick = onIdentify,
@@ -137,6 +147,7 @@ fun NfcScreen(
                     icon = Icons.Filled.SaveAlt,
                     title = stringResource(R.string.nfc_write_title),
                     description = stringResource(R.string.nfc_write_desc),
+                    accent = accents.hf,
                     enabled = nfcEnabled,
                     modifier = Modifier.weight(1f),
                     onClick = {
@@ -148,6 +159,7 @@ fun NfcScreen(
                     icon = Icons.AutoMirrored.Filled.Send,
                     title = stringResource(R.string.apdu_title),
                     description = stringResource(R.string.nfc_apdu_desc),
+                    accent = accents.bluetooth,
                     enabled = nfcEnabled,
                     modifier = Modifier.weight(1f),
                     onClick = onOpenApduConsole,
@@ -163,6 +175,7 @@ fun NfcScreen(
                     icon = Icons.Filled.AddCircle,
                     title = stringResource(R.string.nfc_counter_title),
                     description = stringResource(R.string.nfc_counter_desc),
+                    accent = accents.lf,
                     enabled = nfcEnabled,
                     modifier = Modifier.weight(1f),
                     onClick = onOpenCounterTool,
@@ -171,6 +184,7 @@ fun NfcScreen(
                     icon = Icons.Filled.CreditCard,
                     title = stringResource(R.string.nfc_value_title),
                     description = stringResource(R.string.nfc_value_desc),
+                    accent = accents.script,
                     enabled = nfcEnabled,
                     modifier = Modifier.weight(1f),
                     onClick = onOpenValueTool,
@@ -179,11 +193,20 @@ fun NfcScreen(
                     icon = Icons.Filled.Fingerprint,
                     title = stringResource(R.string.nfc_uid_title),
                     description = stringResource(R.string.nfc_uid_desc),
+                    accent = accents.danger,
                     enabled = nfcEnabled,
                     modifier = Modifier.weight(1f),
                     onClick = onOpenUidTool,
                 )
             }
+            NfcWideTile(
+                icon = Icons.Filled.EditNote,
+                title = stringResource(R.string.nfc_ndef_title),
+                description = stringResource(R.string.nfc_ndef_desc),
+                accent = accents.info,
+                enabled = nfcEnabled,
+                onClick = onOpenNdefWriter,
+            )
         }
     }
 
@@ -205,10 +228,11 @@ private fun NfcHeroCard(
     enabled: Boolean,
     onOpenSettings: () -> Unit,
 ) {
+    val accents = MaterialTheme.pm3Accents
     val statusColor = when {
         !available -> MaterialTheme.colorScheme.outline
-        enabled -> MaterialTheme.colorScheme.primary
-        else -> MaterialTheme.colorScheme.error
+        enabled -> accents.hf
+        else -> accents.danger
     }
     val statusText = when {
         !available -> stringResource(R.string.nfc_status_unavailable)
@@ -218,11 +242,21 @@ private fun NfcHeroCard(
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
         shape = MaterialTheme.shapes.extraLarge,
+        border = BorderStroke(1.25.dp, statusColor.copy(alpha = 0.35f)),
     ) {
         Column(
-            modifier = Modifier.padding(18.dp),
+            modifier = Modifier
+                .background(
+                    Brush.linearGradient(
+                        colors = listOf(
+                            statusColor.copy(alpha = 0.16f),
+                            accents.usb.copy(alpha = 0.06f),
+                        ),
+                    ),
+                )
+                .padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Row(
@@ -231,12 +265,12 @@ private fun NfcHeroCard(
             ) {
                 Surface(
                     shape = CircleShape,
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+                    color = statusColor.copy(alpha = 0.18f),
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Nfc,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
+                        tint = statusColor,
                         modifier = Modifier
                             .padding(12.dp)
                             .size(30.dp),
@@ -281,6 +315,7 @@ private fun NfcTile(
     icon: ImageVector,
     title: String,
     description: String,
+    accent: Color,
     enabled: Boolean,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
@@ -290,7 +325,11 @@ private fun NfcTile(
         enabled = enabled,
         modifier = modifier.fillMaxHeight(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        ),
+        border = BorderStroke(
+            width = 1.dp,
+            color = if (enabled) accent.copy(alpha = 0.35f) else MaterialTheme.colorScheme.outlineVariant,
         ),
     ) {
         Column(
@@ -301,12 +340,12 @@ private fun NfcTile(
         ) {
             Surface(
                 shape = CircleShape,
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                color = accent.copy(alpha = 0.16f),
             ) {
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = accent,
                     modifier = Modifier
                         .padding(10.dp)
                         .size(24.dp),
@@ -324,6 +363,70 @@ private fun NfcTile(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun NfcWideTile(
+    icon: ImageVector,
+    title: String,
+    description: String,
+    accent: Color,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    Card(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        ),
+        border = BorderStroke(
+            width = 1.dp,
+            color = if (enabled) accent.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outlineVariant,
+        ),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = accent.copy(alpha = 0.16f),
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = accent,
+                    modifier = Modifier
+                        .padding(10.dp)
+                        .size(24.dp),
+                )
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = accent,
             )
         }
     }

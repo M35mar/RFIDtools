@@ -28,6 +28,8 @@
 
 // The client is not thread-safe for command dispatch; serialise everything.
 static pthread_mutex_t g_api_lock = PTHREAD_MUTEX_INITIALIZER;
+// Guards pm3_present transitions against concurrent streaming grabs / closes.
+static pthread_mutex_t g_grab_state_lock = PTHREAD_MUTEX_INITIALIZER;
 
 // Route client output of the call in progress into the grabber, so it can be
 // returned to Java instead of being printed to stdout (which goes nowhere).
@@ -37,21 +39,84 @@ static void grab_arm(uint8_t *previous) {
     g_printAndLog &= (uint8_t) ~PRINTANDLOG_PRINT;
 }
 
+// Sanitises arbitrary byte output into valid Modified UTF-8 (BMP only, no raw
+// NULs or invalid byte sequences) so ART's NewStringUTF() can never abort the
+// process on binary/4-byte sequences printed by scripts or dumps.
+static char *sanitize_for_jni_utf8(const char *src) {
+    if (src == NULL) {
+        return NULL;
+    }
+    size_t len = strlen(src);
+    char *out = (char *) malloc(len + 1);
+    if (out == NULL) {
+        return NULL;
+    }
+    size_t i = 0;
+    size_t o = 0;
+    while (i < len) {
+        unsigned char c = (unsigned char) src[i];
+        if (c >= 0x01 && c <= 0x7F) {
+            out[o++] = (char) c;
+            i++;
+        } else if ((c & 0xE0) == 0xC0 && i + 1 < len) {
+            unsigned char c1 = (unsigned char) src[i + 1];
+            unsigned int cp = ((unsigned int) (c & 0x1F) << 6) | (c1 & 0x3F);
+            if ((c1 & 0xC0) == 0x80 && cp >= 0x80) {
+                out[o++] = (char) c;
+                out[o++] = (char) c1;
+                i += 2;
+            } else {
+                out[o++] = '?';
+                i++;
+            }
+        } else if ((c & 0xF0) == 0xE0 && i + 2 < len) {
+            unsigned char c1 = (unsigned char) src[i + 1];
+            unsigned char c2 = (unsigned char) src[i + 2];
+            unsigned int cp = ((unsigned int) (c & 0x0F) << 12) |
+                              ((unsigned int) (c1 & 0x3F) << 6) |
+                              (c2 & 0x3F);
+            if ((c1 & 0xC0) == 0x80 && (c2 & 0xC0) == 0x80 &&
+                cp >= 0x800 && !(cp >= 0xD800 && cp <= 0xDFFF)) {
+                out[o++] = (char) c;
+                out[o++] = (char) c1;
+                out[o++] = (char) c2;
+                i += 3;
+            } else {
+                out[o++] = '?';
+                i++;
+            }
+        } else if ((c & 0xF8) == 0xF0 && i + 3 < len) {
+            // 4-byte UTF-8 is rejected by JNI NewStringUTF (expects CESU-8);
+            // replace the whole sequence with '?' to avoid ART fatal aborts.
+            unsigned char c1 = (unsigned char) src[i + 1];
+            unsigned char c2 = (unsigned char) src[i + 2];
+            unsigned char c3 = (unsigned char) src[i + 3];
+            out[o++] = '?';
+            if ((c1 & 0xC0) == 0x80 && (c2 & 0xC0) == 0x80 && (c3 & 0xC0) == 0x80) {
+                i += 4;
+            } else {
+                i++;
+            }
+        } else {
+            out[o++] = '?';
+            i++;
+        }
+    }
+    out[o] = '\0';
+    return out;
+}
+
 // Takes ownership of a grabber copy and turns it into a Java string.
 static jstring grab_to_string(JNIEnv *env, char *text) {
-    // NewStringUTF wants modified UTF-8; client output is plain printable text
-    // (ANSI colours are off by default), so a straight conversion is fine.
-    jstring result = (*env)->NewStringUTF(env, text != NULL ? text : "");
+    char *safe = sanitize_for_jni_utf8(text);
     free(text);
+    jstring result = (*env)->NewStringUTF(env, safe != NULL ? safe : "");
+    free(safe);
     if (result == NULL) {
+        (*env)->ExceptionClear(env);
         result = (*env)->NewStringUTF(env, "");
     }
     return result;
-}
-
-// Final drain: includes a trailing partial character, if any.
-static jstring grab_take(JNIEnv *env) {
-    return grab_to_string(env, grabber_take_all());
 }
 
 // Called once, before anything that touches $HOME (preferences, resources,
@@ -80,31 +145,40 @@ static jstring native_open(JNIEnv *env, __attribute__((unused)) jclass clazz, js
     grab_arm(&previous);
     pm3_init();
     preferences_load();
+    // Enable ANSI colour emission so the Android console receives the same
+    // token-level colours as the desktop Proxmark3 terminal.
+    g_session.supports_colors = true;
     OpenProxmark(&g_session.current_device, port_name, false, 20, false, USART_BAUD_RATE);
     if (g_session.pm3_present && TestProxmark(g_session.current_device) != PM3_SUCCESS) {
         CloseProxmark(g_session.current_device);
     }
     g_printAndLog = previous;
+    char *captured = grabber_take_all();
 
     pthread_mutex_unlock(&g_api_lock);
 
     (*env)->ReleaseStringUTFChars(env, port, port_name);
-    return grab_take(env);
+    return grab_to_string(env, captured);
 }
 
 static void native_close(JNIEnv *env, __attribute__((unused)) jclass clazz) {
     (void) env;
     pthread_mutex_lock(&g_api_lock);
+    pthread_mutex_lock(&g_grab_state_lock);
     if (g_session.pm3_present) {
         pm3_close(g_session.current_device);
     }
     free_grabber();
+    pthread_mutex_unlock(&g_grab_state_lock);
     pthread_mutex_unlock(&g_api_lock);
 }
 
 static jboolean native_is_open(JNIEnv *env, __attribute__((unused)) jclass clazz) {
     (void) env;
-    return g_session.pm3_present ? JNI_TRUE : JNI_FALSE;
+    pthread_mutex_lock(&g_grab_state_lock);
+    jboolean open = g_session.pm3_present ? JNI_TRUE : JNI_FALSE;
+    pthread_mutex_unlock(&g_grab_state_lock);
+    return open;
 }
 
 // Run one client command and return everything it printed. Blocks for as long
@@ -128,38 +202,62 @@ static jstring native_exec(JNIEnv *env, __attribute__((unused)) jclass clazz, js
     }
     // A stop request only applies to the command that was running when it was
     // pressed, so the flag starts clean for every new command.
-    g_user_interrupt = false;
+    __atomic_store_n(&g_user_interrupt, false, __ATOMIC_RELEASE);
+    pm3_input_cancel();
+    g_session.supports_colors = true;
     pm3_console(g_session.current_device, cmd_copy, true, true);
+    char *captured = grabber_take_all();
     pthread_mutex_unlock(&g_api_lock);
 
     free(cmd_copy);
-    return grab_take(env);
+    return grab_to_string(env, captured);
 }
 
 // Drops the output accumulated so far, so the UI can stream it while the
 // command is still running. Safe to call from another thread.
 static jstring native_grab(JNIEnv *env, __attribute__((unused)) jclass clazz) {
-    if (g_session.pm3_present == false) {
+    pthread_mutex_lock(&g_grab_state_lock);
+    char *chunk = g_session.pm3_present ? grabber_take_copy() : NULL;
+    pthread_mutex_unlock(&g_grab_state_lock);
+    if (chunk == NULL) {
         return (*env)->NewStringUTF(env, "");
     }
-    return grab_to_string(env, grabber_take_copy());
+    return grab_to_string(env, chunk);
 }
 
-// Asks the command in progress to stop: long loops poll g_user_interrupt and
-// Lua scripts hit the debug hook set in cmdscript.c.
+// True while a running Lua script is blocked inside io.read() awaiting input.
+static jboolean native_is_waiting_input(JNIEnv *env, __attribute__((unused)) jclass clazz) {
+    (void) env;
+    return pm3_input_is_waiting() ? JNI_TRUE : JNI_FALSE;
+}
+
+// Delivers a line typed by the user in the console to a waiting Lua script.
+static void native_send_input(JNIEnv *env, __attribute__((unused)) jclass clazz, jstring input) {
+    const char *chars = input != NULL ? (*env)->GetStringUTFChars(env, input, NULL) : NULL;
+    pm3_input_provide(chars != NULL ? chars : "");
+    if (chars != NULL) {
+        (*env)->ReleaseStringUTFChars(env, input, chars);
+    }
+}
+
+// Asks the command in progress to stop: long loops poll g_user_interrupt,
+// Lua scripts hit the debug hook and any blocked io.read() wakes immediately.
 static void native_abort(JNIEnv *env, __attribute__((unused)) jclass clazz) {
     (void) env;
-    g_user_interrupt = true;
+    __atomic_store_n(&g_user_interrupt, true, __ATOMIC_RELEASE);
+    pm3_input_cancel();
 }
 
 static JNINativeMethod methods[] = {
-    {"nativeInit",    "(Ljava/lang/String;)Z",                  (void *) native_init},
-    {"nativeOpen",    "(Ljava/lang/String;)Ljava/lang/String;", (void *) native_open},
-    {"nativeClose",   "()V",                                    (void *) native_close},
-    {"nativeIsOpen",  "()Z",                                    (void *) native_is_open},
-    {"nativeExec",    "(Ljava/lang/String;)Ljava/lang/String;", (void *) native_exec},
-    {"nativeGrab",    "()Ljava/lang/String;",                    (void *) native_grab},
-    {"nativeAbort",   "()V",                                     (void *) native_abort},
+    {"nativeInit",           "(Ljava/lang/String;)Z",                  (void *) native_init},
+    {"nativeOpen",           "(Ljava/lang/String;)Ljava/lang/String;", (void *) native_open},
+    {"nativeClose",          "()V",                                    (void *) native_close},
+    {"nativeIsOpen",         "()Z",                                    (void *) native_is_open},
+    {"nativeExec",           "(Ljava/lang/String;)Ljava/lang/String;", (void *) native_exec},
+    {"nativeGrab",           "()Ljava/lang/String;",                   (void *) native_grab},
+    {"nativeIsWaitingInput", "()Z",                                    (void *) native_is_waiting_input},
+    {"nativeSendInput",      "(Ljava/lang/String;)V",                  (void *) native_send_input},
+    {"nativeAbort",          "()V",                                    (void *) native_abort},
 };
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {

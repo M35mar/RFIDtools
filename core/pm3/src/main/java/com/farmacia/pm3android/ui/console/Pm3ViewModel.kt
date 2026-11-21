@@ -65,6 +65,13 @@ import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
+
+/** One console line with a stable monotonic ID for O(1) LazyColumn diffing. */
+data class ConsoleLine(
+    val id: Long,
+    val raw: String,
+)
 
 data class Pm3DeviceInfo(
     val name: String,
@@ -111,6 +118,7 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
 
     val connectionState: StateFlow<Pm3ConnectionState> = client.state
     val connectLog: StateFlow<String> = client.connectLog
+    val waitingInput: StateFlow<Boolean> = client.waitingInput
     val settings: StateFlow<AppSettings> = preferences.settings
 
     private val deviceFlow = MutableStateFlow<Pm3DeviceInfo?>(null)
@@ -150,9 +158,11 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
     private val busyFlow = MutableStateFlow(false)
     val busy: StateFlow<Boolean> = busyFlow
 
-    /** Console output, one entry per line block (command or response chunk). */
-    private val linesFlow = MutableStateFlow<List<String>>(emptyList())
-    val lines: StateFlow<List<String>> = linesFlow
+    /** Console output, one entry per line with stable monotonic ID. */
+    private val linesFlow = MutableStateFlow<List<ConsoleLine>>(emptyList())
+    val lines: StateFlow<List<ConsoleLine>> = linesFlow
+
+    private val nextLineId = AtomicLong(1L)
 
     /**
      * Monotonic count of the lines ever appended. [lines] stops changing size
@@ -164,6 +174,15 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Chunks arrive on IO threads and the UI appends too: serialise them. */
     private val linesLock = Any()
+
+    /** Serialises history persistence so quick commands cannot race/truncate. */
+    private val historyLock = Any()
+
+    /** True only while a user-initiated disconnect() is running. */
+    @Volatile
+    private var disconnecting = false
+
+    private var abortGraceJob: Job? = null
 
     private val historyFlow = MutableStateFlow<List<String>>(emptyList())
     val history: StateFlow<List<String>> = historyFlow
@@ -281,6 +300,15 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
             client.linkLost.collect { reason ->
                 notify(reason)
                 abortExecution()
+            }
+        }
+        // Flush any partial prompt line (e.g. io.write("Select > ")) right away
+        // when a Lua script pauses for interactive input.
+        viewModelScope.launch {
+            client.waitingInput.collect { waiting ->
+                if (waiting) {
+                    appendChunk("", flush = true)
+                }
             }
         }
         ContextCompat.registerReceiver(
@@ -425,9 +453,9 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
         val transport = client.transport.value
         if (transport != Pm3Transport.BT_CLASSIC && transport != Pm3Transport.BT_LE) return
         if (connectionState.value == Pm3ConnectionState.DISCONNECTED) return
-        // A user-initiated disconnect already tears the link down; do not
-        // report it as a lost connection.
-        if (busyFlow.value) return
+        // Only ignore while a user-initiated disconnect() is tearing the link
+        // down; an unexpected drop during a running command MUST abort it.
+        if (disconnecting) return
         notify(getApplication<Application>().getString(R.string.device_bt_lost_message))
         abortExecution()
     }
@@ -522,9 +550,14 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
     fun disconnect() {
         if (busyFlow.value) return
         submitWork {
-            client.disconnect()
-            appendQuietly(getApplication<Application>().getString(R.string.device_disconnected_message))
-            refreshDevice()
+            disconnecting = true
+            try {
+                client.disconnect()
+                appendQuietly(getApplication<Application>().getString(R.string.device_disconnected_message))
+                refreshDevice()
+            } finally {
+                disconnecting = false
+            }
         }
     }
 
@@ -563,7 +596,10 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 captured.append(output)
                 appendChunk(output, flush = true)
-                lastResultFlow.value = TagParsers.parse(command, captured.toString())
+                lastResultFlow.value = TagParsers.parse(
+                    command,
+                    ConsoleAnsi.stripAnsi(captured.toString()),
+                )
             } catch (t: CancellationException) {
                 throw t
             } catch (t: Throwable) {
@@ -576,6 +612,13 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
         }
+    }
+
+    /** Delivers interactive input to a waiting Lua script menu/prompt. */
+    fun sendScriptInput(input: String): Boolean {
+        if (!waitingInput.value) return false
+        client.sendInput(input)
+        return true
     }
 
     /**
@@ -591,8 +634,10 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun clearConsole() {
-        streamBuffer.clear()
-        linesFlow.value = emptyList()
+        synchronized(linesLock) {
+            streamBuffer.clear()
+            linesFlow.value = emptyList()
+        }
         lastResultFlow.value = null
     }
 
@@ -886,7 +931,7 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
                             if (read < 0) break
                             builder.append(buffer, 0, read)
                             if (builder.length > MAX_SETTINGS_CHARS) {
-                                throw IOException("file di impostazioni troppo grande")
+                                throw IOException(app.getString(R.string.error_settings_too_large))
                             }
                         }
                         builder.toString()
@@ -1184,7 +1229,11 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
             }
             if (candidate.createNewFile()) return candidate
             counter++
-            if (counter > 1_000) throw IOException("nessun nome libero per $name")
+            if (counter > 1_000) {
+                throw IOException(
+                    getApplication<Application>().getString(R.string.error_no_free_filename, name),
+                )
+            }
         }
     }
 
@@ -1197,7 +1246,12 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
             if (read < 0) break
             total += read
             if (total > MAX_IMPORT_BYTES) {
-                throw IOException("file troppo grande (limite ${MAX_IMPORT_BYTES / (1024 * 1024)} MB)")
+                throw IOException(
+                    getApplication<Application>().getString(
+                        R.string.error_file_too_large,
+                        (MAX_IMPORT_BYTES / (1024 * 1024)).toInt(),
+                    ),
+                )
             }
             sink.write(buffer, 0, read)
         }
@@ -1220,6 +1274,8 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
             }
             return false
         }
+        abortGraceJob?.cancel()
+        abortGraceJob = null
         busyFlow.value = true
         val app = getApplication<Application>()
         if (foreground) {
@@ -1229,6 +1285,8 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 block()
             } finally {
+                abortGraceJob?.cancel()
+                abortGraceJob = null
                 busyFlow.value = false
                 execMutex.unlock()
                 if (foreground) {
@@ -1242,13 +1300,15 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * Aborts the native call after a link loss and, when it does not return
      * within [ABORT_GRACE_MS], re-enables the UI. The exec mutex stays held by
-     * the wedged job, so the only way out is a reconnect.
+     * the wedged job so no second native command can overlap it.
      */
     private fun abortExecution() {
+        val currentExec = execJob
         viewModelScope.launch(Dispatchers.IO) { runCatching { client.abortNow() } }
-        viewModelScope.launch {
+        abortGraceJob?.cancel()
+        abortGraceJob = viewModelScope.launch {
             delay(ABORT_GRACE_MS)
-            if (busyFlow.value) {
+            if (busyFlow.value && execJob === currentExec) {
                 busyFlow.value = false
                 notify(getApplication<Application>().getString(R.string.console_stuck))
             }
@@ -1265,16 +1325,45 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun persistHistory(history: List<String>) {
         val file = historyFile
+        val snapshot = history.joinToString("\n")
         viewModelScope.launch(Dispatchers.IO) {
-            runCatching { file.writeText(history.joinToString("\n")) }
+            synchronized(historyLock) {
+                runCatching {
+                    val tmp = File(file.parentFile, "${file.name}.tmp")
+                    tmp.writeText(snapshot)
+                    if (!tmp.renameTo(file)) {
+                        file.writeText(snapshot)
+                        tmp.delete()
+                    }
+                }
+            }
         }
     }
 
     private fun appendLines(added: List<String>) {
         if (added.isEmpty()) return
         synchronized(linesLock) {
-            linesFlow.value = (linesFlow.value + added).takeLast(MAX_CONSOLE_LINES)
-            consoleCountFlow.value += added.size
+            val wrapped = added.map { ConsoleLine(nextLineId.getAndIncrement(), it) }
+            val current = linesFlow.value
+            val combinedSize = current.size + wrapped.size
+            val next = if (combinedSize <= MAX_CONSOLE_LINES) {
+                ArrayList<ConsoleLine>(combinedSize).apply {
+                    addAll(current)
+                    addAll(wrapped)
+                }
+            } else {
+                val drop = combinedSize - MAX_CONSOLE_LINES
+                ArrayList<ConsoleLine>(MAX_CONSOLE_LINES).apply {
+                    if (drop < current.size) {
+                        addAll(current.subList(drop, current.size))
+                        addAll(wrapped)
+                    } else {
+                        addAll(wrapped.subList(drop - current.size, wrapped.size))
+                    }
+                }
+            }
+            linesFlow.value = next
+            consoleCountFlow.value += wrapped.size
         }
     }
 

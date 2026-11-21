@@ -1,8 +1,8 @@
 diff --git a/client/src/cmdscript.c b/client/src/cmdscript.c
-index 49ea6d435..1ce4ee841 100644
+index 49ea6d4..830f68c 100644
 --- a/client/src/cmdscript.c
 +++ b/client/src/cmdscript.c
-@@ -47,6 +47,15 @@
+@@ -47,6 +47,114 @@
  extern int luaopen_pm3(lua_State *L);
  #endif
  
@@ -15,10 +15,117 @@ index 49ea6d435..1ce4ee841 100644
 +    }
 +}
 +
++// Routes Lua's global print(...) into the grabbed console output so scripts
++// stream verbose progress and menus live on Android.
++static int lua_android_print(lua_State *L) {
++    int n = lua_gettop(L);
++    luaL_Buffer b;
++    luaL_buffinit(L, &b);
++    for (int i = 1; i <= n; i++) {
++        size_t len = 0;
++        const char *s = luaL_tolstring(L, i, &len);
++        if (i > 1) {
++            luaL_addchar(&b, '\t');
++        }
++        if (s != NULL && len > 0) {
++            luaL_addlstring(&b, s, len);
++        }
++        lua_pop(L, 1);
++    }
++    luaL_addchar(&b, '\n');
++    luaL_pushresult(&b);
++    const char *text = lua_tostring(L, -1);
++    if (text != NULL) {
++        grabber_append(text);
++    }
++    lua_pop(L, 1);
++    return 0;
++}
++
++// Routes io.write(...) directly into the console grabber without forcing a
++// trailing newline, so interactive prompts ("Select > ") show up immediately.
++static int lua_android_io_write(lua_State *L) {
++    int n = lua_gettop(L);
++    luaL_Buffer b;
++    luaL_buffinit(L, &b);
++    for (int i = 1; i <= n; i++) {
++        size_t len = 0;
++        const char *s = luaL_tolstring(L, i, &len);
++        if (s != NULL && len > 0) {
++            luaL_addlstring(&b, s, len);
++        }
++        lua_pop(L, 1);
++    }
++    luaL_pushresult(&b);
++    const char *text = lua_tostring(L, -1);
++    if (text != NULL && text[0] != '\0') {
++        grabber_append(text);
++    }
++    lua_pop(L, 1);
++    lua_getglobal(L, "io");
++    lua_getfield(L, -1, "stdout");
++    lua_remove(L, -2);
++    return 1;
++}
++
++// Routes io.read(...) through the Android console interactive input bridge so
++// Lua menus, utils.confirm() and utils.input() work just like on desktop.
++static int lua_android_io_read(lua_State *L) {
++    const char *fmt = luaL_optstring(L, 1, "*l");
++    char *line = pm3_input_read_line();
++    if (line == NULL) {
++        if (g_user_interrupt) {
++            return luaL_error(L, "stopped by user");
++        }
++        lua_pushnil(L);
++        return 1;
++    }
++    // Echo the reply into the console transcript.
++    grabber_append(line);
++    grabber_append("\n");
++    if (strcmp(fmt, "*L") == 0 || strcmp(fmt, "L") == 0) {
++        lua_pushfstring(L, "%s\n", line);
++    } else if (strcmp(fmt, "*n") == 0 || strcmp(fmt, "n") == 0) {
++        char *end = NULL;
++        double num = strtod(line, &end);
++        if (end != line) {
++            lua_pushnumber(L, num);
++        } else {
++            lua_pushnil(L);
++        }
++    } else {
++        lua_pushstring(L, line);
++    }
++    free(line);
++    return 1;
++}
++
++static void lua_install_android_io(lua_State *L) {
++    lua_pushcfunction(L, lua_android_print);
++    lua_setglobal(L, "print");
++
++    lua_getglobal(L, "io");
++    if (lua_istable(L, -1)) {
++        lua_pushcfunction(L, lua_android_io_write);
++        lua_setfield(L, -2, "write");
++        lua_pushcfunction(L, lua_android_io_read);
++        lua_setfield(L, -2, "read");
++    }
++    lua_pop(L, 1);
++}
++
  #ifdef HAVE_PYTHON
  #ifdef HAVE_PYTHON_SWIG
  extern PyObject *PyInit__pm3(void);
-@@ -401,6 +410,7 @@ static int CmdScriptRun(const char *Cmd) {
+@@ -389,6 +497,7 @@ static int CmdScriptRun(const char *Cmd) {
+ 
+         // load Lua libraries
+         luaL_openlibs(lua_state);
++        lua_install_android_io(lua_state);
+ 
+         //Sets the pm3 core libraries, that go a bit 'under the hood'
+         set_pm3_libraries(lua_state);
+@@ -401,6 +510,7 @@ static int CmdScriptRun(const char *Cmd) {
  #ifdef HAVE_LUA_SWIG
          luaL_requiref(lua_state, "pm3", luaopen_pm3, 1);
  #endif
@@ -27,7 +134,7 @@ index 49ea6d435..1ce4ee841 100644
          free(script_path);
          if (!error) {
 diff --git a/client/src/scripting.c b/client/src/scripting.c
-index 8c8acfd2f..ce76c3a28 100644
+index 8c8acfd..115a4ba 100644
 --- a/client/src/scripting.c
 +++ b/client/src/scripting.c
 @@ -436,7 +436,7 @@ static int l_CmdConsole(lua_State *L) {
@@ -39,27 +146,31 @@ index 8c8acfd2f..ce76c3a28 100644
      }
  
      if (quiet) {
-@@ -451,15 +451,9 @@ static int l_CmdConsole(lua_State *L) {
+@@ -451,15 +451,14 @@ static int l_CmdConsole(lua_State *L) {
          return 0;
      }
  
 -    if (g_grabbed_output.ptr == NULL) {
 -        lua_pushstring(L, "");
 -        return 1;
--    }
++    char *captured = grabber_capture_end();
++    // On Android there is no stdout: mirror non-quiet captured commands into
++    // the console grabber so verbose script output stays visible to the user.
++    if (!quiet && captured != NULL && captured[0] != '\0') {
++        grabber_append(captured);
+     }
 -
 -    g_grabbed_output.ptr[g_grabbed_output.idx] = 0;
 -    lua_pushstring(L, g_grabbed_output.ptr);
 -
 -    g_grabbed_output.idx = 0;
-+    char *captured = grabber_capture_end();
 +    lua_pushstring(L, captured != NULL ? captured : "");
 +    free(captured);
      return 1;
  }
  
 diff --git a/client/src/ui.c b/client/src/ui.c
-index 265fbd598..563924427 100644
+index 265fbd5..925dce4 100644
 --- a/client/src/ui.c
 +++ b/client/src/ui.c
 @@ -61,6 +61,17 @@ bool g_GridLocked = false;
@@ -102,7 +213,7 @@ index 265fbd598..563924427 100644
              PrintAndLogEx(WARNING, "Failed to allocate memory");
              return;
          }
-@@ -193,10 +208,102 @@ static void fill_grabber(const char *string) {
+@@ -193,10 +208,175 @@ static void fill_grabber(const char *string) {
      int len = snprintf(g_grabbed_output.ptr + g_grabbed_output.idx, MAX_PRINT_BUFFER, "%s", string);
      if (len < 0 || len > MAX_PRINT_BUFFER) {
          // We leave current g_grabbed_output_len untouched
@@ -202,14 +313,96 @@ index 265fbd598..563924427 100644
 +    g_grabber_capture = false;
 +    pthread_mutex_unlock(&g_grabber_lock);
 +    return copy;
++}
++
++// Appends text directly into the grabber in chunks so non-quiet script calls
++// stay visible in the Android console.
++void grabber_append(const char *text) {
++    if (text == NULL || text[0] == '\0') {
++        return;
++    }
++    const size_t chunk_limit = MAX_PRINT_BUFFER - 1;
++    size_t len = strlen(text);
++    size_t offset = 0;
++    char tmp[MAX_PRINT_BUFFER];
++    while (offset < len) {
++        size_t take = len - offset;
++        if (take > chunk_limit) {
++            take = chunk_limit;
++        }
++        memcpy(tmp, text + offset, take);
++        tmp[take] = '\0';
++        fill_grabber(tmp);
++        offset += take;
++    }
++}
++
++static pthread_mutex_t g_input_lock = PTHREAD_MUTEX_INITIALIZER;
++static pthread_cond_t g_input_cond = PTHREAD_COND_INITIALIZER;
++static bool g_input_waiting = false;
++static bool g_input_ready = false;
++static char *g_input_line = NULL;
++
++void pm3_input_provide(const char *line) {
++    pthread_mutex_lock(&g_input_lock);
++    free(g_input_line);
++    g_input_line = strdup(line != NULL ? line : "");
++    g_input_ready = true;
++    pthread_cond_broadcast(&g_input_cond);
++    pthread_mutex_unlock(&g_input_lock);
++}
++
++void pm3_input_cancel(void) {
++    pthread_mutex_lock(&g_input_lock);
++    free(g_input_line);
++    g_input_line = NULL;
++    g_input_ready = false;
++    pthread_cond_broadcast(&g_input_cond);
++    pthread_mutex_unlock(&g_input_lock);
++}
++
++bool pm3_input_is_waiting(void) {
++    pthread_mutex_lock(&g_input_lock);
++    bool waiting = g_input_waiting;
++    pthread_mutex_unlock(&g_input_lock);
++    return waiting;
++}
++
++char *pm3_input_read_line(void) {
++    pthread_mutex_lock(&g_input_lock);
++    g_input_waiting = true;
++    while (!g_input_ready && !g_user_interrupt) {
++        pthread_cond_wait(&g_input_cond, &g_input_lock);
++    }
++    g_input_waiting = false;
++    char *result = NULL;
++    if (!g_user_interrupt && g_input_ready) {
++        result = g_input_line;
++        g_input_line = NULL;
++    } else {
++        free(g_input_line);
++        g_input_line = NULL;
++    }
++    g_input_ready = false;
++    pthread_mutex_unlock(&g_input_lock);
++    return result;
  }
  
  void PrintAndLogOptions(const char *str[][2], size_t size, size_t space) {
+@@ -522,7 +702,7 @@ static void fPrintAndLog(FILE *stream, const char *fmt, ...) {
+ 
+     if (g_printAndLog & PRINTANDLOG_GRAB) {
+ 
+-        if (filter_ansi) {
++        if (filter_ansi || !g_grabber_capture) {
+             fill_grabber(buffer3);
+         } else {
+             fill_grabber(buffer);
 diff --git a/client/src/ui.h b/client/src/ui.h
-index 0c8298ecd..06af2c82d 100644
+index 0b77005..e12f3d8 100644
 --- a/client/src/ui.h
 +++ b/client/src/ui.h
-@@ -87,6 +87,13 @@ void memcpy_filter_ansi(void *dest, const void *src, size_t n, bool filter);
+@@ -94,6 +94,20 @@ void memcpy_filter_ansi(void *dest, const void *src, size_t n, bool filter);
  void memcpy_filter_rlmarkers(void *dest, const void *src, size_t n);
  void memcpy_filter_emoji(void *dest, const void *src, size_t n, emojiMode_t mode);
  void free_grabber(void);
@@ -217,6 +410,13 @@ index 0c8298ecd..06af2c82d 100644
 +char *grabber_take_all(void);
 +void grabber_capture_begin(void);
 +char *grabber_capture_end(void);
++void grabber_append(const char *text);
++
++// Host-side interactive input channel for Lua scripts (io.read / menus).
++void pm3_input_provide(const char *line);
++void pm3_input_cancel(void);
++bool pm3_input_is_waiting(void);
++char *pm3_input_read_line(void);
 +
 +// Host-side interrupt flag: long loops and the Lua script hook poll it.
 +extern volatile bool g_user_interrupt;
@@ -224,7 +424,7 @@ index 0c8298ecd..06af2c82d 100644
  int searchHomeFilePath(char **foundpath, const char *subdir, const char *filename, bool create_home);
  
 diff --git a/client/src/util.c b/client/src/util.c
-index e8fb7c5eb..ad6a640a1 100644
+index e8fb7c5..ad6a640 100644
 --- a/client/src/util.c
 +++ b/client/src/util.c
 @@ -59,6 +59,9 @@ int g_numCPUs = 0;

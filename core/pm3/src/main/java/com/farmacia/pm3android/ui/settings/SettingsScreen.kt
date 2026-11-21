@@ -23,9 +23,15 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.SaveAlt
+import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -41,6 +47,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -60,7 +67,10 @@ import com.farmacia.pm3android.ui.components.InfoRow
 import com.farmacia.pm3android.ui.components.SectionCard
 import com.farmacia.pm3android.ui.components.openUrl
 import com.farmacia.pm3android.ui.console.Pm3ViewModel
+import com.farmacia.pm3android.ui.theme.pm3Accents
 import com.farmacia.pm3android.ui.update.UpdateSection
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 @Composable
@@ -83,29 +93,7 @@ fun SettingsScreen(viewModel: Pm3ViewModel) {
         ActivityResultContracts.OpenDocument(),
     ) { uri -> uri?.let(viewModel::restoreSettings) }
 
-    @SuppressLint("LocalContextResourcesRead")
-    val licenseText = remember {
-        context.resources.openRawResource(R.raw.license)
-            .bufferedReader()
-            .use { it.readText() }
-    }
-
-    @SuppressLint("LocalContextResourcesRead")
-    val thirdPartyNotices = remember {
-        buildString {
-            append(
-                context.resources.openRawResource(R.raw.chaquopy_license)
-                    .bufferedReader()
-                    .use { it.readText() },
-            )
-            append("\n\n")
-            append(
-                context.resources.openRawResource(R.raw.python_license)
-                    .bufferedReader()
-                    .use { it.readText() },
-            )
-        }
-    }
+    val accents = MaterialTheme.pm3Accents
 
     Column(
         modifier = Modifier
@@ -118,9 +106,13 @@ fun SettingsScreen(viewModel: Pm3ViewModel) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
 
-        SectionCard(title = stringResource(R.string.settings_appearance)) {
+        SectionCard(
+            title = stringResource(R.string.settings_appearance),
+            icon = Icons.Filled.Palette,
+            accent = accents.script,
+        ) {
             Text(stringResource(R.string.settings_theme), style = MaterialTheme.typography.bodyMedium)
-            ThemeMode.values().forEach { mode ->
+            ThemeMode.entries.forEach { mode ->
                 val label = when (mode) {
                     ThemeMode.SYSTEM -> stringResource(R.string.theme_system)
                     ThemeMode.LIGHT -> stringResource(R.string.theme_light)
@@ -150,7 +142,11 @@ fun SettingsScreen(viewModel: Pm3ViewModel) {
             )
         }
 
-        SectionCard(title = stringResource(R.string.settings_console)) {
+        SectionCard(
+            title = stringResource(R.string.settings_console),
+            icon = Icons.Filled.Terminal,
+            accent = accents.usb,
+        ) {
             Text(
                 text = stringResource(R.string.settings_font_size, settings.consoleFontSizeSp),
                 style = MaterialTheme.typography.bodyMedium,
@@ -184,7 +180,11 @@ fun SettingsScreen(viewModel: Pm3ViewModel) {
             )
         }
 
-        SectionCard(title = stringResource(R.string.settings_data)) {
+        SectionCard(
+            title = stringResource(R.string.settings_data),
+            icon = Icons.Filled.Storage,
+            accent = accents.hf,
+        ) {
             InfoRow(
                 stringResource(R.string.settings_resources),
                 stringResource(
@@ -221,7 +221,11 @@ fun SettingsScreen(viewModel: Pm3ViewModel) {
             }
         }
 
-        SectionCard(title = stringResource(R.string.settings_about)) {
+        SectionCard(
+            title = stringResource(R.string.settings_about),
+            icon = Icons.Filled.Info,
+            accent = accents.bluetooth,
+        ) {
             Text(
                 text = stringResource(R.string.settings_about_description),
                 style = MaterialTheme.typography.bodySmall,
@@ -252,7 +256,11 @@ fun SettingsScreen(viewModel: Pm3ViewModel) {
             )
         }
 
-        SectionCard(title = stringResource(R.string.settings_links)) {
+        SectionCard(
+            title = stringResource(R.string.settings_links),
+            icon = Icons.Filled.Link,
+            accent = accents.lf,
+        ) {
             OutlinedButton(
                 onClick = { openUrl(context, "https://github.com/M35mar/RFIDtools") },
                 modifier = Modifier.fillMaxWidth(),
@@ -294,7 +302,11 @@ fun SettingsScreen(viewModel: Pm3ViewModel) {
             )
         }
 
-        SectionCard(title = stringResource(R.string.settings_home_paths)) {
+        SectionCard(
+            title = stringResource(R.string.settings_home_paths),
+            icon = Icons.Filled.Folder,
+            accent = accents.info,
+        ) {
             Text(
                 text = stringResource(R.string.settings_client_prefs_note),
                 style = MaterialTheme.typography.bodySmall,
@@ -317,6 +329,28 @@ fun SettingsScreen(viewModel: Pm3ViewModel) {
     }
 
     if (showLicense) {
+        @SuppressLint("LocalContextResourcesRead")
+        val licensePair by produceState<Pair<String, String>?>(initialValue = null) {
+            value = withContext(Dispatchers.IO) {
+                val gpl = context.resources.openRawResource(R.raw.license)
+                    .bufferedReader()
+                    .use { it.readText() }
+                val notices = buildString {
+                    append(
+                        context.resources.openRawResource(R.raw.chaquopy_license)
+                            .bufferedReader()
+                            .use { it.readText() },
+                    )
+                    append("\n\n")
+                    append(
+                        context.resources.openRawResource(R.raw.python_license)
+                            .bufferedReader()
+                            .use { it.readText() },
+                    )
+                }
+                gpl to notices
+            }
+        }
         AlertDialog(
             onDismissRequest = { showLicense = false },
             title = { Text(stringResource(R.string.settings_license_title)) },
@@ -332,12 +366,17 @@ fun SettingsScreen(viewModel: Pm3ViewModel) {
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Text(licenseText, style = MaterialTheme.typography.bodySmall)
-                    Text(
-                        text = stringResource(R.string.settings_third_party_notices),
-                        style = MaterialTheme.typography.titleSmall,
-                    )
-                    Text(thirdPartyNotices, style = MaterialTheme.typography.bodySmall)
+                    val loaded = licensePair
+                    if (loaded == null) {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    } else {
+                        Text(loaded.first, style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            text = stringResource(R.string.settings_third_party_notices),
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        Text(loaded.second, style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             },
             confirmButton = {

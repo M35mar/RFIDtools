@@ -12,6 +12,7 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -32,8 +33,10 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SaveAlt
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -49,6 +52,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -57,9 +61,11 @@ import androidx.core.content.FileProvider
 import com.farmacia.pm3android.R
 import com.farmacia.pm3android.data.FileCategory
 import com.farmacia.pm3android.data.Pm3File
+import com.farmacia.pm3android.ui.components.AccentBadge
 import com.farmacia.pm3android.ui.components.ConfirmDialog
 import com.farmacia.pm3android.ui.components.EmptyState
 import com.farmacia.pm3android.ui.console.Pm3ViewModel
+import com.farmacia.pm3android.ui.theme.pm3Accents
 import com.farmacia.pm3android.util.formatBytes
 import com.farmacia.pm3android.util.formatDate
 
@@ -75,7 +81,9 @@ fun FilesScreen(
     val settings by viewModel.settings.collectAsState()
     val context = LocalContext.current
 
-    var filter by remember { mutableStateOf<FileCategory?>(null) }
+    var filterName by rememberSaveable { mutableStateOf<String?>(FileCategory.DUMP.name) }
+    val filter = filterName?.let { runCatching { FileCategory.valueOf(it) }.getOrNull() }
+    val accents = MaterialTheme.pm3Accents
     // Paths, not objects: the SAF picker and the confirm dialog survive a
     // rotation, and the file is resolved again from the refreshed list.
     var pendingDeletePath by rememberSaveable { mutableStateOf<String?>(null) }
@@ -101,7 +109,9 @@ fun FilesScreen(
         viewModel.refreshFiles()
     }
 
-    val visible = files.filter { filter == null || it.category == filter }
+    val visible = remember(files, filter) {
+        files.filter { filter == null || it.category == filter }
+    }
 
     Column(
         modifier = Modifier
@@ -153,32 +163,48 @@ fun FilesScreen(
         ) {
             FilterChip(
                 selected = filter == null,
-                onClick = { filter = null },
+                onClick = { filterName = null },
                 label = { Text(stringResource(R.string.files_filter_all)) },
             )
             FilterChip(
                 selected = filter == FileCategory.DUMP,
-                onClick = { filter = FileCategory.DUMP },
+                onClick = { filterName = FileCategory.DUMP.name },
                 label = { Text(stringResource(R.string.files_filter_dumps)) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = accents.hf.copy(alpha = 0.2f),
+                    selectedLabelColor = accents.hf,
+                ),
             )
             FilterChip(
                 selected = filter == FileCategory.TRACE,
-                onClick = { filter = FileCategory.TRACE },
+                onClick = { filterName = FileCategory.TRACE.name },
                 label = { Text(stringResource(R.string.files_filter_traces)) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = accents.script.copy(alpha = 0.2f),
+                    selectedLabelColor = accents.script,
+                ),
             )
             FilterChip(
                 selected = filter == FileCategory.LOG,
-                onClick = { filter = FileCategory.LOG },
+                onClick = { filterName = FileCategory.LOG.name },
                 label = { Text(stringResource(R.string.files_filter_logs)) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = accents.lf.copy(alpha = 0.2f),
+                    selectedLabelColor = accents.lf,
+                ),
             )
             FilterChip(
                 selected = filter == FileCategory.REPORT,
-                onClick = { filter = FileCategory.REPORT },
+                onClick = { filterName = FileCategory.REPORT.name },
                 label = { Text(stringResource(R.string.files_filter_reports)) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = accents.info.copy(alpha = 0.2f),
+                    selectedLabelColor = accents.info,
+                ),
             )
             FilterChip(
                 selected = filter == FileCategory.OTHER,
-                onClick = { filter = FileCategory.OTHER },
+                onClick = { filterName = FileCategory.OTHER.name },
                 label = { Text(stringResource(R.string.files_filter_other)) },
             )
         }
@@ -257,16 +283,31 @@ private fun FileRow(
     val editable = entry.category == FileCategory.DUMP &&
         lowerName.endsWith(".bin") &&
         !lowerName.endsWith("-key.bin")
+    val accents = MaterialTheme.pm3Accents
+    val categoryColor: Color = when (entry.category) {
+        FileCategory.DUMP -> accents.hf
+        FileCategory.TRACE -> accents.script
+        FileCategory.LOG -> accents.lf
+        FileCategory.REPORT -> accents.info
+        FileCategory.OTHER -> MaterialTheme.colorScheme.outline
+    }
+    val cardColors = CardDefaults.cardColors(
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+    )
+    val border = BorderStroke(1.dp, categoryColor.copy(alpha = 0.28f))
     // Only editable rows use the clickable Card variant: the plain one keeps
     // the normal (non-disabled) colours for traces, logs and other dumps.
     if (editable) {
         Card(
             onClick = onOpen,
             enabled = enabled,
+            colors = cardColors,
+            border = border,
             modifier = Modifier.fillMaxWidth(),
         ) {
             FileRowContent(
                 entry = entry,
+                categoryColor = categoryColor,
                 enabled = enabled,
                 editable = true,
                 onRestore = onRestore,
@@ -276,9 +317,14 @@ private fun FileRow(
             )
         }
     } else {
-        Card(modifier = Modifier.fillMaxWidth()) {
+        Card(
+            colors = cardColors,
+            border = border,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
             FileRowContent(
                 entry = entry,
+                categoryColor = categoryColor,
                 enabled = enabled,
                 editable = false,
                 onRestore = onRestore,
@@ -293,6 +339,7 @@ private fun FileRow(
 @Composable
 private fun FileRowContent(
     entry: Pm3File,
+    categoryColor: Color,
     enabled: Boolean,
     editable: Boolean,
     onRestore: () -> Unit,
@@ -305,13 +352,25 @@ private fun FileRowContent(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = entry.file.name,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                AccentBadge(
+                    text = entry.category.name,
+                    color = categoryColor,
+                )
+                Text(
+                    text = entry.file.name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             Text(
                 text = entry.relativePath,
                 style = MaterialTheme.typography.bodySmall,

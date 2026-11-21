@@ -540,12 +540,31 @@ class HfProbeTest {
             // Request Service: the NDEF service 0x000B exists.
             0x02 -> byteArrayOf(0x0D, 0x03) + idm + byteArrayOf(0x01, 0x00, 0x0B)
 
-            // Read Without Encryption: status 00 00, one block of NDEF TLV.
-            0x06 -> byteArrayOf(0x1D, 0x07) + idm + byteArrayOf(
-                0x00, 0x00, 0x01,
-                0x03, 0x09, 0xD1.toByte(), 0x01, 0x05, 0x54, 0x02, 0x65,
-                0x6E, 0x68, 0x69, 0x00, 0x00, 0x00, 0x00, 0x00,
-            )
+            // Read Without Encryption: verify 2-byte Block List Element (0x80, block).
+            0x06 -> {
+                val flags = command.getOrNull(14)?.toInt()?.and(0xFF)
+                val block = command.getOrNull(15)?.toInt()?.and(0xFF)
+                if (flags != 0x80) {
+                    byteArrayOf(0x0D, 0x07) + idm + byteArrayOf(0xFF.toByte(), 0xFF.toByte(), 0x00)
+                } else if (block == 0) {
+                    // Type 3 Attribute Information Block: Ver=1.0, Nbr=4, Nbw=1, Nmaxb=16,
+                    // WriteF=0, RWFlag=1, Ln=9, Checksum=0x002F.
+                    val aib = byteArrayOf(
+                        0x10, 0x04, 0x01, 0x00, 0x10,
+                        0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+                        0x00, 0x00, 0x09,
+                        0x00, 0x2F,
+                    )
+                    byteArrayOf(0x1D, 0x07) + idm + byteArrayOf(0x00, 0x00, 0x01) + aib
+                } else {
+                    // Block 1: raw NDEF message ("hi" text record, 9 bytes).
+                    val payload = byteArrayOf(
+                        0xD1.toByte(), 0x01, 0x05, 0x54, 0x02, 0x65, 0x6E, 0x68, 0x69,
+                        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    )
+                    byteArrayOf(0x1D, 0x07) + idm + byteArrayOf(0x00, 0x00, 0x01) + payload
+                }
+            }
 
             else -> byteArrayOf(0x01)
         }

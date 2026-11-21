@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Nfc
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -26,10 +28,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.farmacia.pm3android.R
 import com.farmacia.pm3android.ui.components.SectionCard
+import com.farmacia.pm3android.ui.theme.pm3Accents
 
 @Composable
 fun TagResultCard(
@@ -38,10 +42,19 @@ fun TagResultCard(
     onRerun: (String) -> Unit,
 ) {
     var showRaw by remember(info) { mutableStateOf(false) }
+    val accents = MaterialTheme.pm3Accents
 
-    SectionCard(title = stringResource(R.string.result_last)) {
+    SectionCard(
+        title = stringResource(R.string.result_last),
+        icon = Icons.Filled.Nfc,
+        accent = accents.hf,
+    ) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(info.title, style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = info.title,
+                style = MaterialTheme.typography.titleMedium,
+                color = accents.hf,
+            )
             if (info.fields.isEmpty()) {
                 Text(
                     text = stringResource(R.string.result_no_data),
@@ -60,6 +73,8 @@ fun TagResultCard(
                         Text(
                             text = field.value,
                             style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.SemiBold,
                         )
                     }
                 }

@@ -77,13 +77,15 @@ object AidCatalog {
         // NFC Forum.
         AidInfo("D2760000850101", "NDEF Tag Application", "NFC Forum", ApplicationKind.NDEF),
         AidInfo("D2760000850100", "NDEF Tag Application", "NFC Forum", ApplicationKind.NDEF),
-        // Payment schemes.
+        // Payment schemes (including Italian & European networks).
         AidInfo("A0000000031010", "Visa", "Visa", ApplicationKind.EMV),
         AidInfo("A0000000032010", "Visa Electron", "Visa", ApplicationKind.EMV),
+        AidInfo("A0000000032020", "V Pay", "Visa Europe", ApplicationKind.EMV),
         AidInfo("A0000000033010", "Visa Interlink", "Visa", ApplicationKind.EMV),
         AidInfo("A0000000041010", "Mastercard", "Mastercard", ApplicationKind.EMV),
         AidInfo("A0000000043060", "Maestro", "Mastercard", ApplicationKind.EMV),
         AidInfo("A0000000050001", "Maestro UK", "Mastercard", ApplicationKind.EMV),
+        AidInfo("A0000001410001", "PagoBANCOMAT", "BANCOMAT", ApplicationKind.EMV),
         AidInfo("A00000002501", "American Express", "American Express", ApplicationKind.EMV),
         AidInfo("A00000006510", "JCB", "JCB", ApplicationKind.EMV),
         AidInfo("A0000001523010", "Discover", "Discover", ApplicationKind.EMV),
@@ -91,9 +93,15 @@ object AidCatalog {
         AidInfo("A0000003330101", "UnionPay", "China UnionPay", ApplicationKind.EMV),
         AidInfo("A0000003241010", "Diners Club", "Discover", ApplicationKind.EMV),
         AidInfo("A0000004760101", "Bancontact", "Bancontact", ApplicationKind.EMV),
-        // secure elements and transit platforms.
+        AidInfo("A0000005241010", "RuPay", "NPCI", ApplicationKind.EMV),
+        AidInfo("A0000006581010", "MIR", "NSPK", ApplicationKind.EMV),
+        // Secure elements, security keys and transit platforms.
         AidInfo("A000000507", "CIPURSE", "OSPT Alliance", ApplicationKind.CIPURSE),
         AidInfo("A000000308000010000100", "PIV", "NIST", ApplicationKind.PIV),
+        AidInfo("A0000006472F0001", "FIDO2 / WebAuthn", "FIDO Alliance", ApplicationKind.OTHER),
+        AidInfo("D27600012401", "OpenPGP Card", "OpenPGP", ApplicationKind.OTHER),
+        AidInfo("A0000000308000000009816001", "CIE 3.0 (eID Italia)", "IPZS", ApplicationKind.OTHER, TagFamily.EID),
+        AidInfo("A000000291A000000191", "Calypso Italia / BIP", "Calypso Networks Association", ApplicationKind.OTHER, TagFamily.CALYPSO),
     )
 
     /** The exact row or the most specific prefix match, null when unknown. */
