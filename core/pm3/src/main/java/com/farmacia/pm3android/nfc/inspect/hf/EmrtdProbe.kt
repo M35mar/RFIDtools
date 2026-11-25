@@ -9,7 +9,10 @@
 package com.farmacia.pm3android.nfc.inspect.hf
 
 import com.farmacia.pm3android.nfc.hexToBytesOrNull
+import com.farmacia.pm3android.nfc.inspect.DetailRow
+import com.farmacia.pm3android.nfc.inspect.DetailSection
 import com.farmacia.pm3android.nfc.inspect.EmrtdDetails
+import com.farmacia.pm3android.nfc.inspect.GenericDetails
 import com.farmacia.pm3android.nfc.inspect.HfProbe
 import com.farmacia.pm3android.nfc.inspect.Iso7816
 import com.farmacia.pm3android.nfc.inspect.IsoDepTransport
@@ -18,6 +21,7 @@ import com.farmacia.pm3android.nfc.inspect.ProbeContext
 import com.farmacia.pm3android.nfc.inspect.ProbeOutcome
 import com.farmacia.pm3android.nfc.inspect.TagFamily
 import com.farmacia.pm3android.nfc.inspect.TagIdentifier
+import com.farmacia.pm3android.nfc.toHex
 
 object EmrtdProbe : HfProbe {
 
@@ -29,6 +33,27 @@ object EmrtdProbe : HfProbe {
     override fun run(context: ProbeContext): ProbeOutcome? =
         context.session.withIsoDep { transport ->
             val abort = context.abort
+            // 1. Check Italian CIE 3.0 IAS-ECC applet first: exposes free 12-byte NIS (EF.ID_Servizi).
+            readItalianCieNis(transport, abort)?.let { cieOutcome ->
+                val baseIdentity = TagIdentifier.emrtdIdentity(
+                    snapshot = context.snapshot,
+                    details = EmrtdDetails(
+                        aid = CIE_IAS_AID,
+                        label = "CIE 3.0 · Carta d'Identità Elettronica",
+                        cardAccess = null,
+                        paceSupported = true,
+                        bacSupported = true,
+                        family = TagFamily.EID,
+                    ),
+                    family = TagFamily.EID,
+                    label = "CIE 3.0 · Carta d'Identità Elettronica",
+                )
+                return@withIsoDep ProbeOutcome(
+                    details = cieOutcome,
+                    identity = baseIdentity,
+                )
+            }
+
             for (candidate in CANDIDATES) {
                 val selection = try {
                     // ICAO 9303 selects the application with P2 0x0C (no FCI).
@@ -182,6 +207,70 @@ object EmrtdProbe : HfProbe {
         val family: TagFamily,
     ) {
         val aid: ByteArray get() = aidHex.hexToBytesOrNull() ?: ByteArray(0)
+    }
+
+    private val CIE_IAS_AID = "A0000000308000000009816001".hexToBytesOrNull() ?: ByteArray(0)
+
+    /**
+     * Selects the Italian CIE 3.0 IAS-ECC DF (`A0000000308000000009816001`) and
+     * reads the public 12-byte `EF.ID_Servizi` (`0x1001` / SFI `0x01`, NIS),
+     * which requires no PIN or MRZ/CAN authentication.
+     */
+    private fun readItalianCieNis(
+        transport: IsoDepTransport,
+        abort: (Throwable) -> Boolean,
+    ): GenericDetails? {
+        val sel = try {
+            Iso7816.select(transport, CIE_IAS_AID, p2 = 0x0C)
+                .takeIf { it.ok }
+                ?: Iso7816.select(transport, CIE_IAS_AID, p2 = 0x00)
+        } catch (error: Throwable) {
+            if (abort(error)) throw error
+            return null
+        }
+        if (!sel.ok) return null
+
+        // Try reading EF.ID_Servizi via SFI 0x01 (P1=0x81) first, then explicit EF 0x1001.
+        var nisBytes: ByteArray? = runCatching {
+            val r = Iso7816.exchange(transport, byteArrayOf(0x00, 0xB0.toByte(), 0x81.toByte(), 0x00, 0x0C))
+            if (r.sw == Iso7816.SW_OK && r.data.isNotEmpty()) r.data else null
+        }.getOrNull()
+
+        if (nisBytes == null) {
+            nisBytes = runCatching {
+                val efSel = Iso7816.selectFile(transport, 0x1001, p1 = 0x02)
+                if (efSel.ok) {
+                    val r = Iso7816.readBinary(transport, 0, 12)
+                    if (r.sw == Iso7816.SW_OK && r.data.isNotEmpty()) r.data else null
+                } else {
+                    null
+                }
+            }.getOrNull()
+        }
+
+        val rows = mutableListOf(
+            DetailRow("Applet", "IAS-ECC (CIE 3.0)"),
+            DetailRow("AID", CIE_IAS_AID.toHex()),
+        )
+        if (nisBytes != null) {
+            val ascii = nisBytes.map { (it.toInt() and 0xFF).toChar() }
+                .takeIf { chars -> chars.all { it in '0'..'9' || it in 'A'..'Z' || it in 'a'..'z' } }
+                ?.joinToString("")
+            rows += DetailRow("NIS (ID_Servizi)", ascii ?: nisBytes.toHex())
+            if (ascii != null) {
+                rows += DetailRow("NIS (Hex)", nisBytes.toHex())
+            }
+        }
+        // Also check ICAO eMRTD applet presence for PACE/BAC capability info.
+        val emrtdAid = CANDIDATES.first().aid
+        val hasIcao = runCatching { Iso7816.select(transport, emrtdAid, p2 = 0x0C).ok }.getOrDefault(false)
+        if (hasIcao) {
+            rows += DetailRow("ICAO 9303 Applet", "Present (PACE / BAC protected)")
+        }
+        return GenericDetails(
+            sections = listOf(DetailSection("CIE 3.0 (Italia)", rows = rows)),
+            summary = "CIE 3.0 · Carta d'Identità Elettronica",
+        )
     }
 
     private val CANDIDATES = listOf(

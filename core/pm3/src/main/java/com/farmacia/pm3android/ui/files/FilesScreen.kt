@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.CompareArrows
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
@@ -74,6 +75,7 @@ fun FilesScreen(
     viewModel: Pm3ViewModel,
     onRestore: (java.io.File) -> Unit,
     onEditDump: (java.io.File) -> Unit,
+    onOpenDiff: () -> Unit = {},
 ) {
     val files by viewModel.files.collectAsState()
     val loading by viewModel.filesLoading.collectAsState()
@@ -147,13 +149,31 @@ fun FilesScreen(
             )
         }
 
-        OutlinedButton(
-            onClick = { importLauncher.launch(arrayOf("*/*")) },
-            enabled = !fileOpBusy,
+        Row(
             modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Icon(Icons.Filled.Add, contentDescription = null)
-            Text(stringResource(R.string.files_import))
+            OutlinedButton(
+                onClick = { importLauncher.launch(arrayOf("*/*")) },
+                enabled = !fileOpBusy,
+                modifier = Modifier.weight(1f),
+            ) {
+                Icon(Icons.Filled.Add, contentDescription = null)
+                Text(stringResource(R.string.files_import))
+            }
+            OutlinedButton(
+                onClick = onOpenDiff,
+                enabled = !fileOpBusy,
+                modifier = Modifier.weight(1f),
+            ) {
+                Icon(Icons.AutoMirrored.Filled.CompareArrows, contentDescription = null)
+                Text(
+                    text = stringResource(R.string.nfc_diff_title),
+                    modifier = Modifier.padding(start = 4.dp),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
 
         Row(

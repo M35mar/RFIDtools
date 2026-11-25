@@ -57,6 +57,9 @@
     <uses-feature
         android:name="android.hardware.nfc"
         android:required="false" />
+    <uses-feature
+        android:name="android.hardware.nfc.hce"
+        android:required="false" />
 
     <application
         android:allowBackup="false"
@@ -100,6 +103,19 @@
             android:name=".pm3.Pm3OperationService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
+
+        <!-- Host Card Emulation (Type 4 NDEF + Custom APDU Responder + Polling Sniffer). -->
+        <service
+            android:name=".nfc.hce.Pm3HostApduService"
+            android:exported="true"
+            android:permission="android.permission.BIND_NFC_SERVICE">
+            <intent-filter>
+                <action android:name="android.nfc.cardemulation.action.HOST_APDU_SERVICE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.nfc.cardemulation.host_apdu_service"
+                android:resource="@xml/apduservice" />
+        </service>
 
         <!-- Share gate for client output files (dumps, traces, logs). -->
         <provider

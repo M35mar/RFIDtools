@@ -995,4 +995,72 @@
     <string name="ndef_error_verify">Verifica di rilettura fallita: i dati sul tag non coincidono con quelli scritti.</string>
     <string name="ndef_error_generic">Impossibile scrivere il messaggio NDEF sul tag.</string>
     <string name="apdu_presets_title">APDU rapidi</string>
+
+    <!-- Phase 1-4 Advanced Phone-NFC Suite -->
+    <string name="dump_editor_export_nfc">Esporta Flipper .nfc</string>
+    <string name="dump_editor_exported_nfc">Esportato come %1$s</string>
+    <string name="dump_editor_fix_bcc">Correggi BCC (0x%1$s)</string>
+    <string name="dump_editor_access_builder">Access Bits visuali (tocca per cambiare)</string>
+
+    <string name="nfc_diff_title">Confronta Dump</string>
+    <string name="nfc_diff_desc">Confronta due dump .bin/.nfc/.json/.mct blocco per blocco.</string>
+    <string name="diff_title">Confronta Dump (Diff)</string>
+    <string name="diff_select_title">Seleziona due dump</string>
+    <string name="diff_pick_a">Scegli Dump A</string>
+    <string name="diff_pick_b">Scegli Dump B</string>
+    <string name="diff_summary_title">Riepilogo differenze</string>
+    <string name="diff_changed_count">Blocchi / pagine diversi</string>
+    <string name="diff_identical">Identici (0 differenze)</string>
+
+    <string name="nfc_t2pwd_title">Password Type 2</string>
+    <string name="nfc_t2pwd_desc">Imposta o rimuovi password e PACK su NTAG / Ultralight EV1.</string>
+    <string name="t2pwd_title">Password NTAG / EV1</string>
+    <string name="t2pwd_mode_title">Protezione password</string>
+    <string name="t2pwd_set">Imposta password</string>
+    <string name="t2pwd_remove">Rimuovi password</string>
+    <string name="t2pwd_current_label">Password attuale (8 hex, opzionale)</string>
+    <string name="t2pwd_new_label">Nuova password (8 hex)</string>
+    <string name="t2pwd_prot_rw">Proteggi sia Lettura che Scrittura (PROT = 1)</string>
+    <string name="t2pwd_keygen_title">Calcolatore PWD/PACK da UID</string>
+    <string name="t2pwd_arm">Avvicina il tag per applicare</string>
+    <string name="t2pwd_waiting_body">Tieni fermo il tag NTAG / Ultralight EV1 fino al termine della verifica.</string>
+    <string name="t2pwd_done_title">Password aggiornata e verificata</string>
+
+    <string name="ndef_vcard_name">Nome e cognome</string>
+    <string name="ndef_vcard_phone">Numero di telefono</string>
+    <string name="ndef_vcard_org">Azienda / Organizzazione</string>
+    <string name="ndef_aar_pkg">Package app Android</string>
+    <string name="ndef_bt_name">Nome dispositivo (opzionale)</string>
+
+    <string name="nfc_format_classic_title">Formatta Classic</string>
+    <string name="nfc_format_classic_desc">Ripristina i settori MIFARE Classic a FF..FF di fabbrica.</string>
+
+    <string name="nfc_hce_title">Emulazione HCE &amp; Sniffer Lettori</string>
+    <string name="nfc_hce_desc">Emula un tag NFC Forum Type 4 NDEF, rispondi ad APDU personalizzati o intercetta i frame dei lettori (Android 15+).</string>
+    <string name="hce_service_desc">Emulatore NDEF Type 4 e APDU RFIDtools</string>
+    <string name="hce_title">HCE &amp; Sniffer Lettori</string>
+    <string name="hce_status_on">ATTIVO (%1$d)</string>
+    <string name="hce_status_off">SPENTO</string>
+    <string name="hce_tab_ndef">NDEF Type 4</string>
+    <string name="hce_tab_apdu">APDU Responder</string>
+    <string name="hce_tab_sniffer">Sniffer Lettori</string>
+    <string name="hce_ndef_card_title">Emula Tag NDEF Type 4</string>
+    <string name="hce_ndef_hint">Avvicina il retro di questo smartphone a un altro telefono o lettore NFC: leggerà il record NDEF configurato via ISO-DEP.</string>
+    <string name="hce_start">Avvia emulazione</string>
+    <string name="hce_stop">Ferma emulazione</string>
+    <string name="hce_rule_name">Nome regola</string>
+    <string name="hce_rule_add">Aggiungi regola</string>
+    <string name="hce_sniffer_hint">Su Android 15+ (API 35+), registra i frame di polling dei lettori (NFC-A/B/F/V, Apple ECP, gain e intervalli). Observe Mode disattiva la risposta RF se supportata dal chip NFC.</string>
+    <string name="hce_observe_toggle">Observe Mode passiva (nessuna risposta RF)</string>
+    <string name="hce_polling_log_title">Frame di polling</string>
+    <string name="hce_polling_empty">Nessun frame catturato. Avvicina il telefono a un POS, tornello o lettore attivo.</string>
+    <string name="hce_apdu_log_title">Log APDU lettore</string>
+    <string name="hce_apdu_empty">Nessun APDU ricevuto. Attiva l\'emulazione e avvicina il telefono a un lettore.</string>
+
+    <string name="inspect_pm3_handoff_title">Ponte Proxmark3</string>
+    <string name="inspect_pm3_handoff_btn">Analizza con PM3: %1$s</string>
+    <string name="inspect_pm3_queued_hint">Pronto in cronologia: %1$s (connetti PM3 e premi ↑ per avviare)</string>
+    <string name="inspect_write_t2pwd">Gestisci password Type 2</string>
+    <string name="inspect_ndef_clone_write">Clona NDEF</string>
+    <string name="inspect_ndef_clone_hce">Emula HCE</string>
 </resources>

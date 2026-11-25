@@ -995,4 +995,72 @@
     <string name="ndef_error_verify">Read-back verification failed: the tag data did not match what was sent.</string>
     <string name="ndef_error_generic">Could not write NDEF message to the tag.</string>
     <string name="apdu_presets_title">Quick APDUs</string>
+
+    <!-- Phase 1-4 Advanced Phone-NFC Suite -->
+    <string name="dump_editor_export_nfc">Export Flipper .nfc</string>
+    <string name="dump_editor_exported_nfc">Exported as %1$s</string>
+    <string name="dump_editor_fix_bcc">Fix BCC (0x%1$s)</string>
+    <string name="dump_editor_access_builder">Visual Access Bits Builder (tap to cycle)</string>
+
+    <string name="nfc_diff_title">Compare Dumps</string>
+    <string name="nfc_diff_desc">Diff two .bin/.nfc/.json/.mct dumps block-by-block.</string>
+    <string name="diff_title">Compare Dumps (Diff)</string>
+    <string name="diff_select_title">Select two dumps</string>
+    <string name="diff_pick_a">Pick Dump A</string>
+    <string name="diff_pick_b">Pick Dump B</string>
+    <string name="diff_summary_title">Diff summary</string>
+    <string name="diff_changed_count">Changed blocks / pages</string>
+    <string name="diff_identical">Identical (0 differences)</string>
+
+    <string name="nfc_t2pwd_title">Type 2 Password</string>
+    <string name="nfc_t2pwd_desc">Set or remove NTAG / Ultralight EV1 password &amp; PACK.</string>
+    <string name="t2pwd_title">NTAG / EV1 Password</string>
+    <string name="t2pwd_mode_title">Password protection</string>
+    <string name="t2pwd_set">Set password</string>
+    <string name="t2pwd_remove">Remove password</string>
+    <string name="t2pwd_current_label">Current password (8 hex, optional)</string>
+    <string name="t2pwd_new_label">New password (8 hex)</string>
+    <string name="t2pwd_prot_rw">Protect both Read and Write (PROT = 1)</string>
+    <string name="t2pwd_keygen_title">UID-derived PWD/PACK calculator</string>
+    <string name="t2pwd_arm">Tap tag to apply</string>
+    <string name="t2pwd_waiting_body">Hold the NTAG / Ultralight EV1 tag steady until verification finishes.</string>
+    <string name="t2pwd_done_title">Password updated &amp; verified</string>
+
+    <string name="ndef_vcard_name">Full name</string>
+    <string name="ndef_vcard_phone">Phone number</string>
+    <string name="ndef_vcard_org">Organization / Company</string>
+    <string name="ndef_aar_pkg">Android package name</string>
+    <string name="ndef_bt_name">Device name (optional)</string>
+
+    <string name="nfc_format_classic_title">Format Classic</string>
+    <string name="nfc_format_classic_desc">Reset MIFARE Classic sectors to factory FF..FF.</string>
+
+    <string name="nfc_hce_title">HCE Emulation &amp; Reader Sniffer</string>
+    <string name="nfc_hce_desc">Emulate NFC Forum Type 4 NDEF tags, reply to custom APDUs, or sniff reader polling frames (Android 15+).</string>
+    <string name="hce_service_desc">RFIDtools Type 4 NDEF &amp; APDU Emulator</string>
+    <string name="hce_title">HCE &amp; Reader Sniffer</string>
+    <string name="hce_status_on">ACTIVE (%1$d)</string>
+    <string name="hce_status_off">OFF</string>
+    <string name="hce_tab_ndef">Type 4 NDEF</string>
+    <string name="hce_tab_apdu">APDU Responder</string>
+    <string name="hce_tab_sniffer">Reader Sniffer</string>
+    <string name="hce_ndef_card_title">Emulate Type 4 NDEF Tag</string>
+    <string name="hce_ndef_hint">Bring the back of this phone to another phone or NFC reader: it will read the configured NDEF record over ISO-DEP.</string>
+    <string name="hce_start">Start emulation</string>
+    <string name="hce_stop">Stop emulation</string>
+    <string name="hce_rule_name">Rule label</string>
+    <string name="hce_rule_add">Add rule</string>
+    <string name="hce_sniffer_hint">On Android 15+ (API 35+), captures reader polling frames (NFC-A/B/F/V, Apple ECP, gain &amp; timing). Observe Mode silences RF replies when supported by the NFC chipset.</string>
+    <string name="hce_observe_toggle">Passive Observe Mode (no RF reply)</string>
+    <string name="hce_polling_log_title">Polling frames</string>
+    <string name="hce_polling_empty">No polling frames captured yet. Bring the phone near an active POS, turnstile, or reader.</string>
+    <string name="hce_apdu_log_title">Reader APDU log</string>
+    <string name="hce_apdu_empty">No APDU received yet. Enable emulation and tap an external reader.</string>
+
+    <string name="inspect_pm3_handoff_title">Proxmark3 Bridge</string>
+    <string name="inspect_pm3_handoff_btn">Run on PM3: %1$s</string>
+    <string name="inspect_pm3_queued_hint">Staged in history: %1$s (connect PM3 and press ↑ to run)</string>
+    <string name="inspect_write_t2pwd">Manage Type 2 password</string>
+    <string name="inspect_ndef_clone_write">Clone NDEF</string>
+    <string name="inspect_ndef_clone_hce">Emulate HCE</string>
 </resources>

@@ -165,4 +165,48 @@ object MfcAccess {
             0x03, 0x04 -> MfcKeyRequirement.B
             else -> MfcKeyRequirement.NONE
         }
+
+    /**
+     * Encodes the four 3-bit access conditions (`0..7` for groups 0, 1, 2 and
+     * the sector trailer group 3) plus [gpb] into a valid 4-byte trailer slice
+     * `[b6, b7, b8, gpb]`.
+     */
+    fun encode(c0: Int, c1: Int, c2: Int, cTrailer: Int, gpb: Byte = 0x69): ByteArray {
+        val groups = intArrayOf(c0 and 7, c1 and 7, c2 and 7, cTrailer and 7)
+        var bitC1 = 0
+        var bitC2 = 0
+        var bitC3 = 0
+        for (i in 0..3) {
+            if ((groups[i] and 0x04) != 0) bitC1 = bitC1 or (1 shl i)
+            if ((groups[i] and 0x02) != 0) bitC2 = bitC2 or (1 shl i)
+            if ((groups[i] and 0x01) != 0) bitC3 = bitC3 or (1 shl i)
+        }
+        val b6 = (((bitC2 xor 0x0F) shl 4) or (bitC1 xor 0x0F)).toByte()
+        val b7 = ((bitC1 shl 4) or (bitC3 xor 0x0F)).toByte()
+        val b8 = ((bitC3 shl 4) or bitC2).toByte()
+        return byteArrayOf(b6, b7, b8, gpb)
+    }
+
+    /** Concise human-readable description of a data-block condition (0..7). */
+    fun describeDataCondition(cond: Int): String = when (cond and 7) {
+        0 -> "000 · R/W/Inc/Dec: Key A|B (Factory)"
+        1 -> "001 · R: A|B · Dec: A|B (Value RO)"
+        2 -> "010 · R: A|B · W: Never (Read-only)"
+        3 -> "011 · R/W: Key B only"
+        4 -> "100 · R: A|B · W: Key B"
+        5 -> "101 · R: Key B · W: Never"
+        6 -> "110 · R: A|B · W/Inc: B · Dec: A|B"
+        else -> "111 · Never (Locked)"
+    }
+
+    /** Concise human-readable description of a trailer condition (0..7). */
+    fun describeTrailerCondition(cond: Int): String = when (cond and 7) {
+        0 -> "000 · W Keys: A · Access RO"
+        1 -> "001 · W Keys & Access: A (Factory)"
+        2 -> "010 · Keys & Access Read-only"
+        3 -> "011 · W Keys & Access: Key B"
+        4 -> "100 · W Keys: Key B · Access RO"
+        5 -> "101 · W Access: Key B · Keys RO"
+        else -> "11x · Trailer Read-only"
+    }
 }

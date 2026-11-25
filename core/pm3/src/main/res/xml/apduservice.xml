@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Host Card Emulation AID group for NFC Forum Type 4 Tag (NDEF v1.0 & v2.0)
+    and Android 15+ polling loop filter. Active responses are gated by
+    HceRegistry.config.enabled so the phone never replies unexpectedly when idle.
+    SPDX-License-Identifier: GPL-3.0-or-later
+-->
+<host-apdu-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/hce_service_desc"
+    android:requireDeviceUnlock="false">
+    <aid-group
+        android:category="other"
+        android:description="@string/hce_service_desc">
+        <aid-filter android:name="D2760000850101" />
+        <aid-filter android:name="D2760000850100" />
+    </aid-group>
+</host-apdu-service>

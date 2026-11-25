@@ -27,13 +27,25 @@ object NfcDumpSaver {
         classic: MfcCapture? = null,
         ultralight: MfuCapture? = null,
         pages: List<ByteArray>? = null,
+        iso15693: Iso15693Dump? = null,
         saveKeys: Boolean = true,
     ): SavedDump {
-        require(listOfNotNull(classic, ultralight, pages).size == 1) {
+        require(listOfNotNull(classic, ultralight, pages, iso15693).size == 1) {
             "exactly one capture to save"
         }
         val dir = Pm3Resources.home(context)
         dir.mkdirs()
+        if (iso15693 != null) {
+            val baseStem = name.removeSuffix(".bin").removeSuffix(".nfc")
+            var target = File(dir, "$baseStem.nfc")
+            var suffix = 1
+            while (target.exists() && suffix < 1000) {
+                target = File(dir, "$baseStem-$suffix.nfc")
+                suffix++
+            }
+            target.writeText(FlipperNfcFormat.fromIso15693(iso15693), Charsets.UTF_8)
+            return SavedDump(target, null)
+        }
         if (classic != null) {
             val dump = MfuDumpFiles.uniqueDump(dir, name)
             dump.writeBytes(classic.toBin())

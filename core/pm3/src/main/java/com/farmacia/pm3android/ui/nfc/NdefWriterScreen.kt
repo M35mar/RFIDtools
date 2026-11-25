@@ -1,5 +1,5 @@
-// Full-screen overlay for writing & formatting NDEF records (URL, Text, Wi-Fi,
-// Erase) onto any NFC Forum Type 1-5 tag, with read-back verification.
+// Full-screen overlay for NDEF Writer / Formatter Pro (URI + tel/mailto/geo
+// presets, Text, Wi-Fi WSC, vCard 3.0, App Launcher AAR, Bluetooth OOB, Erase).
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -20,7 +20,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ContactPage
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.ErrorOutline
@@ -28,12 +31,14 @@ import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Nfc
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -112,22 +117,25 @@ fun NdefWriterScreen(
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Scaffold(
             topBar = {
-                TopAppBar(
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = chrome.topBarBg,
-                        titleContentColor = Color(0xFFF8FAFC),
-                        navigationIconContentColor = Color(0xFFF8FAFC),
-                    ),
-                    title = { Text(stringResource(R.string.ndef_writer_title)) },
-                    navigationIcon = {
-                        IconButton(onClick = onClose, enabled = !state.busy) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = stringResource(R.string.nfc_back),
-                            )
-                        }
-                    },
-                )
+                Column {
+                    TopAppBar(
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = chrome.topBarBg,
+                            titleContentColor = Color(0xFFF8FAFC),
+                            navigationIconContentColor = Color(0xFFF8FAFC),
+                        ),
+                        title = { Text(stringResource(R.string.ndef_writer_title)) },
+                        navigationIcon = {
+                            IconButton(onClick = onClose, enabled = !state.busy) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = stringResource(R.string.nfc_back),
+                                )
+                            }
+                        },
+                    )
+                    HorizontalDivider(color = chrome.chromeDivider)
+                }
             },
         ) { padding ->
             Column(
@@ -181,6 +189,36 @@ fun NdefWriterScreen(
                                     ),
                                 )
                                 FilterChip(
+                                    selected = state.kind == NdefWriteKind.VCARD,
+                                    onClick = { viewModel.setKind(NdefWriteKind.VCARD) },
+                                    leadingIcon = { Icon(Icons.Filled.ContactPage, null, Modifier.size(16.dp)) },
+                                    label = { Text("vCard") },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = accents.lf.copy(alpha = 0.22f),
+                                        selectedLabelColor = accents.lf,
+                                    ),
+                                )
+                                FilterChip(
+                                    selected = state.kind == NdefWriteKind.APP_LAUNCHER,
+                                    onClick = { viewModel.setKind(NdefWriteKind.APP_LAUNCHER) },
+                                    leadingIcon = { Icon(Icons.Filled.Apps, null, Modifier.size(16.dp)) },
+                                    label = { Text("App (AAR)") },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = accents.info.copy(alpha = 0.22f),
+                                        selectedLabelColor = accents.info,
+                                    ),
+                                )
+                                FilterChip(
+                                    selected = state.kind == NdefWriteKind.BLUETOOTH,
+                                    onClick = { viewModel.setKind(NdefWriteKind.BLUETOOTH) },
+                                    leadingIcon = { Icon(Icons.Filled.Bluetooth, null, Modifier.size(16.dp)) },
+                                    label = { Text("Bluetooth") },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = accents.bluetooth.copy(alpha = 0.22f),
+                                        selectedLabelColor = accents.bluetooth,
+                                    ),
+                                )
+                                FilterChip(
                                     selected = state.kind == NdefWriteKind.ERASE,
                                     onClick = { viewModel.setKind(NdefWriteKind.ERASE) },
                                     leadingIcon = { Icon(Icons.Filled.DeleteSweep, null, Modifier.size(16.dp)) },
@@ -193,14 +231,25 @@ fun NdefWriterScreen(
                             }
 
                             when (state.kind) {
-                                NdefWriteKind.URI -> OutlinedTextField(
-                                    value = state.uri,
-                                    onValueChange = viewModel::setUri,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    label = { Text(stringResource(R.string.ndef_uri_label)) },
-                                    placeholder = { Text("https://example.com") },
-                                    singleLine = true,
-                                )
+                                NdefWriteKind.URI -> {
+                                    Row(
+                                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    ) {
+                                        AssistChip(onClick = { viewModel.setUri("https://") }, label = { Text("https://") })
+                                        AssistChip(onClick = { viewModel.setUri("tel:+39") }, label = { Text("tel:") })
+                                        AssistChip(onClick = { viewModel.setUri("mailto:") }, label = { Text("mailto:") })
+                                        AssistChip(onClick = { viewModel.setUri("geo:41.9028,12.4964") }, label = { Text("geo:") })
+                                    }
+                                    OutlinedTextField(
+                                        value = state.uri,
+                                        onValueChange = viewModel::setUri,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        label = { Text(stringResource(R.string.ndef_uri_label)) },
+                                        placeholder = { Text("https://example.com") },
+                                        singleLine = true,
+                                    )
+                                }
                                 NdefWriteKind.TEXT -> OutlinedTextField(
                                     value = state.text,
                                     onValueChange = viewModel::setText,
@@ -240,6 +289,61 @@ fun NdefWriterScreen(
                                             singleLine = true,
                                         )
                                     }
+                                }
+                                NdefWriteKind.VCARD -> {
+                                    OutlinedTextField(
+                                        value = state.vcardName,
+                                        onValueChange = viewModel::setVcardName,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        label = { Text(stringResource(R.string.ndef_vcard_name)) },
+                                        singleLine = true,
+                                    )
+                                    OutlinedTextField(
+                                        value = state.vcardPhone,
+                                        onValueChange = viewModel::setVcardPhone,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        label = { Text(stringResource(R.string.ndef_vcard_phone)) },
+                                        singleLine = true,
+                                    )
+                                    OutlinedTextField(
+                                        value = state.vcardEmail,
+                                        onValueChange = viewModel::setVcardEmail,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        label = { Text("Email") },
+                                        singleLine = true,
+                                    )
+                                    OutlinedTextField(
+                                        value = state.vcardOrg,
+                                        onValueChange = viewModel::setVcardOrg,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        label = { Text(stringResource(R.string.ndef_vcard_org)) },
+                                        singleLine = true,
+                                    )
+                                }
+                                NdefWriteKind.APP_LAUNCHER -> OutlinedTextField(
+                                    value = state.appPackage,
+                                    onValueChange = viewModel::setAppPackage,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    label = { Text(stringResource(R.string.ndef_aar_pkg)) },
+                                    placeholder = { Text("com.farmacia.pm3android") },
+                                    singleLine = true,
+                                )
+                                NdefWriteKind.BLUETOOTH -> {
+                                    OutlinedTextField(
+                                        value = state.btMac,
+                                        onValueChange = viewModel::setBtMac,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        label = { Text("Bluetooth MAC") },
+                                        placeholder = { Text("AA:BB:CC:DD:EE:FF") },
+                                        singleLine = true,
+                                    )
+                                    OutlinedTextField(
+                                        value = state.btName,
+                                        onValueChange = viewModel::setBtName,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        label = { Text(stringResource(R.string.ndef_bt_name)) },
+                                        singleLine = true,
+                                    )
                                 }
                                 NdefWriteKind.ERASE -> Text(
                                     text = stringResource(R.string.ndef_erase_hint),

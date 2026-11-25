@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.5.0 – 2026-11-25
+
+### Added
+- **Cryptographic ECDSA Originality Verification (`OriginalityVerifier`)**: pure-Kotlin `secp128r1` / `secp192r1` / `secp224r1` verifier with all 21 manufacturer public keys (NXP NTAG21x, Ultralight EV1/AES, NTAG 22x/424 DNA, Classic EV1, Plus EV1/EV2, DESFire EV1–EV3, ST25 TruST25, ICODE DNA/SLIX2, VivoKey, Mikron) + NXP Silicon Wafer coordinate decoder, catching cloned UIDs with copied signatures on first tap.
+- **Non-destructive Magic Card Detector & Proxmark3 1-Tap Bridge**: identifies Gen4 GTU (`CF 00...`), unlocked Gen3/UFUID, and 7-byte Classic clones without writing to the tag, plus a 1-tap handoff button from the NFC Inspector straight to the Proxmark3 Console.
+- **Bundled PM3 Dictionaries, Quick Keys & MIFARE Classic Formatter**: exposes Proxmark3 `.proxmark3/dictionaries/mfc_*.dic` directly in the phone NFC key pickers, automatically tries the top 24 universal MIFARE keys when no file is selected, and adds a verified **Format Classic** factory reset tool.
+- **Italian CIE 3.0 `NIS` (`EF.ID_Servizi`) reader**: free non-PIN inspection of `A0000000308000000009816001` (`EF 1001`) in `EmrtdProbe`.
+- **Multi-format Ecosystem & Dump Diff Tool**: bi-directional **Flipper Zero `.nfc` v4** import/export (Classic, NTAG/Ultralight, ISO 15693), **Proxmark3 `.json`** and `.mct`/`.eml` dump loading, full-screen **Compare Dumps (Diff)** tool with Value Block / Trailer / CFG semantic deltas, plus **Visual Access Bits Builder** and **1-tap Fix BCC** in the Dump Editor.
+- **Type 2 Password Manager (`Type2PasswordScreen`)**: set or remove `PWD` / `PACK` / `AUTH0` / `PROT` on NTAG21x & Ultralight EV1 tags (with UID-derived key calculators, `AUTHLIM` guard, never setting `CFGLCK`, and mandatory read-back verification).
+- **Full ISO 15693 (`NfcV`) Dumper & Restorer (`Iso15693Dumper`)**: full-memory Type 5 dump, lock-status map, NXP ICODE SLIX / ST25 `PRESENT_PASSWORD` (`0xB3`), and verified block-by-block restore.
+- **Ultralight C 3DES, NTAG 424 DNA SDM & DESFire DES/2K3DES**: mutual 2-key 3DES (`0x1A`) for Ultralight C, NTAG 424 DNA SUN/SDM URL parser & AES-128 CMAC verifier, and legacy DES/2K3DES (`0x0A`/`0x1A`) support in `DesfireSession`.
+- **NDEF Writer Pro & 1-Tap Cloning**: added **vCard 3.0**, **Android App Launcher (AAR)**, **Bluetooth OOB pairing**, `tel:`/`mailto:`/`geo:` presets, and 1-tap NDEF cloning from the Tag Inspector to NDEF Writer or HCE.
+- **HCE Card Emulation & Reader Sniffer (`Pm3HostApduService`, `HceEmulatorScreen`)**: NFC Forum **Type 4 NDEF** tag emulation, custom **APDU Responder** with live command/response log, and Android 15+ (`API 35+`) passive **Reader Polling Sniffer** (`PollingFrame` + `Observe Mode`, with Apple ECP detection).
+
 ## 2.4.0 – 2026-11-21
 
 ### Added

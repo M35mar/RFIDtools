@@ -123,8 +123,8 @@ android {
         applicationId = "com.farmacia.pm3android"
         minSdk = 26
         targetSdk = 37
-        versionCode = 24000
-        versionName = "2.4.0"
+        versionCode = 25000
+        versionName = "2.5.0"
 
         ndk {
             // The only device flavour this project targets.

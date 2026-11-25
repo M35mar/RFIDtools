@@ -244,7 +244,7 @@ private fun PreviewCard(
             InfoRow(stringResource(R.string.nfc_uid), state.uidHex)
             InfoRow(
                 stringResource(R.string.nfc_size),
-                if (state.kind == RestoreKind.CLASSIC) {
+                if (state.kind != RestoreKind.ULTRALIGHT) {
                     stringResource(R.string.nfc_size_blocks, state.itemCount, state.byteSize)
                 } else {
                     stringResource(R.string.nfc_size_pages, state.itemCount, state.byteSize)
@@ -337,7 +337,7 @@ private fun OptionsCard(
             style = MaterialTheme.typography.titleMedium,
         )
 
-        if (state.kind == RestoreKind.ULTRALIGHT) {
+        if (state.kind == RestoreKind.ULTRALIGHT || state.kind == RestoreKind.ISO15693) {
             val passwordValid = state.password.isEmpty() || state.password.length == 8
             OutlinedTextField(
                 value = state.password,
@@ -614,7 +614,7 @@ private fun NameCard(
         InfoRow(stringResource(R.string.nfc_uid), state.uidHex)
         InfoRow(
             stringResource(R.string.nfc_size),
-            if (classic) {
+            if (state.kind != RestoreKind.ULTRALIGHT) {
                 stringResource(R.string.nfc_size_blocks, state.itemCount, state.byteSize)
             } else {
                 stringResource(R.string.nfc_size_pages, state.itemCount, state.byteSize)
@@ -830,7 +830,7 @@ private fun ResultCount(labelRes: Int, value: Int) {
 
 @Composable
 private fun StepRow(step: StepResult, kind: RestoreKind) {
-    val label = if (kind == RestoreKind.CLASSIC) {
+    val label = if (kind != RestoreKind.ULTRALIGHT) {
         stringResource(R.string.nfc_step_block, step.index)
     } else {
         stringResource(R.string.nfc_step_page, step.index)

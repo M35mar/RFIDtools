@@ -10,7 +10,7 @@ package com.farmacia.pm3android.nfc
 
 import java.io.File
 
-enum class DumpFamily { CLASSIC, ULTRALIGHT }
+enum class DumpFamily { CLASSIC, ULTRALIGHT, ISO15693 }
 
 /** What a row of the dump represents on the card. */
 enum class DumpRowRole {
@@ -64,6 +64,7 @@ object DumpRowDetails {
     ): List<String> = when (family) {
         DumpFamily.CLASSIC -> classic(index, bytes)
         DumpFamily.ULTRALIGHT -> ultralight(index, rowCount, bytes)
+        DumpFamily.ISO15693 -> emptyList()
     }
 
     /** MIFARE value block: value, ~value, value again, address and ~address. */
@@ -154,6 +155,7 @@ class EditableDump private constructor(
     val rows: List<DumpRow> = when (family) {
         DumpFamily.CLASSIC -> buildClassicRows(data)
         DumpFamily.ULTRALIGHT -> buildUltralightRows(data, headerBytes)
+        DumpFamily.ISO15693 -> buildPlainRows(data, rowSize)
     }
 
     /** Row indices whose bytes differ from the file on disk. */
@@ -169,6 +171,7 @@ class EditableDump private constructor(
     val uidHex: String get() = when (family) {
         DumpFamily.CLASSIC -> classicUidHex(data)
         DumpFamily.ULTRALIGHT -> ultralightUidHex(data, headerBytes)
+        DumpFamily.ISO15693 -> ""
     }
 
     fun isModified(index: Int): Boolean = index in modifiedRows
@@ -261,6 +264,28 @@ class EditableDump private constructor(
                         data = bytes.copyOf(),
                     )
                 }
+
+                is DumpImage.Iso15693 -> {
+                    val plain = image.dump.toPlainBytes()
+                    EditableDump(
+                        file = file,
+                        name = file.name,
+                        family = DumpFamily.ISO15693,
+                        label = image.tagLabel,
+                        rowSize = image.dump.blockSize,
+                        headerBytes = 0,
+                        original = plain,
+                        data = plain.copyOf(),
+                    )
+                }
+            }
+        }
+
+        private fun buildPlainRows(data: ByteArray, blockSize: Int): List<DumpRow> {
+            val count = if (blockSize > 0) data.size / blockSize else 0
+            return (0 until count).map { idx ->
+                val bytes = data.copyOfRange(idx * blockSize, (idx + 1) * blockSize)
+                DumpRow(index = idx, bytes = bytes, role = DumpRowRole.USER, writtenByRestore = true)
             }
         }
 

@@ -217,7 +217,7 @@ class MfcValueViewModel(application: Application) : AndroidViewModel(application
 
     private suspend fun refreshKeyFilesNow() {
         val names = withContext(Dispatchers.IO) {
-            MfcKeyFiles.listIn(Pm3Resources.home(getApplication()))
+            MfcKeyFiles.listInWithBundled(Pm3Resources.home(getApplication()))
                 .map(::relativeName)
         }
         if (!stateFlow.value.visible) return
@@ -382,6 +382,7 @@ class MfcValueViewModel(application: Application) : AndroidViewModel(application
                         MfcReader(transport).read(
                             keyFile = keyFile,
                             requireComplete = false,
+                            useQuickKeys = keyFile == null,
                         ) { done, total ->
                             if (stateFlow.value.visible) {
                                 stateFlow.value = stateFlow.value.copy(

@@ -11,6 +11,9 @@ import com.farmacia.pm3android.nfc.inspect.HfProbe
 import com.farmacia.pm3android.nfc.inspect.Iso15693
 import com.farmacia.pm3android.nfc.inspect.Iso15693Info
 import com.farmacia.pm3android.nfc.inspect.NfcTech
+import com.farmacia.pm3android.nfc.inspect.OriginalityGroup
+import com.farmacia.pm3android.nfc.inspect.OriginalityStatus
+import com.farmacia.pm3android.nfc.inspect.OriginalityVerifier
 import com.farmacia.pm3android.nfc.inspect.ProbeContext
 import com.farmacia.pm3android.nfc.inspect.ProbeOutcome
 import com.farmacia.pm3android.nfc.inspect.TagFamily
@@ -50,7 +53,24 @@ object Iso15693Probe : HfProbe {
             val uid = context.snapshot.uid
             val manufacturer = Iso15693Info.manufacturer(uid)
             val family = familyOf(manufacturer)
-            val label = labelOf(family, manufacturer, systemInfo?.icReference, systemInfo?.blockCount)
+            val rawSig = attempt(abort) {
+                val resp = transport.transceive(Iso15693.readSignature())
+                Iso15693.parseBlockData(resp)?.takeIf { it.size == 32 }
+            }
+            val sigSuffix = rawSig?.let { sig ->
+                val check = OriginalityVerifier.verify(
+                    uid = uid,
+                    signature = sig,
+                    group = OriginalityGroup.ISO15693,
+                    tryReversed = true,
+                )
+                when (check.status) {
+                    OriginalityStatus.VALID -> " · ECC Valid"
+                    OriginalityStatus.INVALID -> " · ECC Invalid"
+                    else -> ""
+                }
+            }.orEmpty()
+            val label = labelOf(family, manufacturer, systemInfo?.icReference, systemInfo?.blockCount) + sigSuffix
             val details = Iso15693Info.details(
                 tagId = uid,
                 dsfid = systemInfo?.dsfid,

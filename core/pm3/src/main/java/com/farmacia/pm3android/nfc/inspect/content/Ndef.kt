@@ -7,6 +7,9 @@
 
 package com.farmacia.pm3android.nfc.inspect.content
 
+import com.farmacia.pm3android.nfc.Ntag424SdmVerifier
+import com.farmacia.pm3android.nfc.toHexSpaced
+
 /** What a record carries, after the payload has been decoded. */
 enum class NdefKind {
     TEXT,
@@ -242,10 +245,16 @@ object NdefParser {
             0x02 -> NdefRecord(
                 kind = NdefKind.MIME,
                 type = chunk.type,
-                text = if (chunk.type.startsWith("text/", ignoreCase = true)) {
-                    String(payload, Charsets.UTF_8)
-                } else {
-                    null
+                text = when {
+                    chunk.type.startsWith("text/", ignoreCase = true) ->
+                        String(payload, Charsets.UTF_8)
+                    chunk.type.equals("application/vnd.bluetooth.ep.oob", ignoreCase = true) && payload.size >= 8 -> {
+                        val mac = ByteArray(6) { idx -> payload[7 - idx] }
+                        "BT MAC: " + mac.joinToString(":") { "%02X".format(it.toInt() and 0xFF) }
+                    }
+                    chunk.type.equals("application/vnd.wfa.wsc", ignoreCase = true) ->
+                        "Wi-Fi WSC (${payload.size} B)"
+                    else -> null
                 },
                 payloadBytes = payload.size,
             )
@@ -257,7 +266,12 @@ object NdefParser {
                 payload.size,
             )
 
-            0x04 -> NdefRecord(NdefKind.EXTERNAL, chunk.type, null, payload.size)
+            0x04 -> NdefRecord(
+                NdefKind.EXTERNAL,
+                chunk.type,
+                null,
+                payload.size,
+            )
 
             else -> NdefRecord(NdefKind.UNKNOWN, chunk.type, null, payload.size)
         }
@@ -282,7 +296,21 @@ object NdefParser {
         val code = payload[0].toInt() and 0xFF
         val prefix = URI_PREFIXES.getOrNull(code).orEmpty()
         val rest = String(payload, 1, payload.size - 1, Charsets.UTF_8)
-        return NdefRecord(NdefKind.URI, "U", prefix + rest, payload.size)
+        val full = prefix + rest
+        val sdm = Ntag424SdmVerifier.detectInUrl(full)
+        val annotated = if (sdm != null) {
+            // Check against factory zero key automatically when present!
+            val zeroCheck = Ntag424SdmVerifier.verify(sdm)
+            val badge = when {
+                zeroCheck?.valid == true -> " [SDM SUN · Ctr=${zeroCheck.readCounter} · Key=00..00 OK]"
+                zeroCheck != null -> " [SDM SUN · Ctr=${zeroCheck.readCounter} · Custom AES Key]"
+                else -> " [SDM SUN Dynamic URL]"
+            }
+            full + badge
+        } else {
+            full
+        }
+        return NdefRecord(NdefKind.URI, "U", annotated, payload.size)
     }
 
     private fun decodeSmartPoster(payload: ByteArray, depth: Int): NdefRecord? {

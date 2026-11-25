@@ -92,6 +92,8 @@ enum class MfcSize(val sectors: Int, val blocks: Int, val label: String) {
         fun fromBytes(size: Int): MfcSize? = entries.firstOrNull { it.bytes == size }
 
         fun fromBlocks(blocks: Int): MfcSize? = entries.firstOrNull { it.blocks == blocks }
+
+        fun fromSectorCount(sectors: Int): MfcSize? = entries.firstOrNull { it.sectors == sectors }
     }
 }
 

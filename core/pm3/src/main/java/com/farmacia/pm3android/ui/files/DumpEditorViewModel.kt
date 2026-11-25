@@ -13,8 +13,11 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.farmacia.pm3android.R
 import com.farmacia.pm3android.data.Pm3FileFilter
+import com.farmacia.pm3android.nfc.DumpImage
+import com.farmacia.pm3android.nfc.DumpLoader
 import com.farmacia.pm3android.nfc.DumpRow
 import com.farmacia.pm3android.nfc.EditableDump
+import com.farmacia.pm3android.nfc.FlipperNfcFormat
 import com.farmacia.pm3android.nfc.hexToBytesOrNull
 import com.farmacia.pm3android.pm3.Pm3Resources
 import kotlinx.coroutines.CancellationException
@@ -194,6 +197,49 @@ class DumpEditorViewModel(application: Application) : AndroidViewModel(applicati
 
     fun clearMessage() {
         stateFlow.value = stateFlow.value.copy(message = null)
+    }
+
+    /** Exports the open dump into `$HOME/<stem>.nfc` (Flipper NFC v4). */
+    fun exportFlipperNfc() {
+        val current = stateFlow.value
+        val dump = current.dump ?: return
+        if (current.saving) return
+        val app = getApplication<Application>()
+        val home = Pm3Resources.home(app)
+        stateFlow.value = current.copy(saving = true, message = null)
+        viewModelScope.launch {
+            try {
+                val outName = withContext(Dispatchers.IO) {
+                    val tempBin = File(app.cacheDir, dump.name).apply { writeBytes(dump.toBytes()) }
+                    val loaded = try {
+                        DumpLoader.load(tempBin)
+                    } finally {
+                        tempBin.delete()
+                    }
+                    val nfcText = when (loaded) {
+                        is DumpImage.Classic -> FlipperNfcFormat.fromClassic(loaded.dump)
+                        is DumpImage.Ultralight -> FlipperNfcFormat.fromUltralight(loaded.dump)
+                        is DumpImage.Iso15693 -> FlipperNfcFormat.fromIso15693(loaded.dump)
+                    }
+                    val stem = dump.file.nameWithoutExtension
+                    val target = File(home, "$stem.nfc")
+                    writeAtomic(target, nfcText.toByteArray(Charsets.UTF_8))
+                    target.name
+                }
+                stateFlow.value = stateFlow.value.copy(
+                    saving = false,
+                    savedToken = stateFlow.value.savedToken + 1,
+                    message = app.getString(R.string.dump_editor_exported_nfc, outName),
+                )
+            } catch (t: CancellationException) {
+                throw t
+            } catch (t: Throwable) {
+                stateFlow.value = stateFlow.value.copy(
+                    saving = false,
+                    message = app.getString(R.string.dump_editor_save_failed, errorText(t)),
+                )
+            }
+        }
     }
 
     // The dump is never overwritten in place: if the atomic rename is not

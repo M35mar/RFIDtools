@@ -119,6 +119,9 @@ class MfuReader(private val transport: UltralightTransport) {
     }
 
     private fun readLegacyPages(progress: RestoreProgress?): List<ByteArray> {
+        // Attempt default NXP 2K3DES mutual auth first in case this is an Ultralight C
+        // with read/write protection enabled under the factory key ("BREAKMEIFYOUCAN!").
+        runCatching { UltralightC3Des.authenticate(transport, UltralightC3Des.DEFAULT_KEY) }
         val pages = mutableListOf<ByteArray>()
         var start = 0
         while (start < LEGACY_MAX_PAGES) {

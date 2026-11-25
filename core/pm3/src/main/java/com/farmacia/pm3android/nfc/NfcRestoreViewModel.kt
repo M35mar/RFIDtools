@@ -15,6 +15,7 @@ import android.nfc.Tag
 import android.nfc.TagLostException
 import android.nfc.tech.MifareClassic
 import android.nfc.tech.NfcA
+import android.nfc.tech.NfcV
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.farmacia.pm3android.R
@@ -42,10 +43,11 @@ enum class RestoreStage {
     SAVED,
 }
 
-/** What the overlay is doing: reading a tag into a new dump, or the reverse. */
+/** What the overlay is doing: reading a tag, restoring a dump, or factory-formatting Classic. */
 enum class NfcMode {
     RESTORE,
     DUMP,
+    FORMAT_CLASSIC,
 }
 
 enum class RestoreWarning {
@@ -62,6 +64,7 @@ enum class RestoreWarning {
 enum class RestoreKind {
     CLASSIC,
     ULTRALIGHT,
+    ISO15693,
 }
 
 data class NfcRestoreState(
@@ -97,6 +100,8 @@ data class NfcRestoreState(
     val busy: Boolean get() = stage == RestoreStage.LOADING || stage == RestoreStage.WORKING
 
     val dumping: Boolean get() = mode == NfcMode.DUMP
+
+    val formattingClassic: Boolean get() = mode == NfcMode.FORMAT_CLASSIC
 }
 
 class NfcRestoreViewModel(application: Application) : AndroidViewModel(application) {
@@ -107,6 +112,7 @@ class NfcRestoreViewModel(application: Application) : AndroidViewModel(applicati
     private var image: DumpImage? = null
     private var mfuCapture: MfuCapture? = null
     private var mfcCapture: MfcCapture? = null
+    private var iso15693Capture: Iso15693Dump? = null
     private var keyFileBytes: ByteArray? = null
     private var keyFileLabel: String? = null
 
@@ -162,16 +168,41 @@ class NfcRestoreViewModel(application: Application) : AndroidViewModel(applicati
         image = null
         mfuCapture = null
         mfcCapture = null
+        iso15693Capture = null
         keyFileBytes = null
         keyFileLabel = null
         stateFlow.value = NfcRestoreState()
     }
 
-    /** Opens the overlay in read mode: present a tag, save it as a .bin dump. */
+    /** Opens the overlay to reset a MIFARE Classic card back to factory defaults. */
+    fun startFormatClassic() {
+        image = null
+        mfuCapture = null
+        mfcCapture = null
+        iso15693Capture = null
+        keyFileBytes = null
+        keyFileLabel = null
+        stateFlow.value = NfcRestoreState(
+            visible = true,
+            mode = NfcMode.FORMAT_CLASSIC,
+            stage = RestoreStage.PREVIEW,
+            dumpName = "Factory Reset (FF..FF)",
+            tagLabel = "MIFARE Classic (1K / 4K / Mini)",
+            uidHex = "—",
+            kind = RestoreKind.CLASSIC,
+            itemCount = 64,
+            byteSize = 1024,
+            warnings = listOf(RestoreWarning.UID_KEPT, RestoreWarning.CONFIG),
+        )
+        refreshFileLists()
+    }
+
+    /** Opens the overlay in read mode: present a tag, save it as a dump. */
     fun startDump() {
         image = null
         mfuCapture = null
         mfcCapture = null
+        iso15693Capture = null
         keyFileBytes = null
         keyFileLabel = null
         stateFlow.value = NfcRestoreState(
@@ -303,10 +334,10 @@ class NfcRestoreViewModel(application: Application) : AndroidViewModel(applicati
         viewModelScope.launch { refreshFileListsNow() }
     }
 
-    /** `.bin`/`.txt` files in the app folder, relative to it. */
+    /** `.bin`/`.txt`/`.dic` key files in the app folder + bundled PM3 dictionaries. */
     private fun fileList(): List<String> {
         val home = Pm3Resources.home(getApplication())
-        return MfcKeyFiles.listIn(home).map(::relativeName)
+        return MfcKeyFiles.listInWithBundled(home).map(::relativeName)
     }
 
     private fun relativeName(file: File): String {
@@ -397,6 +428,10 @@ class NfcRestoreViewModel(application: Application) : AndroidViewModel(applicati
             readDump(tag)
             return
         }
+        if (current.mode == NfcMode.FORMAT_CLASSIC) {
+            runFormatClassicOnTag(tag)
+            return
+        }
         val image = image ?: return
         abortRequested = false
         stateFlow.value = current.copy(
@@ -455,9 +490,70 @@ class NfcRestoreViewModel(application: Application) : AndroidViewModel(applicati
     // Dump
     // -----------------------------------------------------------------------
 
+    private fun runFormatClassicOnTag(tag: Tag) {
+        val current = stateFlow.value
+        abortRequested = false
+        stateFlow.value = current.copy(
+            stage = RestoreStage.WORKING,
+            error = null,
+            report = null,
+            progressDone = 0,
+        )
+        viewModelScope.launch {
+            try {
+                val report = withContext(Dispatchers.IO) {
+                    val transport = AndroidClassicTransport(tag)
+                    try {
+                        val size = MfcSize.fromSectorCount(transport.sectorCount) ?: MfcSize.CLASSIC_1K
+                        val home = Pm3Resources.home(getApplication())
+                        val parsed = current.selectedKeyFile
+                            ?.let { MfcKeyFileParser.parse(File(home, it), size) }
+                        MfcFormatter(transport).formatToFactory(
+                            candidates = parsed?.allKeys().orEmpty(),
+                            progress = RestoreProgress { done, total ->
+                                stateFlow.value = stateFlow.value.copy(
+                                    progressDone = done,
+                                    progressTotal = total,
+                                )
+                            },
+                            abort = { abortRequested },
+                        )
+                    } finally {
+                        transport.close()
+                    }
+                }
+                stateFlow.value = stateFlow.value.copy(
+                    stage = RestoreStage.DONE,
+                    report = report,
+                    progressDone = report.steps.size,
+                    progressTotal = report.steps.size,
+                )
+            } catch (t: CancellationException) {
+                throw t
+            } catch (_: TagLostException) {
+                stateFlow.value = stateFlow.value.copy(
+                    stage = RestoreStage.PREVIEW,
+                    error = getApplication<Application>().getString(R.string.nfc_error_tag_lost),
+                )
+            } catch (t: Throwable) {
+                stateFlow.value = stateFlow.value.copy(
+                    stage = RestoreStage.ERROR,
+                    error = getApplication<Application>().getString(
+                        R.string.nfc_error_restore,
+                        errorText(t),
+                    ),
+                )
+            }
+        }
+    }
+
     private fun readDump(tag: Tag) {
         if (MifareClassic.get(tag) != null) {
             readClassicDump(tag)
+            return
+        }
+        if (NfcV.get(tag) != null) {
+            readIso15693Dump(tag)
             return
         }
         // Some clones expose the Classic SAK without the MifareClassic tech:
@@ -505,6 +601,7 @@ class NfcRestoreViewModel(application: Application) : AndroidViewModel(applicati
                         MfcReader(transport).read(
                             keyFile = keyFile,
                             requireComplete = true,
+                            useQuickKeys = keyFile == null,
                         ) { done, total ->
                             stateFlow.value = stateFlow.value.copy(
                                 progressDone = done,
@@ -652,13 +749,95 @@ class NfcRestoreViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
+    private fun readIso15693Dump(tag: Tag) {
+        val current = stateFlow.value
+        val password = parsePassword(current.password)
+        if (current.password.isNotEmpty() && password == null) {
+            stateFlow.value = current.copy(
+                stage = RestoreStage.WAITING,
+                error = getApplication<Application>().getString(
+                    R.string.nfc_option_password_invalid,
+                ),
+            )
+            return
+        }
+        stateFlow.value = current.copy(
+            stage = RestoreStage.WORKING,
+            kind = RestoreKind.ISO15693,
+            error = null,
+            progressDone = 0,
+            progressTotal = 0,
+            savedName = null,
+            savedKeyName = null,
+            sectorsRead = 0,
+            sectorsTotal = 0,
+            unreadableBlocks = 0,
+        )
+        viewModelScope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    val transport = AndroidNfcVTransport(tag)
+                    try {
+                        Iso15693Dumper.readAll(
+                            transport = transport,
+                            fallbackUid = tag.id ?: ByteArray(0),
+                            password = password,
+                            progress = RestoreProgress { done, total ->
+                                stateFlow.value = stateFlow.value.copy(
+                                    progressDone = done,
+                                    progressTotal = total,
+                                )
+                            },
+                        )
+                    } finally {
+                        transport.close()
+                    }
+                }
+                iso15693Capture = result
+                stateFlow.value = stateFlow.value.copy(
+                    stage = RestoreStage.NAMING,
+                    tagLabel = "ISO 15693 (${result.blocks.size} × ${result.blockSize} B)",
+                    uidHex = result.uidHex,
+                    kind = RestoreKind.ISO15693,
+                    itemCount = result.blocks.size,
+                    byteSize = result.blocks.size * result.blockSize,
+                    nameDraft = result.name,
+                    progressDone = result.blocks.size,
+                    progressTotal = result.blocks.size,
+                )
+            } catch (t: CancellationException) {
+                throw t
+            } catch (_: TagLostException) {
+                stateFlow.value = stateFlow.value.copy(
+                    stage = RestoreStage.WAITING,
+                    error = getApplication<Application>().getString(R.string.nfc_error_tag_lost),
+                )
+            } catch (_: TagAuthException) {
+                stateFlow.value = stateFlow.value.copy(
+                    stage = RestoreStage.WAITING,
+                    needsPassword = true,
+                    error = getApplication<Application>().getString(R.string.nfc_dump_error_password),
+                )
+            } catch (t: Throwable) {
+                stateFlow.value = stateFlow.value.copy(
+                    stage = RestoreStage.ERROR,
+                    error = getApplication<Application>().getString(
+                        R.string.nfc_dump_error_read,
+                        errorText(t),
+                    ),
+                )
+            }
+        }
+    }
+
     /** Writes the captured dump under the chosen name, never overwriting. */
     fun saveDump() {
         val current = stateFlow.value
         if (current.stage != RestoreStage.NAMING || current.saving) return
         val classic = mfcCapture
         val ultralight = mfuCapture
-        if (classic == null && ultralight == null) return
+        val iso15693 = iso15693Capture
+        if (classic == null && ultralight == null && iso15693 == null) return
         val name = MfuDumpFiles.fileName(current.nameDraft)
         if (name == null) {
             stateFlow.value = current.copy(
@@ -676,11 +855,13 @@ class NfcRestoreViewModel(application: Application) : AndroidViewModel(applicati
                         name = name,
                         classic = classic,
                         ultralight = ultralight,
+                        iso15693 = iso15693,
                         saveKeys = saveKeys,
                     )
                 }
                 mfcCapture = null
                 mfuCapture = null
+                iso15693Capture = null
                 if (stateFlow.value.stage == RestoreStage.NAMING) {
                     stateFlow.value = stateFlow.value.copy(
                         stage = RestoreStage.SAVED,
@@ -733,6 +914,7 @@ class NfcRestoreViewModel(application: Application) : AndroidViewModel(applicati
                     val candidates = buildList {
                         parsed?.allKeys()?.let(::addAll)
                         dump.keys?.allKeys()?.let(::addAll)
+                        if (parsed == null) addAll(MfcQuickKeys.KEYS)
                     }
                     MfcRestorer(transport).restore(
                         dump,
@@ -757,6 +939,22 @@ class NfcRestoreViewModel(application: Application) : AndroidViewModel(applicati
                         image.dump,
                         options,
                         snapshot = null,
+                        progress = progress,
+                        abort = { abortRequested },
+                    )
+                } finally {
+                    transport.close()
+                }
+            }
+
+            is DumpImage.Iso15693 -> {
+                val transport = AndroidNfcVTransport(tag)
+                try {
+                    Iso15693Dumper.restore(
+                        transport = transport,
+                        targetUid = tag.id ?: ByteArray(0),
+                        dump = image.dump,
+                        password = parsePassword(current.password),
                         progress = progress,
                         abort = { abortRequested },
                     )
@@ -868,6 +1066,22 @@ class NfcRestoreViewModel(application: Application) : AndroidViewModel(applicati
                 warnings = warnings,
                 progressDone = 0,
                 progressTotal = dump.pages.size,
+            )
+        }
+
+        is DumpImage.Iso15693 -> {
+            val dump = image.dump
+            stateFlow.value.copy(
+                stage = RestoreStage.PREVIEW,
+                dumpName = dump.name,
+                tagLabel = "ISO 15693 (${dump.blocks.size} × ${dump.blockSize} B)",
+                uidHex = dump.uidHex,
+                kind = RestoreKind.ISO15693,
+                itemCount = dump.blocks.size,
+                byteSize = dump.blocks.size * dump.blockSize,
+                warnings = listOf(RestoreWarning.UID_KEPT),
+                progressDone = 0,
+                progressTotal = dump.blocks.size,
             )
         }
     }

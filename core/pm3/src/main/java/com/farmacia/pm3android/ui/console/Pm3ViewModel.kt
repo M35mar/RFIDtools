@@ -622,6 +622,24 @@ class Pm3ViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
+     * One-tap handoff from the phone-NFC inspector to the Proxmark3 console:
+     * runs immediately if connected, or stages the command into history and
+     * prints a console hint so the user can connect and run it with 1 tap.
+     */
+    fun handOffCommandFromNfc(cmd: String) {
+        val command = cmd.trim()
+        if (command.isEmpty()) return
+        if (runCommand(command)) return
+        addHistory(command)
+        val msg = getApplication<Application>().getString(
+            R.string.inspect_pm3_queued_hint,
+            command,
+        )
+        appendLine(msg)
+        notify(msg)
+    }
+
+    /**
      * Asks the running command or script to stop. Cooperative: the client ends
      * the command at its next cancellation point, so the UI stays busy until
      * the native call returns.

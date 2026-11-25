@@ -196,6 +196,7 @@ class TagIdentity(
      */
     val dumpable: Boolean
         get() = techs.contains(NfcTech.MIFARE_CLASSIC) ||
+            (techs.contains(NfcTech.NFC_V) && memoryBytes != null) ||
             family == TagFamily.MIFARE_ULTRALIGHT ||
             family == TagFamily.NTAG ||
             family == TagFamily.MY_D

@@ -50,6 +50,8 @@ object Pm3FileFilter {
             path.endsWith(".bin") ||
                 path.endsWith(".dump") ||
                 path.endsWith(".eml") ||
+                path.endsWith(".mct") ||
+                path.endsWith(".nfc") ||
                 path.endsWith(".json") -> FileCategory.DUMP
             else -> FileCategory.OTHER
         }

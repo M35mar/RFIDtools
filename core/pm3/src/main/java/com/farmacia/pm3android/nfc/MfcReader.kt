@@ -115,6 +115,7 @@ class MfcReader(private val transport: ClassicTransport) {
     fun read(
         keyFile: KeyFileSource? = null,
         requireComplete: Boolean = false,
+        useQuickKeys: Boolean = false,
         progress: RestoreProgress? = null,
     ): MfcCapture {
         val size = sizeOf()
@@ -129,12 +130,12 @@ class MfcReader(private val transport: ClassicTransport) {
             }
         }
 
-        // With a key file selected only its keys are tried. The factory key is
-        // a fallback for the no-file case, not a rescue for a wrong file.
-        val candidates = if (parsed == null) {
-            listOf(MFC_DEFAULT_KEY.copyOf())
-        } else {
-            MfcKeyMap.flatten(parsed.allKeys())
+        // With a key file selected only its keys are tried. When none is selected,
+        // callers may opt into MfcQuickKeys (top 24 real-world keys) or default FFFFFFFFFFFF.
+        val candidates = when {
+            parsed != null -> MfcKeyMap.flatten(parsed.allKeys())
+            useQuickKeys -> MfcQuickKeys.KEYS
+            else -> listOf(MFC_DEFAULT_KEY.copyOf())
         }
         if (candidates.isEmpty()) {
             throw TagUnusableException("il file chiavi non contiene chiavi utilizzabili")

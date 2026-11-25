@@ -29,6 +29,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.IosShare
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -71,8 +72,10 @@ import com.farmacia.pm3android.nfc.DumpRow
 import com.farmacia.pm3android.nfc.DumpRowDetails
 import com.farmacia.pm3android.nfc.DumpRowRole
 import com.farmacia.pm3android.nfc.EditableDump
+import com.farmacia.pm3android.nfc.MfcAccess
 import com.farmacia.pm3android.nfc.hexToBytesOrNull
 import com.farmacia.pm3android.nfc.toAscii
+import com.farmacia.pm3android.nfc.toHexSpaced
 import com.farmacia.pm3android.ui.components.ConfirmDialog
 import kotlinx.coroutines.launch
 
@@ -133,6 +136,15 @@ fun DumpEditorScreen(state: DumpEditorState, viewModel: DumpEditorViewModel) {
                         }
                     },
                     actions = {
+                        IconButton(
+                            onClick = viewModel::exportFlipperNfc,
+                            enabled = state.dump != null && !state.saving,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.IosShare,
+                                contentDescription = stringResource(R.string.dump_editor_export_nfc),
+                            )
+                        }
                         IconButton(
                             onClick = viewModel::save,
                             enabled = state.dirty && !state.saving,
@@ -573,6 +585,33 @@ private fun EditRowDialog(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                    if (family == DumpFamily.CLASSIC && row.index == 0 && preview.size == 16) {
+                        val expectedBcc = (preview[0].toInt() xor preview[1].toInt() xor
+                            preview[2].toInt() xor preview[3].toInt()).toByte()
+                        if (preview[4] != expectedBcc) {
+                            OutlinedButton(
+                                onClick = {
+                                    val fixed = preview.copyOf()
+                                    fixed[4] = expectedBcc
+                                    onValueChange(fixed.toHexSpaced())
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text(
+                                    stringResource(
+                                        R.string.dump_editor_fix_bcc,
+                                        "%02X".format(expectedBcc.toInt() and 0xFF),
+                                    ),
+                                )
+                            }
+                        }
+                    }
+                    if (family == DumpFamily.CLASSIC && row.role == DumpRowRole.TRAILER && preview.size == 16) {
+                        VisualAccessBitsBuilder(
+                            trailerBytes = preview,
+                            onUpdateTrailer = { updated -> onValueChange(updated.toHexSpaced()) },
+                        )
+                    }
                 }
                 Text(
                     text = roleLabel(row.role),
@@ -668,3 +707,57 @@ private fun roleLabel(role: DumpRowRole): String = stringResource(
         DumpRowRole.PACK -> R.string.dump_editor_role_pack
     },
 )
+
+@Composable
+private fun VisualAccessBitsBuilder(
+    trailerBytes: ByteArray,
+    onUpdateTrailer: (ByteArray) -> Unit,
+) {
+    val slice = trailerBytes.copyOfRange(6, 10)
+    val isValid = MfcAccess.isValid(slice)
+    val c0 = if (isValid) MfcAccess.condition(slice, 0) else 0
+    val c1 = if (isValid) MfcAccess.condition(slice, 1) else 0
+    val c2 = if (isValid) MfcAccess.condition(slice, 2) else 0
+    val ct = if (isValid) MfcAccess.condition(slice, 3) else 1
+
+    fun applyConditions(n0: Int, n1: Int, n2: Int, nt: Int) {
+        val encoded = MfcAccess.encode(n0, n1, n2, nt, trailerBytes[9])
+        val next = trailerBytes.copyOf()
+        encoded.copyInto(next, 6)
+        onUpdateTrailer(next)
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+        Text(
+            text = stringResource(R.string.dump_editor_access_builder),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        AccessConditionCycleButton("B0: " + MfcAccess.describeDataCondition(c0)) {
+            applyConditions((c0 + 1) % 8, c1, c2, ct)
+        }
+        AccessConditionCycleButton("B1: " + MfcAccess.describeDataCondition(c1)) {
+            applyConditions(c0, (c1 + 1) % 8, c2, ct)
+        }
+        AccessConditionCycleButton("B2: " + MfcAccess.describeDataCondition(c2)) {
+            applyConditions(c0, c1, (c2 + 1) % 8, ct)
+        }
+        AccessConditionCycleButton("TR: " + MfcAccess.describeTrailerCondition(ct)) {
+            applyConditions(c0, c1, c2, (ct + 1) % 8)
+        }
+    }
+}
+
+@Composable
+private fun AccessConditionCycleButton(label: String, onClick: () -> Unit) {
+    OutlinedButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}

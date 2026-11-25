@@ -25,13 +25,17 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.CompareArrows
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.Fingerprint
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Nfc
+import androidx.compose.material.icons.filled.Radar
 import androidx.compose.material.icons.filled.SaveAlt
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -81,6 +85,10 @@ fun NfcScreen(
     onOpenValueTool: () -> Unit,
     onOpenUidTool: () -> Unit,
     onOpenNdefWriter: () -> Unit,
+    onOpenType2Pwd: () -> Unit = {},
+    onOpenHce: () -> Unit = {},
+    onOpenDiff: () -> Unit = {},
+    onFormatClassic: () -> Unit = {},
 ) {
     val files by viewModel.files.collectAsState()
     val context = LocalContext.current
@@ -199,6 +207,40 @@ fun NfcScreen(
                     onClick = onOpenUidTool,
                 )
             }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(IntrinsicSize.Max),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                NfcTile(
+                    icon = Icons.Filled.Lock,
+                    title = stringResource(R.string.nfc_t2pwd_title),
+                    description = stringResource(R.string.nfc_t2pwd_desc),
+                    accent = accents.lf,
+                    enabled = nfcEnabled,
+                    modifier = Modifier.weight(1f),
+                    onClick = onOpenType2Pwd,
+                )
+                NfcTile(
+                    icon = Icons.Filled.CleaningServices,
+                    title = stringResource(R.string.nfc_format_classic_title),
+                    description = stringResource(R.string.nfc_format_classic_desc),
+                    accent = accents.danger,
+                    enabled = nfcEnabled,
+                    modifier = Modifier.weight(1f),
+                    onClick = onFormatClassic,
+                )
+                NfcTile(
+                    icon = Icons.AutoMirrored.Filled.CompareArrows,
+                    title = stringResource(R.string.nfc_diff_title),
+                    description = stringResource(R.string.nfc_diff_desc),
+                    accent = accents.info,
+                    enabled = true,
+                    modifier = Modifier.weight(1f),
+                    onClick = onOpenDiff,
+                )
+            }
             NfcWideTile(
                 icon = Icons.Filled.EditNote,
                 title = stringResource(R.string.nfc_ndef_title),
@@ -206,6 +248,14 @@ fun NfcScreen(
                 accent = accents.info,
                 enabled = nfcEnabled,
                 onClick = onOpenNdefWriter,
+            )
+            NfcWideTile(
+                icon = Icons.Filled.Radar,
+                title = stringResource(R.string.nfc_hce_title),
+                description = stringResource(R.string.nfc_hce_desc),
+                accent = accents.hf,
+                enabled = nfcEnabled,
+                onClick = onOpenHce,
             )
         }
     }

@@ -13,6 +13,7 @@ import com.farmacia.pm3android.nfc.inspect.hf.EmrtdProbe
 import com.farmacia.pm3android.nfc.inspect.hf.FelicaProbe
 import com.farmacia.pm3android.nfc.inspect.hf.Iso15693Probe
 import com.farmacia.pm3android.nfc.inspect.hf.IsoDepApplicationProbe
+import com.farmacia.pm3android.nfc.inspect.hf.MagicCardProbe
 import com.farmacia.pm3android.nfc.inspect.hf.NfcAPageProbe
 import com.farmacia.pm3android.nfc.inspect.hf.PlusProbe
 import com.farmacia.pm3android.nfc.inspect.hf.Type2InspectProbe
@@ -39,7 +40,7 @@ object HfProbeRegistry {
 
     private val nfcF = listOf(FelicaProbe)
 
-    private val nfcA = listOf(PlusProbe, Type2InspectProbe, NfcAPageProbe)
+    private val nfcA = listOf(PlusProbe, Type2InspectProbe, MagicCardProbe, NfcAPageProbe)
 
     /** Runs after every technology specific probe: it always answers. */
     private val isoDepFallback = listOf(IsoDepApplicationProbe)

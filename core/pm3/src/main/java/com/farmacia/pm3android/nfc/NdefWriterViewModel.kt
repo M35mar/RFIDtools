@@ -1,8 +1,8 @@
-// ViewModel for the phone-NFC NDEF Writer / Formatter tool.
+// ViewModel for the phone-NFC NDEF Writer / Formatter Pro tool.
 //
-// Supports writing URI, Text, Wi-Fi (WSC) and empty/blank NDEF messages onto
-// any Android NDEF or NdefFormatable tag (NTAG21x, Ultralight, DESFire Type 4,
-// ISO 15693 Type 5, FeliCa Type 3, MIFARE Classic), with read-back verification.
+// Supports URI (https, tel:, mailto:, geo:), UTF-8 Text, Wi-Fi (WSC), vCard 3.0,
+// Android App Launcher (AAR), Bluetooth OOB pairing, and Erase on any NFC Forum
+// Type 1-5 tag, with mandatory read-back verification.
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -50,6 +50,13 @@ data class NdefWriterState(
     val ssid: String = "",
     val wifiPassword: String = "",
     val wifiAuth: WifiAuth = WifiAuth.WPA2_PERSONAL,
+    val vcardName: String = "",
+    val vcardPhone: String = "",
+    val vcardEmail: String = "",
+    val vcardOrg: String = "",
+    val appPackage: String = "",
+    val btMac: String = "",
+    val btName: String = "",
     val uidHex: String = "",
     val bytesWritten: Int = 0,
     val verified: Boolean = false,
@@ -68,6 +75,9 @@ data class NdefWriterState(
             NdefWriteKind.TEXT -> text.isNotBlank()
             NdefWriteKind.WIFI -> ssid.isNotBlank() &&
                 (wifiAuth == WifiAuth.OPEN || wifiPassword.isNotEmpty())
+            NdefWriteKind.VCARD -> vcardName.isNotBlank()
+            NdefWriteKind.APP_LAUNCHER -> appPackage.trim().contains('.')
+            NdefWriteKind.BLUETOOTH -> btMac.hexToBytesOrNull()?.size == 6
             NdefWriteKind.ERASE -> true
         }
 }
@@ -79,6 +89,14 @@ class NdefWriterViewModel(application: Application) : AndroidViewModel(applicati
 
     fun start() {
         stateFlow.value = NdefWriterState(visible = true, stage = NdefWriteStage.EDIT)
+    }
+
+    fun startWithTextOrUri(content: String, isUri: Boolean) {
+        stateFlow.value = if (isUri) {
+            NdefWriterState(visible = true, kind = NdefWriteKind.URI, uri = content)
+        } else {
+            NdefWriterState(visible = true, kind = NdefWriteKind.TEXT, text = content)
+        }
     }
 
     fun close() {
@@ -108,6 +126,34 @@ class NdefWriterViewModel(application: Application) : AndroidViewModel(applicati
 
     fun setWifiAuth(auth: WifiAuth) {
         stateFlow.value = stateFlow.value.copy(wifiAuth = auth, error = null)
+    }
+
+    fun setVcardName(v: String) {
+        stateFlow.value = stateFlow.value.copy(vcardName = v, error = null)
+    }
+
+    fun setVcardPhone(v: String) {
+        stateFlow.value = stateFlow.value.copy(vcardPhone = v, error = null)
+    }
+
+    fun setVcardEmail(v: String) {
+        stateFlow.value = stateFlow.value.copy(vcardEmail = v, error = null)
+    }
+
+    fun setVcardOrg(v: String) {
+        stateFlow.value = stateFlow.value.copy(vcardOrg = v, error = null)
+    }
+
+    fun setAppPackage(v: String) {
+        stateFlow.value = stateFlow.value.copy(appPackage = v, error = null)
+    }
+
+    fun setBtMac(v: String) {
+        stateFlow.value = stateFlow.value.copy(btMac = v, error = null)
+    }
+
+    fun setBtName(v: String) {
+        stateFlow.value = stateFlow.value.copy(btName = v, error = null)
     }
 
     fun armWrite() {
@@ -162,7 +208,7 @@ class NdefWriterViewModel(application: Application) : AndroidViewModel(applicati
                     bytesWritten = messageBytes.size,
                     error = t.code,
                 )
-            } catch (t: TagLostException) {
+            } catch (_: TagLostException) {
                 stateFlow.value = stateFlow.value.copy(
                     stage = NdefWriteStage.ERROR,
                     error = NdefWriteError.TAG_LOST,
@@ -194,6 +240,20 @@ class NdefWriterViewModel(application: Application) : AndroidViewModel(applicati
                 NdefBuilder.MIME_WIFI_WSC,
                 NdefBuilder.buildWifiWscPayload(state.ssid, state.wifiPassword, state.wifiAuth),
             )
+            NdefWriteKind.VCARD -> NdefRecord.createMime(
+                NdefBuilder.MIME_VCARD,
+                NdefBuilder.buildVCardPayload(
+                    name = state.vcardName,
+                    phone = state.vcardPhone,
+                    email = state.vcardEmail,
+                    org = state.vcardOrg,
+                ),
+            )
+            NdefWriteKind.APP_LAUNCHER -> NdefRecord.createApplicationRecord(state.appPackage.trim())
+            NdefWriteKind.BLUETOOTH -> NdefRecord.createMime(
+                NdefBuilder.MIME_BT_OOB,
+                NdefBuilder.buildBluetoothOobPayload(state.btMac, state.btName),
+            )
             NdefWriteKind.ERASE -> NdefRecord(
                 NdefRecord.TNF_EMPTY,
                 ByteArray(0),
@@ -220,7 +280,6 @@ class NdefWriterViewModel(application: Application) : AndroidViewModel(applicati
                     throw NdefWriteFailure(NdefWriteError.TOO_LARGE, ndef.maxSize)
                 }
                 ndef.writeNdefMessage(message)
-                // Read-back verification: confirm what is physically on the tag.
                 val readBack = runCatching { ndef.ndefMessage?.toByteArray() }.getOrNull()
                 val matches = readBack != null && readBack.contentEquals(expectedBytes)
                 if (!matches) {
@@ -240,7 +299,6 @@ class NdefWriterViewModel(application: Application) : AndroidViewModel(applicati
         } finally {
             runCatching { formatable.close() }
         }
-        // Verify after formatting via Ndef if Android exposes it immediately.
         val after = Ndef.get(tag)
         var verified = false
         var maxSize = 0

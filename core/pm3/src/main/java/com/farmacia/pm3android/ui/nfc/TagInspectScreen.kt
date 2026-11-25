@@ -25,10 +25,14 @@ import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Nfc
+import androidx.compose.material.icons.filled.Radar
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -99,6 +103,7 @@ import com.farmacia.pm3android.nfc.inspect.FelicaDetails
 import com.farmacia.pm3android.nfc.inspect.GenericDetails
 import com.farmacia.pm3android.nfc.inspect.Iso15693Details
 import com.farmacia.pm3android.nfc.inspect.IsoDepDetails
+import com.farmacia.pm3android.nfc.inspect.MagicCardDetector
 import com.farmacia.pm3android.nfc.inspect.MemoryRow
 import com.farmacia.pm3android.nfc.inspect.PageMemoryDetails
 import com.farmacia.pm3android.nfc.inspect.PlusDetails
@@ -132,6 +137,10 @@ fun TagInspectScreen(
     onOpenDumpFlow: () -> Unit,
     onOpenCounterTool: () -> Unit,
     onOpenValueTool: () -> Unit,
+    onOpenType2Pwd: (String) -> Unit = {},
+    onCloneNdef: (String, Boolean) -> Unit = { _, _ -> },
+    onEmulateNdef: (String, Boolean) -> Unit = { _, _ -> },
+    onHandOffToPm3: (String) -> Unit = {},
 ) {
     val activity = LocalActivity.current
     val session = remember(activity) { activity?.let { NfcSession(it) } }
@@ -195,6 +204,10 @@ fun TagInspectScreen(
                         onOpenDumpFlow = onOpenDumpFlow,
                         onOpenCounterTool = onOpenCounterTool,
                         onOpenValueTool = onOpenValueTool,
+                        onOpenType2Pwd = onOpenType2Pwd,
+                        onCloneNdef = onCloneNdef,
+                        onEmulateNdef = onEmulateNdef,
+                        onHandOffToPm3 = onHandOffToPm3,
                     )
 
                     state.busy -> ReadingCard()
@@ -225,21 +238,48 @@ private fun ResultContent(
     onOpenDumpFlow: () -> Unit,
     onOpenCounterTool: () -> Unit,
     onOpenValueTool: () -> Unit,
+    onOpenType2Pwd: (String) -> Unit,
+    onCloneNdef: (String, Boolean) -> Unit,
+    onEmulateNdef: (String, Boolean) -> Unit,
+    onHandOffToPm3: (String) -> Unit,
 ) {
     val identity = state.identity ?: return
     IdentityHero(identity)
     IdentityDetails(identity)
     if (identity.notes.isNotEmpty()) NotesCard(identity.notes)
 
+    val pm3Cmd = remember(identity) { MagicCardDetector.suggestedPm3Command(identity) }
+    SectionCard(title = stringResource(R.string.inspect_pm3_handoff_title)) {
+        OutlinedButton(
+            onClick = { onHandOffToPm3(pm3Cmd) },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Terminal,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+            )
+            Text(
+                text = stringResource(R.string.inspect_pm3_handoff_btn, pm3Cmd),
+                modifier = Modifier.padding(start = 8.dp),
+            )
+        }
+    }
+
     // The write tools come before the long memory dump: on a classic tag the
     // user should not have to scroll past 64 blocks to find them.
     val ev1 = identity.family == TagFamily.MIFARE_ULTRALIGHT &&
         identity.version?.storageCode in EV1_STORAGE
-    if (identity.family == TagFamily.MIFARE_CLASSIC || ev1) {
+    val ntagOrEv1 = ev1 || identity.family == TagFamily.NTAG
+    if (identity.family == TagFamily.MIFARE_CLASSIC || ntagOrEv1) {
         WriteToolsCard(
+            classic = identity.family == TagFamily.MIFARE_CLASSIC,
             ev1 = ev1,
+            ntagOrEv1 = ntagOrEv1,
+            uidHex = identity.uidHex,
             onOpenCounterTool = onOpenCounterTool,
             onOpenValueTool = onOpenValueTool,
+            onOpenType2Pwd = onOpenType2Pwd,
         )
     }
 
@@ -262,7 +302,11 @@ private fun ResultContent(
 
     val content = state.content
     if (content != null) {
-        ContentCards(content)
+        ContentCards(
+            content = content,
+            onCloneNdef = onCloneNdef,
+            onEmulateNdef = onEmulateNdef,
+        )
     } else if (identity.dumpable) {
         Text(
             text = stringResource(R.string.inspect_content_unavailable),
@@ -312,19 +356,21 @@ private val EV1_STORAGE = setOf(0x0B, 0x0E)
 
 @Composable
 private fun WriteToolsCard(
+    classic: Boolean,
     ev1: Boolean,
+    ntagOrEv1: Boolean,
+    uidHex: String,
     onOpenCounterTool: () -> Unit,
     onOpenValueTool: () -> Unit,
+    onOpenType2Pwd: (String) -> Unit,
 ) {
     SectionCard(title = stringResource(R.string.inspect_write_title)) {
-        Text(
-            text = stringResource(
-                if (ev1) R.string.inspect_write_counter_desc else R.string.inspect_write_value_desc,
-            ),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
         if (ev1) {
+            Text(
+                text = stringResource(R.string.inspect_write_counter_desc),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Button(onClick = onOpenCounterTool, modifier = Modifier.fillMaxWidth()) {
                 Icon(
                     imageVector = Icons.Filled.AddCircle,
@@ -336,7 +382,13 @@ private fun WriteToolsCard(
                     modifier = Modifier.padding(start = 8.dp),
                 )
             }
-        } else {
+        }
+        if (classic) {
+            Text(
+                text = stringResource(R.string.inspect_write_value_desc),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Button(onClick = onOpenValueTool, modifier = Modifier.fillMaxWidth()) {
                 Icon(
                     imageVector = Icons.Filled.CreditCard,
@@ -345,6 +397,22 @@ private fun WriteToolsCard(
                 )
                 Text(
                     text = stringResource(R.string.inspect_write_value),
+                    modifier = Modifier.padding(start = 8.dp),
+                )
+            }
+        }
+        if (ntagOrEv1) {
+            OutlinedButton(
+                onClick = { onOpenType2Pwd(uidHex) },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Lock,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Text(
+                    text = stringResource(R.string.inspect_write_t2pwd),
                     modifier = Modifier.padding(start = 8.dp),
                 )
             }
@@ -1279,11 +1347,15 @@ private fun applicationKindText(kind: ApplicationKind): String = when (kind) {
 }
 
 @Composable
-private fun ContentCards(content: TagContent) {
+private fun ContentCards(
+    content: TagContent,
+    onCloneNdef: (String, Boolean) -> Unit,
+    onEmulateNdef: (String, Boolean) -> Unit,
+) {
     val classic = content.classic
     if (classic != null) {
         classic.mad?.let { mad -> MadCard(mad) }
-        NdefCard(classic.ndef)
+        NdefCard(classic.ndef, onCloneNdef, onEmulateNdef)
         SectorTableCard(classic)
         return
     }
@@ -1291,12 +1363,14 @@ private fun ContentCards(content: TagContent) {
     if (ultralight != null) {
         Type2Card(ultralight)
         ultralight.cc?.let { cc -> CapabilityCard(cc) }
-        NdefCard(ultralight.ndef)
+        NdefCard(ultralight.ndef, onCloneNdef, onEmulateNdef)
         CountersCard(ultralight.counters)
         return
     }
     // Type 3, 4 and 5 tags only carry the message read over their own transport.
-    if (content.ndef.status != NdefStatus.ABSENT) NdefCard(content.ndef)
+    if (content.ndef.status != NdefStatus.ABSENT) {
+        NdefCard(content.ndef, onCloneNdef, onEmulateNdef)
+    }
 }
 
 @Composable
@@ -1336,7 +1410,11 @@ private fun MadCard(mad: MadDirectory) {
 }
 
 @Composable
-private fun NdefCard(ndef: NdefContent) {
+private fun NdefCard(
+    ndef: NdefContent,
+    onCloneNdef: (String, Boolean) -> Unit,
+    onEmulateNdef: (String, Boolean) -> Unit,
+) {
     SectionCard(title = stringResource(R.string.inspect_ndef_title)) {
         when (ndef.status) {
             NdefStatus.ABSENT -> Text(
@@ -1368,6 +1446,34 @@ private fun NdefCard(ndef: NdefContent) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 ndef.records.forEach { record -> NdefRecordRow(record) }
+                val cloneable = ndef.records.firstOrNull {
+                    (it.kind == NdefKind.URI || it.kind == NdefKind.TEXT) && !it.text.isNullOrBlank()
+                }
+                if (cloneable != null && cloneable.text != null) {
+                    val isUri = cloneable.kind == NdefKind.URI
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = { onCloneNdef(cloneable.text, isUri) },
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Icon(Icons.Filled.EditNote, null, Modifier.size(16.dp))
+                            Text(
+                                text = stringResource(R.string.inspect_ndef_clone_write),
+                                modifier = Modifier.padding(start = 4.dp),
+                            )
+                        }
+                        OutlinedButton(
+                            onClick = { onEmulateNdef(cloneable.text, isUri) },
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Icon(Icons.Filled.Radar, null, Modifier.size(16.dp))
+                            Text(
+                                text = stringResource(R.string.inspect_ndef_clone_hce),
+                                modifier = Modifier.padding(start = 4.dp),
+                            )
+                        }
+                    }
+                }
             }
         }
     }

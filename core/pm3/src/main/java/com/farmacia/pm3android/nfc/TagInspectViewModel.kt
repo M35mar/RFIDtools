@@ -13,6 +13,7 @@ import android.nfc.TagLostException
 import android.nfc.tech.MifareClassic
 import android.nfc.tech.MifareUltralight
 import android.nfc.tech.NfcA
+import android.nfc.tech.NfcV
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.farmacia.pm3android.nfc.inspect.AndroidTagProbe
@@ -33,6 +34,7 @@ import com.farmacia.pm3android.nfc.inspect.ProbeContext
 import com.farmacia.pm3android.nfc.inspect.TagDetails
 import com.farmacia.pm3android.nfc.inspect.TagFamily
 import com.farmacia.pm3android.nfc.inspect.TagIdentity
+import com.farmacia.pm3android.nfc.inspect.content.NdefContent
 import com.farmacia.pm3android.nfc.inspect.content.TagContent
 import com.farmacia.pm3android.nfc.inspect.content.TagContentAnalyzer
 import com.farmacia.pm3android.nfc.inspect.content.TagReport
@@ -247,7 +249,7 @@ class TagInspectViewModel(application: Application) : AndroidViewModel(applicati
         val current = stateFlow.value
         if (!current.visible || current.details !is DesfireDetails) return false
         val key = keyHex.trim().hexToBytesOrNull() ?: return false
-        if (key.size != 16 || keyNo !in 0..15) return false
+        if ((key.size != 8 && key.size != 16) || keyNo !in 0..15) return false
         desfireKey = key
         stateFlow.value = current.copy(
             error = null,
@@ -677,6 +679,9 @@ class TagInspectViewModel(application: Application) : AndroidViewModel(applicati
 
                         is PendingCapture.Pages ->
                             NfcDumpSaver.save(context, name, pages = capture.pages)
+
+                        is PendingCapture.Iso15693 ->
+                            NfcDumpSaver.save(context, name, iso15693 = capture.dump)
                     }
                 }
             } catch (t: CancellationException) {
@@ -714,7 +719,10 @@ class TagInspectViewModel(application: Application) : AndroidViewModel(applicati
         if (classic) {
             val transport = AndroidClassicTransport(tag)
             try {
-                val capture = MfcReader(transport).read(progress = progress)
+                val capture = MfcReader(transport).read(
+                    useQuickKeys = true,
+                    progress = progress,
+                )
                 return CaptureResult(
                     content = TagContentAnalyzer.of(capture),
                     rows = classicRows(capture),
@@ -722,6 +730,25 @@ class TagInspectViewModel(application: Application) : AndroidViewModel(applicati
                     suggestedName = suggestedName("hf-mf-${capture.uidHex}-dump"),
                     capture = PendingCapture.Classic(capture),
                     missing = incomplete(capture),
+                )
+            } finally {
+                transport.close()
+            }
+        }
+        if (NfcV.get(tag) != null) {
+            val transport = AndroidNfcVTransport(tag)
+            try {
+                val dump = Iso15693Dumper.readAll(
+                    transport = transport,
+                    fallbackUid = tag.id ?: ByteArray(0),
+                    progress = progress,
+                )
+                return CaptureResult(
+                    content = stateFlow.value.content ?: TagContent.ndefOnly(NdefContent.absent),
+                    rows = dump.blocks.mapIndexed { index, block -> MemoryRow(index, block) },
+                    rowSize = dump.blockSize,
+                    suggestedName = suggestedName(dump.name),
+                    capture = PendingCapture.Iso15693(dump),
                 )
             } finally {
                 transport.close()
@@ -783,6 +810,8 @@ class TagInspectViewModel(application: Application) : AndroidViewModel(applicati
 
         /** Raw page memory read by a probe (my-d move): no PACK/password patch. */
         class Pages(val pages: List<ByteArray>) : PendingCapture
+
+        class Iso15693(val dump: Iso15693Dump) : PendingCapture
     }
 
     private class Missing(val sectorsMissing: Int, val blocksMissing: Int)

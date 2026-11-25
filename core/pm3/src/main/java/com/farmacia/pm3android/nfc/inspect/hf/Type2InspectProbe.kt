@@ -17,6 +17,9 @@ import com.farmacia.pm3android.nfc.inspect.DetailSection
 import com.farmacia.pm3android.nfc.inspect.GenericDetails
 import com.farmacia.pm3android.nfc.inspect.HfProbe
 import com.farmacia.pm3android.nfc.inspect.NfcTech
+import com.farmacia.pm3android.nfc.inspect.OriginalityGroup
+import com.farmacia.pm3android.nfc.inspect.OriginalityStatus
+import com.farmacia.pm3android.nfc.inspect.OriginalityVerifier
 import com.farmacia.pm3android.nfc.inspect.PageMemoryReader
 import com.farmacia.pm3android.nfc.inspect.ProbeContext
 import com.farmacia.pm3android.nfc.inspect.ProbeOutcome
@@ -53,21 +56,52 @@ object Type2InspectProbe : HfProbe {
         return context.session.withNfcA { transport ->
             val sections = mutableListOf<DetailSection>()
 
-            // 1. Originality Signature (32-byte ECC signed by NXP).
+            // 1. Originality Signature (32B secp128r1 or 48B secp192r1 ECC signed by NXP/ST).
             val signature = attempt(abort) { readSignature(transport) }
             val sigRows = mutableListOf<DetailRow>()
             if (signature != null) {
-                val nonZero = signature.any { it != 0.toByte() }
-                sigRows += DetailRow(
-                    "ECC Signature (0x3C)",
-                    if (nonZero) "Present (32 B)" else "All zeros (possible clone)",
-                )
-                if (nonZero) {
+                val group = if (signature.size == 48) OriginalityGroup.MFULAES else OriginalityGroup.MFUL
+                val check = OriginalityVerifier.verify(context.snapshot.uid, signature, group)
+                when (check.status) {
+                    OriginalityStatus.VALID -> {
+                        sigRows += DetailRow(
+                            "ECC Signature (0x3C)",
+                            "Present (${signature.size} B) · VALID · ${check.keyName} (${check.curveName})",
+                        )
+                    }
+                    OriginalityStatus.ALL_ZEROS -> {
+                        sigRows += DetailRow(
+                            "ECC Signature (0x3C)",
+                            "All zeros (unprogrammed Magic / clone)",
+                        )
+                    }
+                    OriginalityStatus.INVALID -> {
+                        sigRows += DetailRow(
+                            "ECC Signature (0x3C)",
+                            "Present (${signature.size} B) · INVALID (UID mismatch / clone)",
+                        )
+                    }
+                    OriginalityStatus.UNSUPPORTED_LENGTH -> {
+                        sigRows += DetailRow("ECC Signature (0x3C)", "Present (${signature.size} B)")
+                    }
+                }
+                if (check.status != OriginalityStatus.ALL_ZEROS) {
                     sigRows += DetailRow("Sig[0..15]", signature.copyOfRange(0, 16).toHex())
                     sigRows += DetailRow("Sig[16..31]", signature.copyOfRange(16, 32).toHex())
+                    if (signature.size >= 48) {
+                        sigRows += DetailRow("Sig[32..47]", signature.copyOfRange(32, 48).toHex())
+                    }
                 }
             } else {
                 sigRows += DetailRow("ECC Signature (0x3C)", "Not answered")
+            }
+
+            // 1b. NXP Silicon Wafer Coordinates & Counter (when UID starts with 0x04).
+            OriginalityVerifier.decodeNxpSilicon(context.snapshot.uid)?.let { silicon ->
+                sigRows += DetailRow(
+                    "Wafer Info",
+                    "X=${silicon.waferX}, Y=${silicon.waferY} · LotCnt=${silicon.waferCounter} · Site=${silicon.testSite}",
+                )
             }
 
             // 2. Monotonic counters & tearing flags.
@@ -177,7 +211,11 @@ object Type2InspectProbe : HfProbe {
 
     private fun readSignature(transport: RawTagTransport): ByteArray? {
         val resp = transport.transceive(byteArrayOf(CMD_READ_SIG.toByte(), 0x00))
-        return resp.takeIf { it.size >= 32 }?.copyOf(32)
+        return when {
+            resp.size >= 48 -> resp.copyOf(48)
+            resp.size >= 32 -> resp.copyOf(32)
+            else -> null
+        }
     }
 
     private fun readCounter(transport: RawTagTransport, index: Int): ByteArray? {

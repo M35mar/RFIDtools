@@ -83,10 +83,14 @@ import com.farmacia.pm3android.ui.components.StatusPill
 import com.farmacia.pm3android.ui.console.ConsoleScreen
 import com.farmacia.pm3android.ui.console.Pm3ViewModel
 import com.farmacia.pm3android.ui.device.DeviceScreen
+import com.farmacia.pm3android.ui.files.DumpDiffScreen
+import com.farmacia.pm3android.ui.files.DumpDiffViewModel
 import com.farmacia.pm3android.ui.files.DumpEditorScreen
 import com.farmacia.pm3android.ui.files.DumpEditorViewModel
 import com.farmacia.pm3android.ui.files.FilesScreen
 import com.farmacia.pm3android.ui.nfc.ApduConsoleScreen
+import com.farmacia.pm3android.ui.nfc.HceEmulatorScreen
+import com.farmacia.pm3android.ui.nfc.HceViewModel
 import com.farmacia.pm3android.ui.nfc.MfcValueScreen
 import com.farmacia.pm3android.ui.nfc.MfuCounterScreen
 import com.farmacia.pm3android.ui.nfc.MagicUidScreen
@@ -94,6 +98,8 @@ import com.farmacia.pm3android.ui.nfc.NdefWriterScreen
 import com.farmacia.pm3android.ui.nfc.NfcRestoreScreen
 import com.farmacia.pm3android.ui.nfc.NfcScreen
 import com.farmacia.pm3android.ui.nfc.TagInspectScreen
+import com.farmacia.pm3android.ui.nfc.Type2PasswordScreen
+import com.farmacia.pm3android.ui.nfc.Type2PasswordViewModel
 import com.farmacia.pm3android.ui.settings.SettingsScreen
 import com.farmacia.pm3android.ui.theme.Pm3Theme
 import com.farmacia.pm3android.ui.theme.pm3Accents
@@ -136,7 +142,11 @@ fun Pm3App(
     val valueViewModel: MfcValueViewModel = viewModel()
     val uidViewModel: MagicUidViewModel = viewModel()
     val ndefWriterViewModel: NdefWriterViewModel = viewModel()
+    val diffViewModel: DumpDiffViewModel = viewModel()
+    val type2PwdViewModel: Type2PasswordViewModel = viewModel()
+    val hceViewModel: HceViewModel = viewModel()
     val settings by viewModel.settings.collectAsState()
+    val files by viewModel.files.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
     val busy by viewModel.busy.collectAsState()
     val device by viewModel.device.collectAsState()
@@ -150,6 +160,9 @@ fun Pm3App(
     val valueState by valueViewModel.state.collectAsState()
     val uidState by uidViewModel.state.collectAsState()
     val ndefWriterState by ndefWriterViewModel.state.collectAsState()
+    val diffState by diffViewModel.state.collectAsState()
+    val type2PwdState by type2PwdViewModel.state.collectAsState()
+    val hceState by hceViewModel.state.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var selected by rememberSaveable { mutableIntStateOf(0) }
     val context = LocalContext.current
@@ -402,11 +415,22 @@ fun Pm3App(
                                 onOpenValueTool = valueViewModel::start,
                                 onOpenUidTool = uidViewModel::start,
                                 onOpenNdefWriter = ndefWriterViewModel::start,
+                                onOpenType2Pwd = { type2PwdViewModel.start() },
+                                onOpenHce = hceViewModel::start,
+                                onOpenDiff = {
+                                    viewModel.refreshFiles()
+                                    diffViewModel.open()
+                                },
+                                onFormatClassic = restoreViewModel::startFormatClassic,
                             )
                             3 -> FilesScreen(
                                 viewModel,
                                 onRestore = restoreViewModel::open,
                                 onEditDump = editorViewModel::open,
+                                onOpenDiff = {
+                                    viewModel.refreshFiles()
+                                    diffViewModel.open()
+                                },
                             )
                             else -> SettingsScreen(viewModel)
                         }
@@ -460,6 +484,45 @@ fun Pm3App(
                         },
                         onOpenCounterTool = counterViewModel::start,
                         onOpenValueTool = valueViewModel::start,
+                        onOpenType2Pwd = { uid -> type2PwdViewModel.start(uid) },
+                        onCloneNdef = { text, isUri ->
+                            inspectViewModel.close()
+                            ndefWriterViewModel.startWithTextOrUri(text, isUri)
+                        },
+                        onEmulateNdef = { text, isUri ->
+                            inspectViewModel.close()
+                            hceViewModel.startWithClonedNdef(text, isUri)
+                        },
+                        onHandOffToPm3 = { cmd ->
+                            inspectViewModel.close()
+                            selected = 1
+                            viewModel.handOffCommandFromNfc(cmd)
+                        },
+                    )
+                }
+
+                if (diffState.visible) {
+                    DumpDiffScreen(
+                        state = diffState,
+                        files = files,
+                        viewModel = diffViewModel,
+                        onClose = diffViewModel::close,
+                    )
+                }
+
+                if (type2PwdState.visible) {
+                    Type2PasswordScreen(
+                        state = type2PwdState,
+                        viewModel = type2PwdViewModel,
+                        onClose = type2PwdViewModel::close,
+                    )
+                }
+
+                if (hceState.visible) {
+                    HceEmulatorScreen(
+                        state = hceState,
+                        viewModel = hceViewModel,
+                        onClose = hceViewModel::close,
                     )
                 }
 

@@ -27,18 +27,31 @@ sealed interface DumpImage {
         override val uidHex: String get() = dump.uidHex
         override val tagLabel: String get() = dump.layout.variant
     }
+
+    class Iso15693(val dump: Iso15693Dump) : DumpImage {
+        override val name: String get() = dump.name
+        override val uidHex: String get() = dump.uidHex
+        override val tagLabel: String get() = "ISO 15693 (${dump.blocks.size} × ${dump.blockSize} B)"
+    }
 }
 
 object DumpLoader {
 
-    private val TEXT_EXTENSIONS = setOf("eml", "txt")
+    private val TEXT_EXTENSIONS = setOf("eml", "txt", "mct")
 
     fun load(file: File): DumpImage {
         if (!file.isFile) throw DumpFormatException("file non trovato: ${file.name}")
         val bytes = file.readBytes()
         if (bytes.isEmpty()) throw DumpFormatException("file vuoto")
 
-        if (file.extension.lowercase() in TEXT_EXTENSIONS) {
+        val ext = file.extension.lowercase()
+        if (ext == "nfc" || FlipperNfcFormat.isFlipperNfc(bytes)) {
+            return FlipperNfcFormat.parse(file.name, bytes)
+        }
+        if (ext == "json") {
+            return Pm3JsonDump.parse(file.name, bytes)
+        }
+        if (ext in TEXT_EXTENSIONS) {
             return DumpImage.Classic(MfcDumpParser.fromText(file.name, bytes))
         }
 
@@ -308,12 +321,11 @@ object MfcKeyText {
 /** Locates the key files the app can use for a MIFARE Classic tag. */
 object MfcKeyFiles {
 
-    /** Only these extensions are accepted, both in the list and on import. */
+    /** Accepted key file extensions, including bundled PM3 `.dic` files. */
     val EXTENSIONS = setOf("bin", "txt")
 
     /**
-     * True for a `.bin`/`.txt` file that is not a dump. Dumps are large binary
-     * files whose bytes would be mistaken for a huge flat key list.
+     * True for a key file (`.bin`/`.txt`/`.dic`/`.keys`) that is not a dump.
      */
     fun isKeyFile(name: String): Boolean {
         val lower = name.lowercase()
@@ -325,7 +337,9 @@ object MfcKeyFiles {
         val lower = name.lowercase()
         return lower.endsWith("-dump.bin") ||
             lower.endsWith("-dump.txt") ||
-            lower.endsWith(".eml")
+            lower.endsWith("-dump.json") ||
+            lower.endsWith(".eml") ||
+            lower.endsWith(".nfc")
     }
 
     /** Key files in [dir] and its first-level folders, sorted by path. */
@@ -336,6 +350,31 @@ object MfcKeyFiles {
             .filter { it.isFile && isKeyFile(it.name) }
             .sortedBy { it.relativeTo(dir).path.lowercase() }
             .toList()
+
+    /**
+     * User key files plus bundled Proxmark3 `.dic` files under `.proxmark3/dictionaries`
+     * suitable for 6-byte MIFARE Classic keys (`mfc_*`).
+     */
+    fun listInWithBundled(home: File): List<File> {
+        val user = listIn(home)
+        val dicDir = File(home, ".proxmark3/dictionaries")
+        val bundled = if (dicDir.isDirectory) {
+            dicDir.listFiles()
+                ?.filter { f ->
+                    f.isFile &&
+                        f.extension.equals("dic", ignoreCase = true) &&
+                        f.name.lowercase().startsWith("mfc_")
+                }
+                ?.sortedWith(
+                    compareBy<File> { !it.name.equals("mfc_default_keys.dic", ignoreCase = true) }
+                        .thenBy { it.name.lowercase() },
+                )
+                .orEmpty()
+        } else {
+            emptyList()
+        }
+        return user + bundled
+    }
 }
 
 object MfuDumpParser {
@@ -343,5 +382,6 @@ object MfuDumpParser {
     fun parse(file: File): MfuDump = when (val image = DumpLoader.load(file)) {
         is DumpImage.Ultralight -> image.dump
         is DumpImage.Classic -> throw DumpFormatException("${file.name} è un dump MIFARE Classic")
+        is DumpImage.Iso15693 -> throw DumpFormatException("${file.name} è un dump ISO 15693")
     }
 }
